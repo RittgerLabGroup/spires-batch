@@ -34,6 +34,36 @@ pip install spires-batch
 The Phase A core depends only on Pydantic. Scientific package dependencies will
 be connected directly when the Phase D executor is implemented.
 
+### Coordinated Phase D development
+
+Phase D is developed against sibling working trees so unmerged scientific
+branches do not become package or Git-history dependencies. From an environment
+with `mamba` available, run:
+
+```bash
+module load miniforge
+mamba run -n spipy14 bash scripts/bootstrap_local_phase_d.sh
+```
+
+The bootstrap verifies and installs this development stack editably, without
+resolving dependencies from GitHub:
+
+- `spires-contract/batch-support`
+- `spires-io/batch-support`
+- `spires-r0/ross-dev`
+- `spires-inversion/main`
+- `spires-postprocess/main`
+- `RittgerLabGroup/spires-batch/main`
+
+It never checks out, merges, or rebases a branch. Use `--verify-only` to inspect
+an existing environment. After the component PRs merge, update each component
+checkout to `main` and run the same command with `--merged`. Temporary branch
+selection therefore remains local development policy and does not enter
+`spires-batch` dependency metadata. On CURC, the bootstrap uses `/usr/bin/gcc`
+and `/usr/bin/g++` for the inversion extension to avoid the `spipy14` conda
+GCC/glibc conflict; override these with `SPIRES_PHASE_D_CC` and
+`SPIRES_PHASE_D_CXX` if needed.
+
 ## JSON requests
 
 Only JSON is accepted. Every request declares schema version `1` and exactly
