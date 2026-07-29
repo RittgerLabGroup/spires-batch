@@ -78,6 +78,7 @@ one sensor/platform combination:
   },
   "output": {
     "root": "/product/root",
+    "product_contents": "full",
     "existing_file_handling": "write_new_file",
     "existing_output_policy": "error"
   }
@@ -119,6 +120,18 @@ For example:
 ```text
 viirs/noaa20/h09v04/spires_vj109ga_h09v04_20260314_raw.nc
 ```
+
+`output.product_contents` independently selects the stored payload for each raw
+product:
+
+- `full` retains the complete grouped `SpiresData` inputs and results.
+- `results_subset` retains the self-describing grid, packed QA, and results
+  while omitting inputs that can be reopened from their configured sources.
+
+The selected value is copied into every resolved raw-output task. It does not
+change whether the product is `inversion_raw` or `postprocessed_raw`; fused
+`invert + albedo` tasks can write the latter directly, while standalone albedo
+with `update_atomically` transitions an existing raw file.
 
 The `interpolate` noun is reserved in schema version 1, but requests selecting
 it are rejected with `Interpolation not yet implemented`. Phase F will define

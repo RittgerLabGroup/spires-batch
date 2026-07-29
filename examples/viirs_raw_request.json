@@ -59,6 +59,7 @@
   },
   "output": {
     "root": "/pl/active/rittger_ops/example/spires-products",
+    "product_contents": "full",
     "existing_file_handling": "write_new_file",
     "existing_output_policy": "error"
   },

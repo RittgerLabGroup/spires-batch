@@ -77,6 +77,11 @@ class ExistingOutputPolicy(str, Enum):
     REUSE_VALID = "reuse_valid"
 
 
+class ProductContents(str, Enum):
+    FULL = "full"
+    RESULTS_SUBSET = "results_subset"
+
+
 class R0Mode(str, Enum):
     EXISTING = "existing"
     BUILD = "build"
@@ -373,6 +378,7 @@ class ScienceConfig(FrozenModel):
 
 class OutputConfig(FrozenModel):
     root: Path
+    product_contents: ProductContents = ProductContents.FULL
     existing_file_handling: ExistingFileHandling = ExistingFileHandling.WRITE_NEW_FILE
     existing_output_policy: ExistingOutputPolicy = ExistingOutputPolicy.ERROR
 
@@ -520,6 +526,17 @@ class ExpectedOutput(FrozenModel):
     path: Path
     content: Literal["r0", "raw", "interpolate"]
     existing_file_handling: ExistingFileHandling
+    product_contents: ProductContents | None = None
+
+    @model_validator(mode="after")
+    def validate_product_contents(self) -> "ExpectedOutput":
+        if self.content == "raw" and self.product_contents is None:
+            raise ValueError("raw outputs require product_contents")
+        if self.content != "raw" and self.product_contents is not None:
+            raise ValueError(
+                "product_contents applies only to persisted raw products"
+            )
+        return self
 
 
 class Task(FrozenModel):

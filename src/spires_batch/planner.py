@@ -137,6 +137,11 @@ def _make_task(
                 "path": str(output.path),
                 "content": output.content,
                 "existing_file_handling": output.existing_file_handling.value,
+                "product_contents": (
+                    None
+                    if output.product_contents is None
+                    else output.product_contents.value
+                ),
             }
             for output in outputs
         ],
@@ -362,6 +367,7 @@ def build_tasks(
                         ),
                         content="raw",
                         existing_file_handling=ExistingFileHandling.WRITE_NEW_FILE,
+                        product_contents=request.output.product_contents,
                     ),
                 ),
                 tile=reflectance.tile,
@@ -414,6 +420,7 @@ def build_tasks(
                         path=output_path,
                         content="raw",
                         existing_file_handling=request.output.existing_file_handling,
+                        product_contents=request.output.product_contents,
                     ),
                 ),
                 tile=raw_input.tile,

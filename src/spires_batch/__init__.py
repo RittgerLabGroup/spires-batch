@@ -11,6 +11,7 @@ from spires_batch.discovery import (
 )
 from spires_batch.models import (
     MetadataCheck,
+    ProductContents,
     RequestConfig,
     ResolvedPlan,
     ResourceProfile,
@@ -28,6 +29,7 @@ __all__ = [
     "DryRunBackend",
     "ExplicitFileDiscoveryAdapter",
     "MetadataCheck",
+    "ProductContents",
     "RequestConfig",
     "ReservationStore",
     "ResolvedPlan",
