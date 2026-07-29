@@ -1,20 +1,51 @@
 # spires-batch
 
-Scale-out batch processing for the SPIReS package family: run the retrieval over
-stacks of granules and spacetime cubes (dask / slurm), parallelizing the
-single-unit `spires.invert` kernel. Opt-in via `pip install spires[batch]`.
+`spires-batch` is the operational planning and recovery layer for processing
+many SPIReS tiles and dates.
 
-This package is part of the [SPIReS family](https://spires.readthedocs.io/).
+Phase A is implemented:
 
-```{note}
-**Status: scaffolding.** `spires-batch` is an early scaffold — the public API is
-not implemented yet, so this site is a placeholder. It will grow an API
-reference (autodoc) as the scale-out code lands. Track progress in the
-[repository](https://github.com/SPIReS-Organization/spires-batch).
+- strict versioned JSON requests;
+- immutable resolved task manifests;
+- explicit and CURC discovery;
+- schema, semantic, inventory, and metadata preflight;
+- validated shared-scratch staging;
+- dry-run, serial, and direct Slurm-rendering foundations;
+- structured status, retries, summaries, and output reservations.
+
+Scientific stage execution is connected later in Phase D. The `interpolate`
+stage is represented by the schema and generic task model but intentionally
+rejected until Phase F defines temporal windows and dependencies.
+
+## Typical planning flow
+
+```bash
+spires-batch validate request.json
+spires-batch plan request.json --output resolved-plan.json
+spires-batch dry-run resolved-plan.json
+spires-batch stage resolved-plan.json
+spires-batch render-slurm resolved-plan.json --output-dir slurm-preview
 ```
 
-## Planned scope
+Slurm rendering does not submit jobs.
 
-- Parallelize the `spires` metapackage's single-unit `invert` kernel across many
-  units of work.
-- Provide dask / slurm backends (opt-in extras `spires-batch[dask]`, `[slurm]`).
+## Schemas
+
+```bash
+spires-batch schema request
+spires-batch schema resolved-plan
+```
+
+Requests and manifests use schema version `1`. Canonical JSON SHA-256 digests
+track request intent and resolved task identity without changing scientific
+filenames.
+
+## Operational paths
+
+Authoritative `/pl` roots, scratch roots, patterns, output roots, and ancillary
+locations are supplied in each JSON request. No site path is embedded in the
+public package. Resolved tasks retain both authoritative and staged paths.
+
+For the complete configuration, naming, preflight, staging, status, retry, and
+reservation reference, see the
+[repository README](https://github.com/SPIReS-Organization/spires-batch).

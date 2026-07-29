@@ -10,21 +10,17 @@ readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "Niklas Griessbaum" }]
-keywords = ["snow", "remote sensing", "dask", "slurm", "batch", "SPIRES"]
+keywords = ["snow", "remote sensing", "slurm", "batch", "SPIRES"]
 
-# Batch builds on the metapackage's single-unit convenience kernel
-# (`spires.invert`) and parallelizes it across many units of work. The
-# scaling backends (dask, slurm) are heavy and opt-in.
 dependencies = [
-    "spires",
-    "xarray",
+    "pydantic>=2.7,<3",
 ]
 
 [project.optional-dependencies]
-dask = ["dask[distributed]"]
-slurm = ["dask-jobqueue"]
-all = ["dask[distributed]", "dask-jobqueue"]
 test = ["pytest"]
+
+[project.scripts]
+spires-batch = "spires_batch.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/SPIReS-Organization/spires-batch"

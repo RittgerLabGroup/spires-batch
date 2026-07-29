@@ -1,0 +1,79 @@
+{
+  "artifact_type": "spires_batch_request",
+  "schema_version": 1,
+  "run": {
+    "name": "vj109ga-h09v04-wy2026",
+    "sensor": "viirs",
+    "platform": "noaa20"
+  },
+  "selection": {
+    "tiles": [
+      "h09v04"
+    ],
+    "water_years": [
+      2026
+    ],
+    "dates": []
+  },
+  "steps": [
+    "invert",
+    "albedo"
+  ],
+  "inputs": {
+    "files": [
+      {
+        "role": "lut",
+        "name": "inversion_lut",
+        "path": "/pl/active/rittger_ops/example/lookups/inversion.nc"
+      },
+      {
+        "role": "ancillary",
+        "name": "canopy_fraction",
+        "path": "/pl/active/rittger_ops/example/ancillary/h09v04_canopy.tif",
+        "tile": "h09v04"
+      }
+    ],
+    "roots": [
+      {
+        "adapter": "curc",
+        "role": "reflectance",
+        "path": "/pl/active/rittger_ops/example/vj109ga.002",
+        "pattern": "**/VJ109GA.A*.h09v04.*.h5"
+      }
+    ]
+  },
+  "r0": {
+    "mode": "existing",
+    "artifacts": [
+      {
+        "id": "r0_20250601_20250930",
+        "path": "/pl/active/rittger_ops/example/r0/noaa20/h09v04/r0_20250601_20250930.nc",
+        "tile": "h09v04",
+        "water_year": 2026
+      }
+    ]
+  },
+  "science": {
+    "invert": {},
+    "albedo": {}
+  },
+  "output": {
+    "root": "/pl/active/rittger_ops/example/spires-products",
+    "existing_file_handling": "write_new_file",
+    "existing_output_policy": "error"
+  },
+  "execution": {
+    "profile": "blanca-snow",
+    "max_concurrent_tasks": 20,
+    "max_auto_retry_count": 3,
+    "staging": {
+      "enabled": true,
+      "root": "/scratch/alpine/ropa5718/spires-batch/input-cache",
+      "verification": "stat",
+      "reuse_valid": true
+    }
+  },
+  "preflight": {
+    "metadata_check": "sample"
+  }
+}
