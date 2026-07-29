@@ -31,11 +31,8 @@ jobs:
           python -m pip install --upgrade pip build
           python -m build
 
-      # Scaffolding package: no tests yet, and it depends on the `spires`
-      # metapackage (which pulls the compiled spires-inversion) — not on PyPI.
-      # Install without deps so CI validates packaging + import. Replace with a
-      # full ".[test]" + pytest run once real code and tests land.
-      - name: Install (no deps) + import smoke test
+      - name: Install + import smoke test
         run: |
-          pip install --no-deps dist/*.whl
+          pip install dist/*.whl
+          python -m pip check
           python -c "import spires_batch; print('spires_batch', spires_batch.__version__)"
