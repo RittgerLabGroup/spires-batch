@@ -7,7 +7,7 @@ name = "spires-batch"
 dynamic = ["version"]  # version derived from git tags via setuptools_scm
 description = "SPIReS batch processing: run the retrieval at scale over stacks of granules and spacetime cubes"
 readme = { file = "README.md", content-type = "text/markdown" }
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Niklas Griessbaum" }]
 keywords = ["snow", "remote sensing", "slurm", "batch", "SPIRES"]
