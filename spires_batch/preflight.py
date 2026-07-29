@@ -112,6 +112,7 @@ def _inventory_issues(
 
     output_owner: dict[Path, str] = {}
     for task in task_list:
+        issues.extend(_task_input_issues(task))
         for output in task.outputs:
             previous = output_owner.get(output.path)
             if previous is not None:
@@ -153,6 +154,94 @@ def _inventory_issues(
                         task_id=task.task_id,
                     )
                 )
+    return issues
+
+
+def _task_input_issues(task: Task) -> list[PreflightIssue]:
+    issues: list[PreflightIssue] = []
+
+    def require_count(
+        role: InputRole,
+        *,
+        name: str | None = None,
+        count: int = 1,
+    ) -> None:
+        matches = [
+            item
+            for item in task.inputs
+            if item.role == role and (name is None or item.name == name)
+        ]
+        if len(matches) == count:
+            return
+        label = role.value if name is None else f"{role.value}:{name}"
+        issues.append(
+            PreflightIssue(
+                layer=CheckLayer.INVENTORY,
+                severity=CheckSeverity.ERROR,
+                code="task_input_cardinality",
+                message=(
+                    f"task {task.task_id!r} requires exactly {count} {label} "
+                    f"input(s), found {len(matches)}"
+                ),
+                task_id=task.task_id,
+            )
+        )
+
+    if Stage.BUILD_R0 in task.stages:
+        sources = [item for item in task.inputs if item.role == InputRole.R0_SOURCE]
+        if not sources:
+            issues.append(
+                PreflightIssue(
+                    layer=CheckLayer.INVENTORY,
+                    severity=CheckSeverity.ERROR,
+                    code="missing_task_input",
+                    message=(
+                        f"task {task.task_id!r} requires at least one r0_source input"
+                    ),
+                    task_id=task.task_id,
+                )
+            )
+
+    if Stage.INVERT in task.stages:
+        require_count(InputRole.REFLECTANCE)
+        require_count(InputRole.R0)
+        require_count(InputRole.LUT, name="inversion_lut")
+
+    if Stage.ALBEDO in task.stages:
+        if Stage.INVERT not in task.stages:
+            require_count(InputRole.RAW)
+        options = task.science.albedo
+        if options is None:
+            issues.append(
+                PreflightIssue(
+                    layer=CheckLayer.SEMANTIC,
+                    severity=CheckSeverity.ERROR,
+                    code="missing_stage_science",
+                    message=f"task {task.task_id!r} has no albedo science options",
+                    task_id=task.task_id,
+                )
+            )
+        else:
+            if options.apply_canopy_correction:
+                require_count(InputRole.ANCILLARY, name="canopy_fraction")
+            if options.apply_ice_adjustment:
+                require_count(InputRole.ANCILLARY, name="ice_fraction")
+            if options.calculate_albedo:
+                require_count(InputRole.LUT, name="albedo_lookup")
+                require_count(InputRole.ANCILLARY, name="dem")
+                require_count(InputRole.ANCILLARY, name="slope")
+                require_count(InputRole.ANCILLARY, name="aspect")
+            if options.calculate_delta_vis or options.calculate_radiative_forcing:
+                require_count(InputRole.LUT, name="forcing_lookup")
+
+    named_roles = {InputRole.LUT, InputRole.ANCILLARY, InputRole.MASK}
+    keys = {
+        (item.role, item.name)
+        for item in task.inputs
+        if item.role in named_roles
+    }
+    for role, name in sorted(keys, key=lambda item: (item[0].value, item[1] or "")):
+        require_count(role, name=name)
     return issues
 
 

@@ -19,6 +19,7 @@ from spires_batch.models import (
     WorkflowEvent,
 )
 from spires_batch.planner import deterministic_plan_payload
+from spires_batch.science import validate_scientific_outputs
 from spires_batch.serialization import sha256_digest
 
 
@@ -52,7 +53,7 @@ class Summary:
 
 
 def validate_nonempty_outputs(task: Task) -> tuple[bool, str]:
-    """Lightweight Phase A validator; stage validators replace it in Phase C/D."""
+    """Compatibility validator for callers that explicitly request existence only."""
     missing = [
         str(output.path)
         for output in task.outputs
@@ -95,7 +96,7 @@ def summarize(
     plan: ResolvedPlan,
     attempts: Iterable[TaskAttempt],
     *,
-    output_validator: OutputValidator = validate_nonempty_outputs,
+    output_validator: OutputValidator = validate_scientific_outputs,
 ) -> Summary:
     by_task: dict[str, list[TaskAttempt]] = defaultdict(list)
     for attempt in attempts:

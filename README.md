@@ -5,8 +5,11 @@
 dates. It turns a strict JSON request into an immutable, preflighted task
 manifest that can be inspected serially or rendered as direct Slurm arrays.
 
-Phase A implements planning and recovery foundations. Scientific stage
-execution is intentionally not connected yet.
+Phase A planning and recovery foundations are complete. Phase D connects
+manifest-backed existing-R0 inversion, fused inversion/postprocessing,
+standalone full-product postprocessing, atomic persistence, and scientific
+output validation. R0 recipe identifiers and standalone postprocessing of
+`results_subset` inputs remain explicit integration decisions.
 
 ## Installed capabilities
 
@@ -15,15 +18,20 @@ execution is intentionally not connected yet.
 - Explicit-file and configuration-driven CURC discovery.
 - Four-layer schema, semantic, inventory, and metadata preflight.
 - Optional validated staging from authoritative storage to shared scratch.
-- Dry-run and executor-neutral serial backends.
+- Dry-run and scientific serial execution backends.
 - Direct Blanca `sbatch` rendering without submission.
 - Structured JSON Lines task events, output-derived status, retry manifests,
   tile summaries, and run summaries.
 - Persistent duplicate-output reservations and auditable cleanup.
+- Typed scene-preparation, clustering, inversion, and postprocessing options.
+- Reopened-product validation, explicit output reuse, and retry
+  classification.
 
-The package does not import the temporary batch-manifest types in `spires-io`.
-Scientific packages remain responsible for scientific loading, computation,
-and persisted-product validation.
+The executor translates resolved batch tasks directly into the current public
+`spires-io`, `spires-inversion`, and `spires-postprocess` APIs. It does not use
+or import the older `spires-io` manifest item types. Scientific packages remain
+responsible for scientific loading, computation, and persisted-product
+validation.
 
 ## Installation
 
@@ -31,8 +39,10 @@ and persisted-product validation.
 pip install spires-batch
 ```
 
-The Phase A core depends only on Pydantic. Scientific package dependencies will
-be connected directly when the Phase D executor is implemented.
+The planning core depends only on Pydantic. During coordinated Phase D
+development the scientific stack is supplied by sibling editable installs.
+Stable scientific dependency references will be added after the component
+branches merge; temporary branch references are not added to package metadata.
 
 ### Coordinated Phase D development
 
@@ -85,7 +95,37 @@ one sensor/platform combination:
   },
   "steps": ["invert", "albedo"],
   "inputs": {
-    "files": [],
+    "files": [
+      {
+        "role": "lut",
+        "name": "inversion_lut",
+        "path": "/exact/path/reflectance-lut.nc"
+      },
+      {
+        "role": "lut",
+        "name": "albedo_lookup",
+        "path": "/exact/path/albedo-lut.nc"
+      },
+      {
+        "role": "ancillary",
+        "name": "dem",
+        "path": "/exact/path/h09v04-dem.tif",
+        "tile": "h09v04",
+        "metadata": {"units": "m"}
+      },
+      {
+        "role": "ancillary",
+        "name": "slope",
+        "path": "/exact/path/h09v04-slope.tif",
+        "tile": "h09v04"
+      },
+      {
+        "role": "ancillary",
+        "name": "aspect",
+        "path": "/exact/path/h09v04-aspect.tif",
+        "tile": "h09v04"
+      }
+    ],
     "roots": [
       {
         "adapter": "curc",
@@ -105,6 +145,16 @@ one sensor/platform combination:
         "water_year": 2026
       }
     ]
+  },
+  "science": {
+    "invert": {
+      "algorithm": 6,
+      "max_eval": 200,
+      "n_workers": 1
+    },
+    "albedo": {
+      "calculate_albedo": true
+    }
   },
   "output": {
     "root": "/product/root",
@@ -127,6 +177,25 @@ spires-batch schema resolved-plan
 
 Unknown fields are rejected. Relative paths are resolved relative to the
 request file.
+
+Scientific context files use stable names:
+
+- LUTs: `inversion_lut`, `albedo_lookup`, and `forcing_lookup`.
+- Ancillary layers: `dem`, `slope`, `aspect`, `skyview`,
+  `canopy_fraction`, and `ice_fraction`.
+- Masks: `cloud_mask`, `water_mask`, `ice_mask`, and `playa_mask`.
+
+Names are validated during request loading, and each resolved task must contain
+exactly one copy of every context input required by its selected operations.
+If `science.invert.preparation.bands` is omitted, execution derives the ordered
+band set from a labeled R0 product. Positional GeoTIFF R0 bands require an
+explicit band list. The executor then selects those exact bands, in scene
+order, from the canonical master reflectance LUT.
+
+Source-reader metadata is normalized only at the persistence boundary: HDF5
+dimension-scale bookkeeping is discarded, while a source `_FillValue` is
+retained as `source_fill_value`. This prevents source-container internals from
+colliding with the canonical grouped NetCDF representation.
 
 ## Stages and artifacts
 
@@ -236,6 +305,21 @@ manifest records:
 
 Hashes are operational identifiers and do not appear in scientific filenames.
 
+## Serial scientific execution
+
+Execute the same immutable task manifest used by dry-run and Slurm rendering:
+
+```bash
+spires-batch execute resolved-plan.json --events-dir task-events
+```
+
+Tasks run in dependency order. Existing outputs are reused only under
+`existing_output_policy: reuse_valid` and only after stage-specific scientific
+validation. New and updated raw products are reopened and sample-validated
+before a success event is written. Deterministic configuration and contract
+failures are separated from retryable filesystem, timeout, and resource
+failures.
+
 ## Slurm rendering
 
 ```bash
@@ -244,8 +328,9 @@ spires-batch render-slurm resolved-plan.json --output-dir slurm-preview
 
 This writes strict dependency array scripts and a `submit.sh` preview using
 `slurm/blanca`, the selected partition, and the `spipy14` environment. It never
-submits a job. The rendered task entry point remains deliberately unavailable
-until Phase D connects the scientific executor.
+submits a job. Rendered arrays invoke the same scientific executor used by
+serial execution. Operational submission and reservation ownership checks
+remain Phase E work.
 
 ## Status and retries
 
@@ -268,18 +353,18 @@ Only transient failures below the configured retry cap enter a retry manifest.
 
 ## Output reservations
 
-Before actual serial execution or Slurm submission, each output is reserved on
-shared storage. A second run targeting the same path fails before execution.
-Dry runs only diagnose conflicts:
+The reservation store can diagnose and protect shared output paths. Automatic
+acquisition and ownership checks around submission and execution remain Phase E
+work. Preview current conflicts with:
 
 ```bash
 spires-batch reservations diagnose resolved-plan.json --state-root /product/root
 spires-batch reservations list --state-root /product/root
 ```
 
-After an output is reopened and validated, completion is recorded in the task
-history and the completed reservation is removed automatically. A recovery
-command previews completed leftovers and requires `--apply` to remove them:
+The store supports validated completion cleanup once Phase E wraps execution
+with reservation ownership. A recovery command previews completed leftovers
+and requires `--apply` to remove them:
 
 ```bash
 spires-batch reservations prune \

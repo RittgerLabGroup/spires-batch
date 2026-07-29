@@ -24,6 +24,7 @@ from spires_batch.models import (
     R0Mode,
     Stage,
     Task,
+    TaskScienceConfig,
 )
 from spires_batch.preflight import PreflightFailedError, run_preflight
 from spires_batch.serialization import sha256_digest
@@ -109,6 +110,7 @@ def _make_task(
     acquisition_date: date | None,
     item_water_year: int | None,
     r0_id: str | None,
+    r0_recipe: str | None = None,
     depends_on: tuple[str, ...] = (),
 ) -> Task:
     resolved_inputs = tuple(
@@ -123,6 +125,7 @@ def _make_task(
         "date": acquisition_date.isoformat() if acquisition_date else None,
         "water_year": item_water_year,
         "r0_id": r0_id,
+        "r0_recipe": r0_recipe,
         "inputs": [
             {
                 "role": item.role.value,
@@ -137,6 +140,7 @@ def _make_task(
                 "path": str(output.path),
                 "content": output.content,
                 "existing_file_handling": output.existing_file_handling.value,
+                "existing_output_policy": output.existing_output_policy.value,
                 "product_contents": (
                     None
                     if output.product_contents is None
@@ -146,10 +150,13 @@ def _make_task(
             for output in outputs
         ],
     }
-    science = {
-        stage.value: getattr(request.science, stage.value)
-        for stage in stages
-    }
+    science = TaskScienceConfig(
+        **{
+            stage.value: getattr(request.science, stage.value)
+            for stage in stages
+        }
+    )
+    payload["science"] = science.model_dump(mode="json", exclude_none=True)
     return Task(
         task_id=_task_id(payload),
         stages=stages,
@@ -160,6 +167,7 @@ def _make_task(
         date=acquisition_date,
         water_year=item_water_year,
         r0_id=r0_id,
+        r0_recipe=r0_recipe,
         inputs=resolved_inputs,
         outputs=outputs,
         depends_on=depends_on,
@@ -308,12 +316,14 @@ def build_tasks(
                         path=output_path,
                         content="r0",
                         existing_file_handling=ExistingFileHandling.WRITE_NEW_FILE,
+                        existing_output_policy=request.output.existing_output_policy,
                     ),
                 ),
                 tile=artifact.tile,
                 acquisition_date=None,
                 item_water_year=artifact.water_year,
                 r0_id=artifact.id,
+                r0_recipe=request.r0.recipe,
             )
             tasks.append(task)
             r0_task_by_path[output_path] = task.task_id
@@ -367,6 +377,7 @@ def build_tasks(
                         ),
                         content="raw",
                         existing_file_handling=ExistingFileHandling.WRITE_NEW_FILE,
+                        existing_output_policy=request.output.existing_output_policy,
                         product_contents=request.output.product_contents,
                     ),
                 ),
@@ -374,6 +385,7 @@ def build_tasks(
                 acquisition_date=reflectance.date,
                 item_water_year=reflectance.water_year,
                 r0_id=artifact.id,
+                r0_recipe=request.r0.recipe,
                 depends_on=dependencies,
             )
             tasks.append(task)
@@ -420,6 +432,7 @@ def build_tasks(
                         path=output_path,
                         content="raw",
                         existing_file_handling=request.output.existing_file_handling,
+                        existing_output_policy=request.output.existing_output_policy,
                         product_contents=request.output.product_contents,
                     ),
                 ),
@@ -453,7 +466,15 @@ def deterministic_plan_payload(plan: ResolvedPlan) -> dict[str, Any]:
 
 def _software_versions() -> dict[str, str]:
     versions: dict[str, str] = {}
-    for distribution in ("spires-batch", "pydantic"):
+    for distribution in (
+        "spires-batch",
+        "spires-contract",
+        "spires-io",
+        "spires-r0",
+        "spires-inversion",
+        "spires-postprocess",
+        "pydantic",
+    ):
         try:
             versions[distribution] = importlib.metadata.version(distribution)
         except importlib.metadata.PackageNotFoundError:

@@ -71,8 +71,7 @@ class DryRunBackend:
 class SerialBackend:
     """Run tasks in dependency order through an injected scientific executor.
 
-    Phase A deliberately supplies no scientific executor. Phase D can inject
-    one without changing plan or attempt models.
+    The Phase D executor uses this unchanged Phase A dependency-order boundary.
     """
 
     def execute(

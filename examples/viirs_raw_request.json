@@ -27,9 +27,29 @@
         "path": "/pl/active/rittger_ops/example/lookups/inversion.nc"
       },
       {
+        "role": "lut",
+        "name": "albedo_lookup",
+        "path": "/pl/active/rittger_ops/example/lookups/albedo.nc"
+      },
+      {
         "role": "ancillary",
-        "name": "canopy_fraction",
-        "path": "/pl/active/rittger_ops/example/ancillary/h09v04_canopy.tif",
+        "name": "dem",
+        "path": "/pl/active/rittger_ops/example/ancillary/h09v04_dem.tif",
+        "tile": "h09v04",
+        "metadata": {
+          "units": "m"
+        }
+      },
+      {
+        "role": "ancillary",
+        "name": "slope",
+        "path": "/pl/active/rittger_ops/example/ancillary/h09v04_slope.tif",
+        "tile": "h09v04"
+      },
+      {
+        "role": "ancillary",
+        "name": "aspect",
+        "path": "/pl/active/rittger_ops/example/ancillary/h09v04_aspect.tif",
         "tile": "h09v04"
       }
     ],
@@ -54,8 +74,15 @@
     ]
   },
   "science": {
-    "invert": {},
-    "albedo": {}
+    "invert": {
+      "algorithm": 6,
+      "max_eval": 200,
+      "apply_valid_inversion_mask": true,
+      "n_workers": 1
+    },
+    "albedo": {
+      "calculate_albedo": true
+    }
   },
   "output": {
     "root": "/pl/active/rittger_ops/example/spires-products",

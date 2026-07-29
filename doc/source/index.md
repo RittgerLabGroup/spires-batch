@@ -3,19 +3,27 @@
 `spires-batch` is the operational planning and recovery layer for processing
 many SPIReS tiles and dates.
 
-Phase A is implemented:
+Phase A foundations and the independent Phase D daily executor slice are
+implemented:
 
 - strict versioned JSON requests;
 - immutable resolved task manifests;
 - explicit and CURC discovery;
 - schema, semantic, inventory, and metadata preflight;
 - validated shared-scratch staging;
-- dry-run, serial, and direct Slurm-rendering foundations;
-- structured status, retries, summaries, and output reservations.
+- dry-run, scientific serial execution, and direct Slurm rendering;
+- structured status, retries, summaries, and output reservations;
+- typed preparation, clustering, inversion, and postprocessing options;
+- atomic raw-product persistence and reopened scientific validation.
 
-Scientific stage execution is connected later in Phase D. The `interpolate`
-stage is represented by the schema and generic task model but intentionally
-rejected until Phase F defines temporal windows and dependencies.
+Existing-R0 inversion and full-product postprocessing use the current public
+scientific APIs directly rather than the older `spires-io` manifest item
+reader. Scene bands are explicitly configured or derived from labeled R0
+products, then selected in order from the master reflectance LUT. R0 recipe
+identifiers and standalone `results_subset` postprocessing remain integration
+decisions. The `interpolate` stage is represented by the schema and generic
+task model but intentionally rejected until Phase F defines temporal windows
+and dependencies.
 
 ## Typical planning flow
 
@@ -24,6 +32,7 @@ spires-batch validate request.json
 spires-batch plan request.json --output resolved-plan.json
 spires-batch dry-run resolved-plan.json
 spires-batch stage resolved-plan.json
+spires-batch execute resolved-plan.json --events-dir task-events
 spires-batch render-slurm resolved-plan.json --output-dir slurm-preview
 ```
 

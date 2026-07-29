@@ -44,7 +44,7 @@ PRODUCT_TO_SENSOR_PLATFORM = {
 
 
 class FrozenModel(BaseModel):
-    """Strict immutable base for every serialized Phase A model."""
+    """Strict immutable base for every serialized batch model."""
 
     model_config = ConfigDict(
         extra="forbid",
@@ -273,6 +273,26 @@ class InputFileConfig(FrozenModel):
     def normalize_product(cls, value: str | None) -> str | None:
         return None if value is None else _normalize_token(value)
 
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if not re.fullmatch(r"[a-z][a-z0-9_]*", normalized):
+            raise ValueError(
+                "input name must begin with a letter and contain only lowercase "
+                "letters, numbers, and underscores"
+            )
+        return normalized
+
+    @model_validator(mode="after")
+    def require_named_context(self) -> "InputFileConfig":
+        if self.role in {InputRole.ANCILLARY, InputRole.LUT, InputRole.MASK}:
+            if self.name is None:
+                raise ValueError(f"{self.role.value} inputs require an explicit name")
+        return self
+
 
 class DiscoveryRootConfig(FrozenModel):
     adapter: str = "curc"
@@ -296,6 +316,26 @@ class DiscoveryRootConfig(FrozenModel):
         if not normalized:
             raise ValueError("discovery adapter cannot be empty")
         return normalized
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if not re.fullmatch(r"[a-z][a-z0-9_]*", normalized):
+            raise ValueError(
+                "discovery input name must begin with a letter and contain only "
+                "lowercase letters, numbers, and underscores"
+            )
+        return normalized
+
+    @model_validator(mode="after")
+    def require_named_context(self) -> "DiscoveryRootConfig":
+        if self.role in {InputRole.ANCILLARY, InputRole.LUT, InputRole.MASK}:
+            if self.name is None:
+                raise ValueError(f"{self.role.value} discovery roots require a name")
+        return self
 
 
 class InputsConfig(FrozenModel):
@@ -369,11 +409,182 @@ class R0Config(FrozenModel):
         return self
 
 
+class ScenePreparationConfig(FrozenModel):
+    bands: tuple[str, ...] | None = None
+    max_sensor_zenith: float = Field(default=65.0, ge=0.0, le=90.0)
+    max_solar_zenith: float = Field(default=85.0, ge=0.0, le=90.0)
+    min_obs_1km: int = Field(default=1, ge=1)
+    min_obs_500m: int = Field(default=1, ge=1)
+    water_mask_values: tuple[int, ...] = (0, 2, 3, 4, 5, 6, 7)
+    mask_water_using_reflectance_qf: bool = True
+    mask_water_using_external_file: bool = True
+    mask_low_reflectance_for_inversion: bool = False
+    low_reflectance_threshold: float = Field(default=0.1, ge=0.0)
+    cloud_mask_var: str = "mask_cloud"
+    cloud_shadow_mask_var: str = "mask_cloud_shadow"
+    water_mask_var: str | None = None
+    ice_mask_var: str | None = None
+    playa_mask_var: str | None = None
+
+    @field_validator("bands", mode="before")
+    @classmethod
+    def normalize_bands(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        normalized = tuple(str(item).strip().upper() for item in value)
+        if not normalized:
+            raise ValueError("science.invert.preparation.bands must not be empty")
+        if len(normalized) != len(set(normalized)):
+            raise ValueError(
+                "science.invert.preparation.bands contains duplicate bands"
+            )
+        return normalized
+
+    @field_validator(
+        "cloud_mask_var",
+        "cloud_shadow_mask_var",
+        "water_mask_var",
+        "ice_mask_var",
+        "playa_mask_var",
+    )
+    @classmethod
+    def validate_variable_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("mask variable names must not be empty")
+        return normalized
+
+
+class ClusteringScienceConfig(FrozenModel):
+    enabled: bool = False
+    features: tuple[str, ...] = (
+        "reflectance",
+        "background",
+        "solar_zenith",
+    )
+    representative_method: Literal["cluster_mean", "first_pixel"] = "cluster_mean"
+    reflectance_tol: float | tuple[float, ...] = 0.02
+    background_tol: float | tuple[float, ...] = 0.02
+    solar_zenith_tol: float | tuple[float, ...] = 2.0
+    cosine_illumination_tol: float | tuple[float, ...] = 0.02
+
+    @field_validator("features", mode="before")
+    @classmethod
+    def normalize_features(cls, value: Any) -> Any:
+        normalized = tuple(str(item).strip().lower() for item in value)
+        supported = {
+            "reflectance",
+            "background",
+            "solar_zenith",
+            "cosine_illumination",
+        }
+        if not normalized:
+            raise ValueError("science.invert.clustering.features must not be empty")
+        unknown = sorted(set(normalized) - supported)
+        if unknown:
+            raise ValueError(
+                f"unsupported clustering features {unknown}; "
+                f"supported features are {sorted(supported)}"
+            )
+        if len(normalized) != len(set(normalized)):
+            raise ValueError(
+                "science.invert.clustering.features contains duplicates"
+            )
+        return normalized
+
+    @field_validator(
+        "reflectance_tol",
+        "background_tol",
+        "solar_zenith_tol",
+        "cosine_illumination_tol",
+    )
+    @classmethod
+    def validate_tolerance(
+        cls,
+        value: float | tuple[float, ...],
+    ) -> float | tuple[float, ...]:
+        values = (value,) if isinstance(value, (int, float)) else tuple(value)
+        if not values or any(float(item) <= 0 for item in values):
+            raise ValueError("clustering tolerances must be strictly positive")
+        return value
+
+
+class R0BuildScienceConfig(FrozenModel):
+    preparation: ScenePreparationConfig = Field(
+        default_factory=ScenePreparationConfig
+    )
+    max_sensor_zenith: float = Field(default=30.0, ge=0.0, le=90.0)
+    ndvi_tie_epsilon: float = Field(default=0.02, ge=0.0)
+    min_blue_reflectance: float = Field(default=0.10, ge=0.0)
+    show_progress: bool = False
+    chunks: dict[str, int] | None = None
+
+    @field_validator("chunks")
+    @classmethod
+    def validate_chunks(cls, value: dict[str, int] | None) -> dict[str, int] | None:
+        if value is not None and any(int(size) < 1 for size in value.values()):
+            raise ValueError("science.build_r0.chunks values must be positive")
+        return value
+
+
+class InvertScienceConfig(FrozenModel):
+    preparation: ScenePreparationConfig = Field(
+        default_factory=ScenePreparationConfig
+    )
+    clustering: ClusteringScienceConfig = Field(
+        default_factory=ClusteringScienceConfig
+    )
+    algorithm: int = Field(default=6, ge=1, le=6)
+    max_eval: int | None = Field(default=None, ge=1)
+    initial_grain_radius_um: float = Field(default=250.0, gt=0.0)
+    apply_valid_inversion_mask: bool = True
+    n_workers: int = Field(default=1, ge=1)
+
+
+class AlbedoScienceConfig(FrozenModel):
+    apply_canopy_correction: bool = False
+    apply_ice_adjustment: bool = False
+    calculate_albedo: bool = True
+    calculate_delta_vis: bool = False
+    calculate_radiative_forcing: bool = False
+    average_vertical_crown_radius: float = Field(default=4.644, gt=0.0)
+    average_horizontal_crown_radius: float = Field(default=1.72, gt=0.0)
+
+    @model_validator(mode="after")
+    def require_operation(self) -> "AlbedoScienceConfig":
+        if not any(
+            (
+                self.apply_canopy_correction,
+                self.apply_ice_adjustment,
+                self.calculate_albedo,
+                self.calculate_delta_vis,
+                self.calculate_radiative_forcing,
+            )
+        ):
+            raise ValueError(
+                "science.albedo must enable at least one postprocessing operation"
+            )
+        return self
+
+
 class ScienceConfig(FrozenModel):
-    build_r0: dict[str, Any] = Field(default_factory=dict)
-    invert: dict[str, Any] = Field(default_factory=dict)
-    albedo: dict[str, Any] = Field(default_factory=dict)
-    interpolate: dict[str, Any] = Field(default_factory=dict)
+    build_r0: R0BuildScienceConfig = Field(default_factory=R0BuildScienceConfig)
+    invert: InvertScienceConfig = Field(default_factory=InvertScienceConfig)
+    albedo: AlbedoScienceConfig = Field(default_factory=AlbedoScienceConfig)
+
+
+class TaskScienceConfig(FrozenModel):
+    build_r0: R0BuildScienceConfig | None = None
+    invert: InvertScienceConfig | None = None
+    albedo: AlbedoScienceConfig | None = None
+
+    @model_validator(mode="after")
+    def require_selected_science(self) -> "TaskScienceConfig":
+        if not any((self.build_r0, self.invert, self.albedo)):
+            raise ValueError("resolved task science must contain at least one stage")
+        return self
 
 
 class OutputConfig(FrozenModel):
@@ -451,6 +662,44 @@ class RequestConfig(FrozenModel):
         steps = set(self.steps)
         roles = {item.role for item in self.inputs.files}
         roles.update(root.role for root in self.inputs.roots)
+        named_inputs = {
+            (item.role, item.name)
+            for item in (*self.inputs.files, *self.inputs.roots)
+            if item.name is not None
+        }
+
+        supported_names = {
+            InputRole.LUT: {
+                "inversion_lut",
+                "albedo_lookup",
+                "forcing_lookup",
+            },
+            InputRole.ANCILLARY: {
+                "dem",
+                "slope",
+                "aspect",
+                "skyview",
+                "canopy_fraction",
+                "ice_fraction",
+            },
+            InputRole.MASK: {
+                "cloud_mask",
+                "water_mask",
+                "ice_mask",
+                "playa_mask",
+            },
+        }
+        for role, supported in supported_names.items():
+            unknown = sorted(
+                name
+                for item_role, name in named_inputs
+                if item_role == role and name not in supported
+            )
+            if unknown:
+                raise ValueError(
+                    f"unsupported {role.value} input name(s) {unknown}; "
+                    f"supported names are {sorted(supported)}"
+                )
 
         if Stage.INTERPOLATE in steps:
             raise ValueError(
@@ -476,11 +725,47 @@ class RequestConfig(FrozenModel):
             raise ValueError(
                 "steps includes 'invert', but inputs has no 'reflectance' files or roots"
             )
+        if (
+            Stage.INVERT in steps
+            and (InputRole.LUT, "inversion_lut") not in named_inputs
+        ):
+            raise ValueError(
+                "steps includes 'invert', but inputs has no LUT named "
+                "'inversion_lut'"
+            )
         if Stage.ALBEDO in steps and Stage.INVERT not in steps and InputRole.RAW not in roles:
             raise ValueError(
                 "steps includes standalone 'albedo', but inputs has no existing 'raw' "
                 "files or roots"
             )
+        if Stage.ALBEDO in steps:
+            albedo = self.science.albedo
+            required_context: list[tuple[InputRole, str]] = []
+            if albedo.apply_canopy_correction:
+                required_context.append((InputRole.ANCILLARY, "canopy_fraction"))
+            if albedo.apply_ice_adjustment:
+                required_context.append((InputRole.ANCILLARY, "ice_fraction"))
+            if albedo.calculate_albedo:
+                required_context.extend(
+                    (
+                        (InputRole.LUT, "albedo_lookup"),
+                        (InputRole.ANCILLARY, "dem"),
+                        (InputRole.ANCILLARY, "slope"),
+                        (InputRole.ANCILLARY, "aspect"),
+                    )
+                )
+            if albedo.calculate_delta_vis or albedo.calculate_radiative_forcing:
+                required_context.append((InputRole.LUT, "forcing_lookup"))
+            missing_context = [
+                f"{role.value}:{name}"
+                for role, name in required_context
+                if (role, name) not in named_inputs
+            ]
+            if missing_context:
+                raise ValueError(
+                    "selected albedo operations require missing named inputs "
+                    f"{missing_context}"
+                )
         if (
             self.output.existing_file_handling == ExistingFileHandling.UPDATE_ATOMICALLY
             and not (Stage.ALBEDO in steps and Stage.INVERT not in steps)
@@ -526,6 +811,7 @@ class ExpectedOutput(FrozenModel):
     path: Path
     content: Literal["r0", "raw", "interpolate"]
     existing_file_handling: ExistingFileHandling
+    existing_output_policy: ExistingOutputPolicy = ExistingOutputPolicy.ERROR
     product_contents: ProductContents | None = None
 
     @model_validator(mode="after")
@@ -549,10 +835,11 @@ class Task(FrozenModel):
     date: Date | None = None
     water_year: int | None = None
     r0_id: str | None = None
+    r0_recipe: str | None = None
     inputs: tuple[ResolvedInput, ...] = ()
     outputs: tuple[ExpectedOutput, ...]
     depends_on: tuple[str, ...] = ()
-    science: dict[str, Any] = Field(default_factory=dict)
+    science: TaskScienceConfig
     resource_profile: str
 
 

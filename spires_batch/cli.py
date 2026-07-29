@@ -1,4 +1,4 @@
-"""Command-line interface for Phase A planning and operations."""
+"""Command-line interface for SPIReS batch planning and operations."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from typing import Sequence
 
 from pydantic import ValidationError
 
-from spires_batch.backends import DryRunBackend
-from spires_batch.events import read_event_logs
+from spires_batch.backends import DryRunBackend, SerialBackend
+from spires_batch.events import EventLog, read_event_logs, write_attempt
 from spires_batch.planner import plan_request
 from spires_batch.preflight import PreflightFailedError
 from spires_batch.reservations import ReservationStore
@@ -22,6 +22,7 @@ from spires_batch.serialization import (
     write_plan,
 )
 from spires_batch.slurm import render_slurm
+from spires_batch.science import ScientificExecutor
 from spires_batch.staging import execute_staging
 from spires_batch.status import (
     attempts_from_events,
@@ -30,7 +31,7 @@ from spires_batch.status import (
     tile_summaries,
     write_summary_files,
 )
-from spires_batch.models import RequestConfig, ResolvedPlan
+from spires_batch.models import RequestConfig, ResolvedPlan, TaskStatus
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -103,13 +104,23 @@ def _parser() -> argparse.ArgumentParser:
     retry.add_argument("--events-dir", type=Path, required=True)
     retry.add_argument("--output", "-o", type=Path, required=True)
 
+    execute = subparsers.add_parser(
+        "execute",
+        help="execute a preflighted manifest serially through the scientific stack",
+    )
+    execute.add_argument("manifest", type=Path)
+    execute.add_argument("--events-dir", type=Path, required=True)
+    execute.add_argument("--attempt", type=int, default=None)
+
     execute_task = subparsers.add_parser(
         "execute-task",
-        help="reserved Phase D entry point used by rendered Slurm arrays",
+        help="execute one indexed manifest task for a rendered Slurm array",
     )
     execute_task.add_argument("--manifest", type=Path, required=True)
     execute_task.add_argument("--task-index", type=Path, required=True)
     execute_task.add_argument("--array-index", type=int, required=True)
+    execute_task.add_argument("--events-dir", type=Path)
+    execute_task.add_argument("--attempt", type=int, default=None)
 
     reservations = subparsers.add_parser(
         "reservations",
@@ -276,6 +287,33 @@ def _command_retry(args: argparse.Namespace) -> int:
     return 0
 
 
+def _attempt_number(plan: ResolvedPlan, configured: int | None) -> int:
+    attempt = plan.retry_number + 1 if configured is None else configured
+    if attempt < 1:
+        raise ValueError("attempt number must be positive")
+    return attempt
+
+
+def _command_execute(args: argparse.Namespace) -> int:
+    plan = load_plan(args.manifest)
+    attempts = SerialBackend().execute(
+        plan,
+        ScientificExecutor(plan),
+        attempt_number=_attempt_number(plan, args.attempt),
+        log_directory=args.events_dir,
+    )
+    for attempt in attempts:
+        print(
+            f"{attempt.status.value:16} {attempt.task_id} "
+            f"{attempt.failure_code or '-'} {attempt.message or ''}".rstrip()
+        )
+    failed = any(
+        attempt.status not in {TaskStatus.SUCCEEDED, TaskStatus.LOADED_EXISTING}
+        for attempt in attempts
+    )
+    return 1 if failed else 0
+
+
 def _command_execute_task(args: argparse.Namespace) -> int:
     plan = load_plan(args.manifest)
     with args.task_index.open("r", encoding="utf-8") as stream:
@@ -288,9 +326,27 @@ def _command_execute_task(args: argparse.Namespace) -> int:
             f"array index {args.array_index} is outside 0..{len(task_ids) - 1}"
         )
     task_id = task_ids[args.array_index]
-    raise RuntimeError(
-        f"scientific executor is not connected in Phase A; task {task_id!r} was "
-        "resolved correctly but cannot yet execute"
+    task = next((item for item in plan.tasks if item.task_id == task_id), None)
+    if task is None:
+        raise ValueError(f"task index references unknown task {task_id!r}")
+    attempt = ScientificExecutor(plan)(
+        task,
+        _attempt_number(plan, args.attempt),
+    )
+    events_dir = args.events_dir or (args.task_index.parent / "events")
+    write_attempt(
+        EventLog(events_dir / f"{task.task_id}.jsonl"),
+        plan.run_id,
+        attempt,
+    )
+    print(
+        f"{attempt.status.value:16} {attempt.task_id} "
+        f"{attempt.failure_code or '-'} {attempt.message or ''}".rstrip()
+    )
+    return (
+        0
+        if attempt.status in {TaskStatus.SUCCEEDED, TaskStatus.LOADED_EXISTING}
+        else 1
     )
 
 
@@ -361,6 +417,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "render-slurm": _command_render_slurm,
         "summarize": _command_summarize,
         "retry-manifest": _command_retry,
+        "execute": _command_execute,
         "execute-task": _command_execute_task,
         "reservations": _command_reservations,
     }
