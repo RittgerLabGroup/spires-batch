@@ -19,11 +19,11 @@ implemented:
 Existing-R0 inversion and full-product postprocessing use the current public
 scientific APIs directly rather than the older `spires-io` manifest item
 reader. Scene bands are explicitly configured or derived from labeled R0
-products, then selected in order from the master reflectance LUT. R0 recipe
-identifiers and standalone `results_subset` postprocessing remain integration
-decisions. The `interpolate` stage is represented by the schema and generic
-task model but intentionally rejected until Phase F defines temporal windows
-and dependencies.
+products, then selected in order from the master reflectance LUT. R0 builds use
+the strict `viirs_summer_composite` and `modis_summer_composite` recipe names.
+Standalone `results_subset` postprocessing is rejected during preflight. The
+`interpolate` stage is represented by the schema and generic task model but
+intentionally rejected until Phase F defines temporal windows and dependencies.
 
 ## Typical planning flow
 

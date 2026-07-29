@@ -16,6 +16,7 @@ from spires_batch.models import (
     MetadataCheck,
     PreflightIssue,
     PreflightResult,
+    ProductContents,
     RequestConfig,
     ResolvedInput,
     Stage,
@@ -328,6 +329,61 @@ def _metadata_candidates(
     )
 
 
+def _persisted_product_contents(path: Path) -> str | None:
+    """Read the SPIReS root content marker without loading product arrays."""
+    try:
+        import h5py
+    except ImportError:
+        return None
+    with h5py.File(path, "r") as source:
+        value = source.attrs.get("spires_product_contents")
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        return value.decode("utf-8")
+    item = getattr(value, "item", None)
+    if item is not None:
+        value = item()
+        if isinstance(value, bytes):
+            return value.decode("utf-8")
+    return str(value)
+
+
+def _standalone_product_policy_issues(
+    tasks: tuple[Task, ...],
+) -> list[PreflightIssue]:
+    issues: list[PreflightIssue] = []
+    for task in tasks:
+        if task.stages != (Stage.ALBEDO,):
+            continue
+        raw_inputs = [
+            item for item in task.inputs if item.role == InputRole.RAW
+        ]
+        if len(raw_inputs) != 1 or not raw_inputs[0].source_path.is_file():
+            continue
+        try:
+            contents = _persisted_product_contents(raw_inputs[0].source_path)
+        except Exception:
+            # Generic metadata inspection reports unreadable containers.
+            continue
+        if contents == ProductContents.RESULTS_SUBSET.value:
+            issues.append(
+                PreflightIssue(
+                    layer=CheckLayer.METADATA,
+                    severity=CheckSeverity.ERROR,
+                    code="standalone_results_subset_unsupported",
+                    message=(
+                        "standalone albedo requires a full raw product; "
+                        "results_subset inputs omit required scene and ancillary "
+                        "context"
+                    ),
+                    path=raw_inputs[0].source_path,
+                    task_id=task.task_id,
+                )
+            )
+    return issues
+
+
 def _metadata_issues(
     inputs: tuple[ResolvedInput, ...],
     mode: MetadataCheck,
@@ -381,6 +437,7 @@ def run_preflight(
     started = started_at or datetime.now(timezone.utc)
     issues = _schema_and_semantic_issues(request)
     issues.extend(_inventory_issues(request, discovery, tasks))
+    issues.extend(_standalone_product_policy_issues(tasks))
     if not any(
         issue.severity == CheckSeverity.ERROR and issue.layer == CheckLayer.INVENTORY
         for issue in issues

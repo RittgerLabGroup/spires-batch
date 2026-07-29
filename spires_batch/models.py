@@ -87,6 +87,11 @@ class R0Mode(str, Enum):
     BUILD = "build"
 
 
+class R0Recipe(str, Enum):
+    VIIRS_SUMMER_COMPOSITE = "viirs_summer_composite"
+    MODIS_SUMMER_COMPOSITE = "modis_summer_composite"
+
+
 class InputRole(str, Enum):
     REFLECTANCE = "reflectance"
     R0 = "r0"
@@ -392,7 +397,7 @@ class R0ArtifactConfig(FrozenModel):
 
 class R0Config(FrozenModel):
     mode: R0Mode
-    recipe: str | None = None
+    recipe: R0Recipe | None = None
     artifacts: tuple[R0ArtifactConfig, ...]
 
     @model_validator(mode="after")
@@ -716,6 +721,15 @@ class RequestConfig(FrozenModel):
                 raise ValueError(
                     "steps includes 'build_r0', but inputs has no 'r0_source' files or roots"
                 )
+            expected_recipe = {
+                "viirs": R0Recipe.VIIRS_SUMMER_COMPOSITE,
+                "modis": R0Recipe.MODIS_SUMMER_COMPOSITE,
+            }[self.run.sensor]
+            if self.r0.recipe != expected_recipe:
+                raise ValueError(
+                    f"sensor {self.run.sensor!r} requires R0 recipe "
+                    f"{expected_recipe.value!r}"
+                )
         elif self.r0 is not None and self.r0.mode == R0Mode.BUILD:
             raise ValueError("r0.mode is 'build', but steps does not include 'build_r0'")
 
@@ -835,7 +849,7 @@ class Task(FrozenModel):
     date: Date | None = None
     water_year: int | None = None
     r0_id: str | None = None
-    r0_recipe: str | None = None
+    r0_recipe: R0Recipe | None = None
     inputs: tuple[ResolvedInput, ...] = ()
     outputs: tuple[ExpectedOutput, ...]
     depends_on: tuple[str, ...] = ()

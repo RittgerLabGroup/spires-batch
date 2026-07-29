@@ -8,8 +8,9 @@ manifest that can be inspected serially or rendered as direct Slurm arrays.
 Phase A planning and recovery foundations are complete. Phase D connects
 manifest-backed existing-R0 inversion, fused inversion/postprocessing,
 standalone full-product postprocessing, atomic persistence, and scientific
-output validation. R0 recipe identifiers and standalone postprocessing of
-`results_subset` inputs remain explicit integration decisions.
+output validation. R0 construction uses strict sensor-specific summer-composite
+recipes, and standalone postprocessing rejects compact `results_subset` inputs
+during preflight.
 
 ## Installed capabilities
 
@@ -232,6 +233,11 @@ change whether the product is `inversion_raw` or `postprocessed_raw`; fused
 `invert + albedo` tasks can write the latter directly, while standalone albedo
 with `update_atomically` transitions an existing raw file.
 
+Standalone albedo requires a `full` input product. Preflight rejects
+`results_subset` inputs because they intentionally omit the scene and ancillary
+context needed to calculate postprocessing products. Fused `invert + albedo`
+tasks may still write `results_subset` directly.
+
 The `interpolate` noun is reserved in schema version 1, but requests selecting
 it are rejected with `Interpolation not yet implemented`. Phase F will define
 its temporal windows and dependencies before the planner creates interpolation
@@ -240,6 +246,15 @@ tasks or `_interpolate.nc` artifacts.
 An existing R0 always has an explicit ID and path. Build requests likewise
 provide each desired output path; batch does not infer reference-year or water-
 year directory conventions.
+
+Build requests use exactly one of two recipes:
+
+- `viirs_summer_composite` for VIIRS runs;
+- `modis_summer_composite` for MODIS runs.
+
+Both dispatch to the same summer-composite workflow and typed science options;
+the sensor-specific public R0 API supplies the reflectance reader and canonical
+band definitions.
 
 ## Discovery and scratch staging
 

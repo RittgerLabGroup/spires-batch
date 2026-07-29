@@ -22,6 +22,7 @@ from spires_batch.models import (
     ResourceProfile,
     R0ArtifactConfig,
     R0Mode,
+    R0Recipe,
     Stage,
     Task,
     TaskScienceConfig,
@@ -110,7 +111,7 @@ def _make_task(
     acquisition_date: date | None,
     item_water_year: int | None,
     r0_id: str | None,
-    r0_recipe: str | None = None,
+    r0_recipe: R0Recipe | None = None,
     depends_on: tuple[str, ...] = (),
 ) -> Task:
     resolved_inputs = tuple(

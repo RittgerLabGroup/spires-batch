@@ -16,8 +16,10 @@ from spires_batch.models import (
     FailureClass,
     InputRole,
     ProductContents,
+    R0Recipe,
     ResolvedInput,
     ResolvedPlan,
+    ScenePreparationConfig,
     Stage,
     Task,
     TaskAttempt,
@@ -612,6 +614,82 @@ def _write_daily_product(plan: ResolvedPlan, task: Task, data) -> None:
         _close_data(data)
 
 
+def _build_r0(task: Task) -> None:
+    import spires_r0
+
+    if len(task.outputs) != 1 or task.outputs[0].content != "r0":
+        raise TaskExecutionError(
+            "R0 tasks require exactly one R0 output",
+            failure_code="output_cardinality",
+        )
+    options = task.science.build_r0
+    if options is None:
+        raise TaskExecutionError(
+            "build_r0 task has no resolved R0 science options",
+            failure_code="missing_stage_science",
+        )
+    expected_recipe = {
+        "viirs": R0Recipe.VIIRS_SUMMER_COMPOSITE,
+        "modis": R0Recipe.MODIS_SUMMER_COMPOSITE,
+    }.get(task.sensor)
+    if expected_recipe is None or task.r0_recipe != expected_recipe:
+        raise TaskExecutionError(
+            f"sensor {task.sensor!r} cannot execute R0 recipe "
+            f"{None if task.r0_recipe is None else task.r0_recipe.value!r}",
+            failure_code="r0_recipe_sensor_mismatch",
+        )
+    sources = [
+        item.execution_path
+        for item in task.inputs
+        if item.role == InputRole.R0_SOURCE
+    ]
+    if not sources:
+        raise TaskExecutionError(
+            "build_r0 task requires at least one r0_source input",
+            failure_code="input_cardinality",
+        )
+    for path in sources:
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"task input is unavailable at execution path: {path}"
+            )
+
+    default_preparation = ScenePreparationConfig()
+    if (
+        options.preparation.max_sensor_zenith
+        != default_preparation.max_sensor_zenith
+    ):
+        raise TaskExecutionError(
+            "R0 source preparation currently requires the public reader default "
+            "max_sensor_zenith=65; configure science.build_r0.max_sensor_zenith "
+            "for composite screening",
+            failure_code="unsupported_r0_preparation_option",
+        )
+    prepare_kwargs = options.preparation.model_dump(
+        exclude={"max_sensor_zenith"},
+        exclude_none=True,
+    )
+    builder = {
+        R0Recipe.VIIRS_SUMMER_COMPOSITE: spires_r0.build_viirs_r0_from_sources,
+        R0Recipe.MODIS_SUMMER_COMPOSITE: spires_r0.build_modis_r0_from_sources,
+    }[task.r0_recipe]
+    output = task.outputs[0]
+    result = builder(
+        sources,
+        r0_path=output.path,
+        overwrite=False,
+        show_progress=options.show_progress,
+        max_sensor_zenith=options.max_sensor_zenith,
+        ndvi_tie_epsilon=options.ndvi_tie_epsilon,
+        min_blue_reflectance=options.min_blue_reflectance,
+        chunks=options.chunks,
+        **prepare_kwargs,
+    )
+    close = getattr(result, "close", None)
+    if close is not None:
+        close()
+
+
 def _standalone_albedo(plan: ResolvedPlan, task: Task) -> None:
     import spires_io
     import xarray as xr
@@ -631,9 +709,8 @@ def _standalone_albedo(plan: ResolvedPlan, task: Task) -> None:
         )
     if metadata.product_contents == ProductContents.RESULTS_SUBSET.value:
         raise TaskExecutionError(
-            "standalone albedo over results_subset is awaiting an explicit "
-            "reconstruction or rejection policy",
-            failure_code="standalone_results_subset_policy_unresolved",
+            "standalone albedo does not support results_subset inputs",
+            failure_code="standalone_results_subset_unsupported",
         )
 
     data = spires_io.read_spires_data(
@@ -764,11 +841,8 @@ class ScientificExecutor:
                 )
 
             if task.stages == (Stage.BUILD_R0,):
-                raise TaskExecutionError(
-                    "build_r0 execution is awaiting the approved recipe identifiers",
-                    failure_code="r0_recipe_policy_unresolved",
-                )
-            if task.stages == (Stage.INVERT,):
+                _build_r0(task)
+            elif task.stages == (Stage.INVERT,):
                 _write_daily_product(self.plan, task, _invert(task))
             elif task.stages == (Stage.INVERT, Stage.ALBEDO):
                 _write_daily_product(
