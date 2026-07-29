@@ -27,11 +27,12 @@ Homepage = "https://github.com/SPIReS-Organization/spires-batch"
 Repository = "https://github.com/SPIReS-Organization/spires-batch"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
+include = ["spires_batch*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["."]
 
 [tool.setuptools_scm]
 version_scheme = "post-release"
