@@ -11,9 +11,9 @@ standalone full-product postprocessing, atomic persistence, and scientific
 output validation. R0 construction uses strict sensor-specific summer-composite
 recipes, and standalone postprocessing rejects compact `results_subset` inputs
 during preflight. The Phase E0 controlled serial exit gate passed on
-2026-08-01. Phase E1-E3 now provide audited preparation, reservation,
-test-only validation, and live Slurm submission with durable job identities;
-worker-side reservation terminalization remains Phase E4 work.
+2026-08-01. Phase E1-E4 now provide audited preparation, reservation,
+test-only validation, live Slurm submission with durable job identities, and
+worker-side ownership enforcement with outcome-derived reservation state.
 
 ## Installed capabilities
 
@@ -29,6 +29,9 @@ worker-side reservation terminalization remains Phase E4 work.
   reservation acquisition, and audited pre-submission rollback.
 - Non-mutating `sbatch --test-only` records and single-use live submission with
   durable group, job, array-element, and reservation identities.
+- Worker-side reservation verification immediately before scientific writes,
+  failed-state retention, and automatic cleanup after validated completion is
+  durably recorded.
 - Structured JSON Lines task events, output-derived status, retry manifests,
   tile summaries, and run summaries.
 - Persistent duplicate-output reservations and auditable cleanup.
@@ -401,6 +404,14 @@ attaches the base job and array index to every affected reservation, and writes
 immutable `scheduler-submission.json`. Each script carries an explicit Slurm
 cluster and a recoverable run/group comment.
 
+Submission-rendered workers load the immutable reservation set and match every
+task output against its run, plan, submission, group, cluster, base job, and
+array-element identities. Ownership is checked at worker startup and again
+immediately before a scientific write. The terminal task event is durably
+recorded before reservations transition: validated success and
+`loaded_existing` remove completed reservations after audit, while failures
+remain in audited `failed` state for explicit recovery or a later retry.
+
 If scheduler submission will not follow, roll back the unsubmitted set
 explicitly:
 
@@ -411,8 +422,7 @@ spires-batch submission rollback-reservations \
 ```
 
 Rollback prevalidates the complete set and refuses to remove anything if any
-reservation carries a Slurm job ID. Worker-side reservation ownership
-enforcement and terminal state transitions remain E4 work.
+reservation carries a Slurm job ID.
 
 ## Status and retries
 
@@ -436,9 +446,10 @@ Only transient failures below the configured retry cap enter a retry manifest.
 ## Output reservations
 
 The reservation store diagnoses and protects shared output paths. E2
-automatically acquires the complete submission set; E3 durably attaches
-scheduler identities. Worker-side ownership and terminal transitions remain
-E4 work. Preview current conflicts with:
+automatically acquires the complete submission set, E3 durably attaches
+scheduler identities, and E4 verifies those identities in workers before
+writes and derives reservation state from terminal task outcomes. Preview
+current conflicts with:
 
 ```bash
 spires-batch reservations diagnose resolved-plan.json --state-root /product/root

@@ -7,15 +7,21 @@ import hashlib
 import json
 import os
 import tempfile
+import time
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from collections.abc import Iterable
-from typing import Callable
 
 from spires_batch.models import (
     Reservation,
+    ReservationSet,
     ReservationState,
+    ResolvedPlan,
     SubmissionReservationIntent,
+    Task,
+    TaskAttempt,
+    TaskStatus,
 )
 from spires_batch.serialization import write_immutable_json
 
@@ -41,6 +47,10 @@ class ReservationBatchError(RuntimeError):
     ):
         self.rolled_back = rolled_back
         super().__init__(message)
+
+
+class WorkerReservationError(RuntimeError):
+    """A task worker cannot prove ownership of its planned outputs."""
 
 
 class ReservationStore:
@@ -439,3 +449,230 @@ class ReservationStore:
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
+
+
+@dataclass(frozen=True)
+class WorkerReservationGuard:
+    """Bind one worker task to its immutable and live reservation identities."""
+
+    reservation_set: ReservationSet
+    plan: ResolvedPlan
+    task: Task
+    group_id: str | None
+    cluster: str | None
+    job_id: str | None
+    array_task_id: str | None
+    attachment_timeout_seconds: float = 30.0
+
+    def _expected_reservations(self) -> tuple[Reservation, ...]:
+        if (
+            self.reservation_set.run_id != self.plan.run_id
+            or self.reservation_set.plan_digest != self.plan.plan_digest
+        ):
+            raise WorkerReservationError(
+                "reservation set does not belong to the supplied resolved plan"
+            )
+        known_task = next(
+            (item for item in self.plan.tasks if item.task_id == self.task.task_id),
+            None,
+        )
+        if known_task is None or known_task != self.task:
+            raise WorkerReservationError(
+                "worker task is not an exact member of the resolved plan"
+            )
+        if not self.group_id:
+            raise WorkerReservationError("task index has no submission group identity")
+        if not self.cluster:
+            raise WorkerReservationError("task index has no Slurm cluster identity")
+        if self.job_id is None or not self.job_id.isdigit():
+            raise WorkerReservationError(
+                f"worker has invalid Slurm job identity {self.job_id!r}"
+            )
+        if self.array_task_id is None or not self.array_task_id.isdigit():
+            raise WorkerReservationError(
+                "worker has invalid Slurm array identity "
+                f"{self.array_task_id!r}"
+            )
+
+        expected = tuple(
+            reservation
+            for reservation in self.reservation_set.reservations
+            if reservation.task_id == self.task.task_id
+        )
+        expected_paths = {reservation.output_path for reservation in expected}
+        task_paths = {output.path for output in self.task.outputs}
+        if not expected or expected_paths != task_paths:
+            raise WorkerReservationError(
+                "immutable reservation set does not exactly cover the worker outputs"
+            )
+        for reservation in expected:
+            if (
+                reservation.reservation_id
+                != ReservationStore.reservation_id(reservation.output_path)
+                or reservation.run_id != self.plan.run_id
+                or reservation.task_id != self.task.task_id
+                or reservation.config_digest != self.plan.config_digest
+                or reservation.plan_digest != self.plan.plan_digest
+                or reservation.submission_id != self.reservation_set.submission_id
+                or reservation.state != ReservationState.ACTIVE
+            ):
+                raise WorkerReservationError(
+                    "immutable reservation identity does not match the worker task: "
+                    f"{reservation.output_path}"
+                )
+        return tuple(sorted(expected, key=lambda item: str(item.output_path)))
+
+    def _verify_once(
+        self,
+        expected: tuple[Reservation, ...],
+    ) -> tuple[Reservation, ...]:
+        store = ReservationStore(self.reservation_set.state_root)
+        current_reservations: list[Reservation] = []
+        for recorded in expected:
+            current = store.load(recorded.output_path)
+            if current is None:
+                raise WorkerReservationError(
+                    f"required worker reservation is missing: {recorded.output_path}"
+                )
+            immutable_identity = (
+                current.reservation_id,
+                current.run_id,
+                current.task_id,
+                current.config_digest,
+                current.plan_digest,
+                current.submission_id,
+                current.output_path,
+            )
+            expected_identity = (
+                recorded.reservation_id,
+                recorded.run_id,
+                recorded.task_id,
+                recorded.config_digest,
+                recorded.plan_digest,
+                recorded.submission_id,
+                recorded.output_path,
+            )
+            if immutable_identity != expected_identity:
+                raise WorkerReservationError(
+                    "live reservation identity changed after acquisition: "
+                    f"{recorded.output_path}"
+                )
+            if current.state != ReservationState.ACTIVE:
+                raise WorkerReservationError(
+                    f"reservation {current.reservation_id} is "
+                    f"{current.state.value!r}, not active"
+                )
+
+            scheduler_identity = (
+                current.slurm_cluster,
+                current.slurm_job_id,
+                current.slurm_array_task_id,
+                current.submission_group_id,
+            )
+            expected_scheduler_identity = (
+                self.cluster,
+                self.job_id,
+                self.array_task_id,
+                self.group_id,
+            )
+            if scheduler_identity != expected_scheduler_identity:
+                if all(value is None for value in scheduler_identity):
+                    raise _SchedulerAttachmentPending(recorded.output_path)
+                raise WorkerReservationError(
+                    "live reservation belongs to a different Slurm worker: "
+                    f"{recorded.output_path}; recorded={scheduler_identity}, "
+                    f"worker={expected_scheduler_identity}"
+                )
+            current_reservations.append(current)
+        return tuple(current_reservations)
+
+    def verify(self, task: Task | None = None) -> tuple[Reservation, ...]:
+        """Verify ownership, briefly waiting for submit-side job attachment."""
+        if task is not None and task != self.task:
+            raise WorkerReservationError(
+                f"reservation guard is scoped to {self.task.task_id!r}, "
+                f"not {task.task_id!r}"
+            )
+        expected = self._expected_reservations()
+        deadline = time.monotonic() + self.attachment_timeout_seconds
+        while True:
+            try:
+                return self._verify_once(expected)
+            except _SchedulerAttachmentPending as exc:
+                if time.monotonic() >= deadline:
+                    raise WorkerReservationError(
+                        "Slurm job identity was not attached to reservation before "
+                        f"worker timeout: {exc.output_path}"
+                    ) from exc
+                time.sleep(0.25)
+
+    def terminalize(self, attempt: TaskAttempt) -> tuple[Reservation, ...]:
+        """Transition owned reservations from a durably recorded task outcome."""
+        if attempt.task_id != self.task.task_id:
+            raise WorkerReservationError(
+                f"attempt belongs to {attempt.task_id!r}, expected {self.task.task_id!r}"
+            )
+        if (
+            attempt.slurm_job_id != self.job_id
+            or attempt.slurm_array_task_id != self.array_task_id
+        ):
+            raise WorkerReservationError(
+                "terminal task attempt does not carry the verified Slurm worker "
+                "identity"
+            )
+        if attempt.status not in {
+            TaskStatus.SUCCEEDED,
+            TaskStatus.LOADED_EXISTING,
+            TaskStatus.FAILED,
+        }:
+            raise WorkerReservationError(
+                f"cannot terminalize reservations from status {attempt.status.value!r}"
+            )
+
+        current_reservations = self.verify()
+        store = ReservationStore(self.reservation_set.state_root)
+        terminalized: list[Reservation] = []
+        if attempt.status in {TaskStatus.SUCCEEDED, TaskStatus.LOADED_EXISTING}:
+            message = (
+                f"task attempt {attempt.attempt} completed after validated status "
+                f"{attempt.status.value}: {attempt.message or 'no task message'}"
+            )
+            for current in current_reservations:
+                completed = current.model_copy(
+                    update={
+                        "state": ReservationState.COMPLETED,
+                        "updated_at": datetime.now(timezone.utc),
+                        "message": message,
+                    }
+                )
+                path = store.path_for_output(current.output_path)
+                store._replace(path, completed)
+                store._audit("completed", completed)
+                path.unlink()
+                terminalized.append(completed)
+            return tuple(terminalized)
+
+        message = (
+            f"task attempt {attempt.attempt} failed "
+            f"[{attempt.failure_class.value if attempt.failure_class else 'unknown'}/"
+            f"{attempt.failure_code or 'unknown'}]: "
+            f"{attempt.message or 'no task message'}"
+        )
+        for current in current_reservations:
+            failed = current.model_copy(
+                update={
+                    "state": ReservationState.FAILED,
+                    "updated_at": datetime.now(timezone.utc),
+                    "message": message,
+                }
+            )
+            store._replace(store.path_for_output(current.output_path), failed)
+            store._audit("failed", failed)
+            terminalized.append(failed)
+        return tuple(terminalized)
+
+
+class _SchedulerAttachmentPending(RuntimeError):
+    def __init__(self, output_path: Path):
+        self.output_path = output_path
+        super().__init__(str(output_path))

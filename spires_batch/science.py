@@ -8,7 +8,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from spires_batch.models import (
     ExistingFileHandling,
@@ -25,6 +25,7 @@ from spires_batch.models import (
     TaskAttempt,
     TaskStatus,
 )
+from spires_batch.reservations import WorkerReservationError
 
 
 _TRANSIENT_ERRNOS = {
@@ -188,6 +189,8 @@ def _runtime_versions() -> dict[str, str]:
 
 
 def _failure_details(exc: Exception) -> tuple[FailureClass, str]:
+    if isinstance(exc, WorkerReservationError):
+        return FailureClass.DETERMINISTIC, "reservation_ownership"
     if isinstance(exc, TaskExecutionError):
         return exc.failure_class, exc.failure_code
     if isinstance(exc, FileNotFoundError):
@@ -690,7 +693,12 @@ def _build_r0(task: Task) -> None:
         close()
 
 
-def _standalone_albedo(plan: ResolvedPlan, task: Task) -> None:
+def _standalone_albedo(
+    plan: ResolvedPlan,
+    task: Task,
+    *,
+    before_write: Callable[[], None] | None = None,
+) -> None:
     import spires_io
     import xarray as xr
     from spires_contract import validate_spatial_alignment, validate_spires_data
@@ -765,6 +773,8 @@ def _standalone_albedo(plan: ResolvedPlan, task: Task) -> None:
                 "match the existing product",
                 failure_code="atomic_update_contents_mismatch",
             )
+        if before_write is not None:
+            before_write()
         spires_io.update_spires_data_atomically(
             output.path,
             data.results,
@@ -781,6 +791,8 @@ def _standalone_albedo(plan: ResolvedPlan, task: Task) -> None:
         tuple(metadata.completed_operations),
         requested_operations,
     )
+    if before_write is not None:
+        before_write()
     output.path.parent.mkdir(parents=True, exist_ok=True)
     spires_io.write_spires_data(
         _data_for_output_contents(data, output.product_contents),
@@ -807,6 +819,7 @@ class ScientificExecutor:
     """Execute resolved tasks through the public SPIReS package APIs."""
 
     plan: ResolvedPlan
+    reservation_check: Callable[[Task], object] | None = None
 
     def __post_init__(self) -> None:
         if not self.plan.preflight.passed:
@@ -826,6 +839,7 @@ class ScientificExecutor:
                     "task is not an exact member of the supplied resolved plan",
                     failure_code="task_manifest_mismatch",
                 )
+            self._verify_reservation(task)
 
             reused, reuse_message = _reuse_existing(task)
             if reused:
@@ -841,17 +855,21 @@ class ScientificExecutor:
                 )
 
             if task.stages == (Stage.BUILD_R0,):
+                self._verify_reservation(task)
                 _build_r0(task)
             elif task.stages == (Stage.INVERT,):
-                _write_daily_product(self.plan, task, _invert(task))
+                self._write_daily_product(task, _invert(task))
             elif task.stages == (Stage.INVERT, Stage.ALBEDO):
-                _write_daily_product(
-                    self.plan,
+                self._write_daily_product(
                     task,
                     _postprocess(task, _invert(task)),
                 )
             elif task.stages == (Stage.ALBEDO,):
-                _standalone_albedo(self.plan, task)
+                _standalone_albedo(
+                    self.plan,
+                    task,
+                    before_write=lambda: self._verify_reservation(task),
+                )
             else:
                 raise TaskExecutionError(
                     f"unsupported task stage combination {task.stages}",
@@ -888,3 +906,23 @@ class ScientificExecutor:
                 slurm_job_id=slurm_job_id,
                 slurm_array_task_id=slurm_array_task_id,
             )
+
+    def _verify_reservation(self, task: Task) -> None:
+        if self.reservation_check is None:
+            return
+        try:
+            self.reservation_check(task)
+        except WorkerReservationError:
+            raise
+        except Exception as exc:
+            raise WorkerReservationError(
+                f"worker reservation verification failed: {exc}"
+            ) from exc
+
+    def _write_daily_product(self, task: Task, data) -> None:
+        try:
+            self._verify_reservation(task)
+        except Exception:
+            _close_data(data)
+            raise
+        _write_daily_product(self.plan, task, data)

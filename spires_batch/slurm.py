@@ -66,10 +66,16 @@ def render_slurm(
     *,
     manifest_path: str | Path,
     output_directory: str | Path,
+    reservation_set_path: str | Path | None = None,
 ) -> SlurmRenderResult:
     """Render strict dependency arrays without submitting any jobs."""
     manifest = Path(manifest_path).resolve()
     output_dir = Path(output_directory).resolve()
+    reservation_set = (
+        None
+        if reservation_set_path is None
+        else Path(reservation_set_path).resolve()
+    )
     profiles = {profile.name: profile for profile in plan.resource_profiles}
     raw_groups = _group_tasks(plan)
     task_to_group: dict[str, str] = {}
@@ -97,6 +103,8 @@ def render_slurm(
                 "schema_version": plan.schema_version,
                 "plan_digest": plan.plan_digest,
                 "group_id": group_id,
+                "cluster": profile.cluster,
+                "resource_profile": profile.name,
                 "task_ids": [task.task_id for task in tasks],
             },
         )
@@ -122,16 +130,22 @@ def render_slurm(
             directives.append(
                 extra if extra.startswith("#SBATCH ") else f"#SBATCH {extra}"
             )
+        worker_command = (
+            f"mamba run -n {shlex.quote(profile.environment_name)} "
+            f"spires-batch execute-task --manifest {shlex.quote(str(manifest))} "
+            f"--task-index {shlex.quote(str(index_path))} "
+            '--array-index "${SLURM_ARRAY_TASK_ID}"'
+        )
+        if reservation_set is not None:
+            worker_command += (
+                " --reservation-set "
+                f"{shlex.quote(str(reservation_set))}"
+            )
         body = [
             "",
             "set -euo pipefail",
             "module load miniforge",
-            (
-                f"mamba run -n {shlex.quote(profile.environment_name)} "
-                f"spires-batch execute-task --manifest {shlex.quote(str(manifest))} "
-                f"--task-index {shlex.quote(str(index_path))} "
-                '--array-index "${SLURM_ARRAY_TASK_ID}"'
-            ),
+            worker_command,
             "",
         ]
         _write_exclusive_text(script_path, "\n".join((*directives, *body)))

@@ -17,6 +17,8 @@ implemented. The Phase E0 controlled serial exit gate passed on 2026-08-01:
 - profile-driven Blanca/Alpine selection, non-mutating Slurm test records, and
   live submission with durable group, job, array-element, and reservation
   identities;
+- worker-side reservation verification before scientific writes and
+  outcome-derived completed or failed reservation transitions;
 - structured status, retries, summaries, and output reservations;
 - typed preparation, clustering, inversion, and postprocessing options;
 - atomic raw-product persistence and reopened scientific validation.
@@ -51,10 +53,12 @@ Phase E1/E2 add ``spires-batch submission prepare`` and
 intent, recheck mutable inputs and outputs, acquire all reservations, retain
 Slurm's non-mutating validation, and submit once under an exclusive lock.
 Returned base job IDs and array indices are attached to reservations and
-retained in immutable ``scheduler-submission.json``. Use
+retained in immutable ``scheduler-submission.json``. E4 passes the immutable
+reservation set to each submitted worker, verifies its exact output and Slurm
+identity before scientific writes, and derives completed or failed reservation
+state only after the terminal task event is durable. Use
 ``submission rollback-reservations`` only when a prepared run will not
 proceed; it refuses the complete set after any job identity is attached.
-Worker ownership and terminal reservation transitions remain E4 work.
 
 The default package installation provides the planning core. Install the
 scientific runtime from a source checkout with ``pip install '.[science]'``;

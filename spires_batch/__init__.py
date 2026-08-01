@@ -30,7 +30,11 @@ from spires_batch.models import (
     TaskAttempt,
 )
 from spires_batch.planner import plan_request
-from spires_batch.reservations import ReservationStore
+from spires_batch.reservations import (
+    ReservationStore,
+    WorkerReservationError,
+    WorkerReservationGuard,
+)
 from spires_batch.scheduler import (
     load_scheduler_submission_record,
     load_scheduler_test_record,
@@ -61,6 +65,8 @@ __all__ = [
     "RequestConfig",
     "ReservationStore",
     "ReservationSet",
+    "WorkerReservationError",
+    "WorkerReservationGuard",
     "ResolvedPlan",
     "ResourceProfile",
     "SchedulerSubmissionRecord",

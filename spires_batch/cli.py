@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Sequence
 
@@ -15,7 +16,11 @@ from spires_batch.backends import DryRunBackend, SerialBackend
 from spires_batch.events import EventLog, read_event_logs, write_attempt
 from spires_batch.planner import plan_request
 from spires_batch.preflight import PreflightFailedError
-from spires_batch.reservations import ReservationStore
+from spires_batch.reservations import (
+    ReservationStore,
+    WorkerReservationError,
+    WorkerReservationGuard,
+)
 from spires_batch.scheduler import (
     SCHEDULER_SUBMISSION_NAME,
     SCHEDULER_TEST_NAME,
@@ -30,6 +35,7 @@ from spires_batch.serialization import (
 from spires_batch.submission import (
     SubmissionReadinessError,
     acquire_submission_reservations,
+    load_reservation_set,
     prepare_submission,
     rollback_submission_reservations,
 )
@@ -51,6 +57,7 @@ from spires_batch.models import (
     SchedulerTestRecord,
     SubmissionRecord,
     TaskStatus,
+    WorkflowEvent,
 )
 
 
@@ -148,6 +155,11 @@ def _parser() -> argparse.ArgumentParser:
     execute_task.add_argument("--array-index", type=int, required=True)
     execute_task.add_argument("--events-dir", type=Path)
     execute_task.add_argument("--attempt", type=int, default=None)
+    execute_task.add_argument(
+        "--reservation-set",
+        type=Path,
+        help="enforce submission reservation ownership and terminal transitions",
+    )
 
     reservations = subparsers.add_parser(
         "reservations",
@@ -408,16 +420,98 @@ def _command_execute_task(args: argparse.Namespace) -> int:
     task = next((item for item in plan.tasks if item.task_id == task_id), None)
     if task is None:
         raise ValueError(f"task index references unknown task {task_id!r}")
-    attempt = ScientificExecutor(plan)(
+
+    reservation_guard: WorkerReservationGuard | None = None
+
+    def verify_worker_reservations(selected_task) -> object:
+        nonlocal reservation_guard
+        try:
+            if reservation_guard is None:
+                reservation_guard = WorkerReservationGuard(
+                    reservation_set=load_reservation_set(args.reservation_set),
+                    plan=plan,
+                    task=task,
+                    group_id=index.get("group_id"),
+                    cluster=index.get("cluster"),
+                    job_id=os.environ.get("SLURM_JOB_ID"),
+                    array_task_id=os.environ.get("SLURM_ARRAY_TASK_ID"),
+                )
+            return reservation_guard.verify(selected_task)
+        except WorkerReservationError:
+            raise
+        except Exception as exc:
+            raise WorkerReservationError(
+                f"worker reservation context is invalid: {exc}"
+            ) from exc
+
+    attempt = ScientificExecutor(
+        plan,
+        reservation_check=(
+            verify_worker_reservations
+            if args.reservation_set is not None
+            else None
+        ),
+    )(
         task,
         _attempt_number(plan, args.attempt),
     )
     events_dir = args.events_dir or (args.task_index.parent / "events")
+    event_log = EventLog(events_dir / f"{task.task_id}.jsonl")
     write_attempt(
-        EventLog(events_dir / f"{task.task_id}.jsonl"),
+        event_log,
         plan.run_id,
         attempt,
     )
+    if (
+        args.reservation_set is not None
+        and reservation_guard is not None
+        and attempt.failure_code != "reservation_ownership"
+    ):
+        try:
+            terminalized = reservation_guard.terminalize(attempt)
+        except Exception as exc:
+            event_log.append(
+                WorkflowEvent(
+                    timestamp=datetime.now(timezone.utc),
+                    event_type="reservation_terminalization_failed",
+                    run_id=plan.run_id,
+                    task_id=task.task_id,
+                    attempt=attempt.attempt,
+                    status=attempt.status,
+                    message=str(exc),
+                    slurm_job_id=attempt.slurm_job_id,
+                    slurm_array_task_id=attempt.slurm_array_task_id,
+                )
+            )
+            raise
+        event_log.append(
+            WorkflowEvent(
+                timestamp=datetime.now(timezone.utc),
+                event_type="reservations_terminalized",
+                run_id=plan.run_id,
+                task_id=task.task_id,
+                attempt=attempt.attempt,
+                status=attempt.status,
+                message=(
+                    f"{len(terminalized)} reservation(s) transitioned from "
+                    f"validated task status {attempt.status.value}"
+                ),
+                slurm_job_id=attempt.slurm_job_id,
+                slurm_array_task_id=attempt.slurm_array_task_id,
+                details={
+                    "reservation_ids": [
+                        reservation.reservation_id
+                        for reservation in terminalized
+                    ],
+                    "reservation_state": (
+                        "completed"
+                        if attempt.status
+                        in {TaskStatus.SUCCEEDED, TaskStatus.LOADED_EXISTING}
+                        else "failed"
+                    ),
+                },
+            )
+        )
     print(
         f"{attempt.status.value:16} {attempt.task_id} "
         f"{attempt.failure_code or '-'} {attempt.message or ''}".rstrip()

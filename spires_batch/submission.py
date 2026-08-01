@@ -370,6 +370,7 @@ def prepare_submission(
         plan,
         manifest_path=manifest,
         output_directory=output_dir,
+        reservation_set_path=output_dir / RESERVATION_SET_NAME,
     )
     created_at = datetime.now(timezone.utc)
     attempt = plan.retry_number + 1
