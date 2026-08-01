@@ -4,7 +4,7 @@
 many SPIReS tiles and dates.
 
 Phase A foundations and the independent Phase D daily executor slice are
-implemented:
+implemented. The Phase E0 controlled serial exit gate passed on 2026-08-01:
 
 - strict versioned JSON requests;
 - immutable resolved task manifests;
@@ -12,6 +12,11 @@ implemented:
 - schema, semantic, inventory, and metadata preflight;
 - validated shared-scratch staging;
 - dry-run, scientific serial execution, and direct Slurm rendering;
+- immutable submission previews, readiness rechecks, and all-or-none output
+  reservations with audited pre-submission rollback;
+- profile-driven Blanca/Alpine selection, non-mutating Slurm test records, and
+  live submission with durable group, job, array-element, and reservation
+  identities;
 - structured status, retries, summaries, and output reservations;
 - typed preparation, clustering, inversion, and postprocessing options;
 - atomic raw-product persistence and reopened scientific validation.
@@ -36,13 +41,34 @@ spires-batch execute resolved-plan.json --events-dir task-events
 spires-batch render-slurm resolved-plan.json --output-dir slurm-preview
 ```
 
-Slurm rendering does not submit jobs.
+Slurm rendering does not submit jobs. Each script records its explicit cluster,
+partition, account, and QoS; built-in profiles cover Blanca Snow, Blanca
+Rittger, and Alpine's `acpu` CPU partition.
+
+Phase E1/E2 add ``spires-batch submission prepare`` and
+``spires-batch submission reserve``. Phase E3 adds ``submission test-only`` and
+``submission submit``. Together these commands persist and hash the exact
+intent, recheck mutable inputs and outputs, acquire all reservations, retain
+Slurm's non-mutating validation, and submit once under an exclusive lock.
+Returned base job IDs and array indices are attached to reservations and
+retained in immutable ``scheduler-submission.json``. Use
+``submission rollback-reservations`` only when a prepared run will not
+proceed; it refuses the complete set after any job identity is attached.
+Worker ownership and terminal reservation transitions remain E4 work.
+
+The default package installation provides the planning core. Install the
+scientific runtime from a source checkout with ``pip install '.[science]'``;
+on CURC, the merged sibling editable stack in ``spipy14`` remains preferred.
 
 ## Schemas
 
 ```bash
 spires-batch schema request
 spires-batch schema resolved-plan
+spires-batch schema submission-record
+spires-batch schema reservation-set
+spires-batch schema scheduler-test
+spires-batch schema scheduler-submission
 ```
 
 Requests and manifests use schema version `1`. Canonical JSON SHA-256 digests

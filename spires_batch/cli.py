@@ -16,10 +16,22 @@ from spires_batch.events import EventLog, read_event_logs, write_attempt
 from spires_batch.planner import plan_request
 from spires_batch.preflight import PreflightFailedError
 from spires_batch.reservations import ReservationStore
+from spires_batch.scheduler import (
+    SCHEDULER_SUBMISSION_NAME,
+    SCHEDULER_TEST_NAME,
+    submit_scheduler_submission,
+    test_scheduler_submission,
+)
 from spires_batch.serialization import (
     load_plan,
     load_request,
     write_plan,
+)
+from spires_batch.submission import (
+    SubmissionReadinessError,
+    acquire_submission_reservations,
+    prepare_submission,
+    rollback_submission_reservations,
 )
 from spires_batch.slurm import render_slurm
 from spires_batch.science import ScientificExecutor
@@ -31,7 +43,15 @@ from spires_batch.status import (
     tile_summaries,
     write_summary_files,
 )
-from spires_batch.models import RequestConfig, ResolvedPlan, TaskStatus
+from spires_batch.models import (
+    RequestConfig,
+    ReservationSet,
+    ResolvedPlan,
+    SchedulerSubmissionRecord,
+    SchedulerTestRecord,
+    SubmissionRecord,
+    TaskStatus,
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -47,7 +67,14 @@ def _parser() -> argparse.ArgumentParser:
     )
     schema.add_argument(
         "artifact",
-        choices=("request", "resolved-plan"),
+        choices=(
+            "request",
+            "resolved-plan",
+            "submission-record",
+            "reservation-set",
+            "scheduler-test",
+            "scheduler-submission",
+        ),
     )
     schema.add_argument("--output", "-o", type=Path)
 
@@ -154,6 +181,51 @@ def _parser() -> argparse.ArgumentParser:
     reservation_release.add_argument("--task-id", required=True)
     reservation_release.add_argument("--reason", required=True)
     reservation_release.add_argument("--apply", action="store_true")
+
+    submission = subparsers.add_parser(
+        "submission",
+        help="prepare, reserve, test, and submit an audited Slurm workflow",
+    )
+    submission_commands = submission.add_subparsers(
+        dest="submission_command",
+        required=True,
+    )
+    submission_prepare = submission_commands.add_parser(
+        "prepare",
+        help="write an immutable Slurm preview and submission record",
+    )
+    submission_prepare.add_argument("manifest", type=Path)
+    submission_prepare.add_argument("--state-root", type=Path, required=True)
+    submission_prepare.add_argument("--output-dir", type=Path, required=True)
+
+    submission_reserve = submission_commands.add_parser(
+        "reserve",
+        help="recheck readiness and atomically reserve every planned output",
+    )
+    submission_reserve.add_argument("submission_record", type=Path)
+    submission_reserve.add_argument("--output", type=Path)
+
+    submission_rollback = submission_commands.add_parser(
+        "rollback-reservations",
+        help="release an acquired reservation set before scheduler submission",
+    )
+    submission_rollback.add_argument("reservation_set", type=Path)
+    submission_rollback.add_argument("--reason", required=True)
+
+    submission_test = submission_commands.add_parser(
+        "test-only",
+        help="run non-mutating sbatch validation for every prepared array",
+    )
+    submission_test.add_argument("reservation_set", type=Path)
+    submission_test.add_argument("--output", type=Path)
+
+    submission_submit = submission_commands.add_parser(
+        "submit",
+        help="submit tested arrays and durably record returned Slurm job IDs",
+    )
+    submission_submit.add_argument("reservation_set", type=Path)
+    submission_submit.add_argument("--scheduler-test", type=Path)
+    submission_submit.add_argument("--output", type=Path)
     return parser
 
 
@@ -190,7 +262,14 @@ def _command_validate(args: argparse.Namespace) -> int:
 
 
 def _command_schema(args: argparse.Namespace) -> int:
-    model = RequestConfig if args.artifact == "request" else ResolvedPlan
+    model = {
+        "request": RequestConfig,
+        "resolved-plan": ResolvedPlan,
+        "submission-record": SubmissionRecord,
+        "reservation-set": ReservationSet,
+        "scheduler-test": SchedulerTestRecord,
+        "scheduler-submission": SchedulerSubmissionRecord,
+    }[args.artifact]
     payload = json.dumps(model.model_json_schema(), indent=2, sort_keys=True) + "\n"
     if args.output is None:
         print(payload, end="")
@@ -405,6 +484,98 @@ def _command_reservations(args: argparse.Namespace) -> int:
     raise ValueError(f"unsupported reservation command {args.reservation_command!r}")
 
 
+def _command_submission(args: argparse.Namespace) -> int:
+    if args.submission_command == "prepare":
+        record = prepare_submission(
+            args.manifest,
+            state_root=args.state_root,
+            output_directory=args.output_dir,
+        )
+        print(f"submission record: {record.output_directory / 'submission.json'}")
+        print(f"submission_id: {record.submission_id}")
+        print(f"submission_digest: {record.submission_digest}")
+        for group in record.groups:
+            dependencies = ",".join(group.dependency_group_ids) or "-"
+            print(
+                f"{group.group_id}: tasks={len(group.task_ids)} "
+                f"dependencies={dependencies}"
+            )
+            print(f"  preview: {group.sbatch_command_preview}")
+        print(f"reservations available: {len(record.reservation_intents)}")
+        print("No reservation was acquired. No Slurm command was submitted.")
+        return 0
+
+    if args.submission_command == "reserve":
+        reservation_set = acquire_submission_reservations(
+            args.submission_record,
+            reservation_set_path=args.output,
+        )
+        destination = (
+            args.output
+            or args.submission_record.parent / "reservation-set.json"
+        )
+        print(f"reservation set: {destination}")
+        print(f"reservation_set_digest: {reservation_set.reservation_set_digest}")
+        print(f"reservations acquired: {len(reservation_set.reservations)}")
+        print("No Slurm command was submitted.")
+        return 0
+
+    if args.submission_command == "rollback-reservations":
+        rolled_back = rollback_submission_reservations(
+            args.reservation_set,
+            reason=args.reason,
+        )
+        for reservation in rolled_back:
+            print(f"rolled back {reservation.output_path}")
+        print(f"reservations rolled back: {len(rolled_back)}")
+        print("No Slurm command was submitted.")
+        return 0
+
+    if args.submission_command == "test-only":
+        test_record = test_scheduler_submission(
+            args.reservation_set,
+            output_path=args.output,
+        )
+        destination = (
+            args.output
+            or args.reservation_set.parent / SCHEDULER_TEST_NAME
+        )
+        print(f"scheduler test: {destination}")
+        print(f"scheduler_test_digest: {test_record.scheduler_test_digest}")
+        for group in test_record.groups:
+            print(
+                f"{group.group_id}: cluster={group.cluster} "
+                f"response={group.response}"
+            )
+        print("Slurm test-only passed. No job was submitted.")
+        return 0
+
+    if args.submission_command == "submit":
+        scheduler_record = submit_scheduler_submission(
+            args.reservation_set,
+            scheduler_test_path=args.scheduler_test,
+            output_path=args.output,
+        )
+        destination = (
+            args.output
+            or args.reservation_set.parent / SCHEDULER_SUBMISSION_NAME
+        )
+        print(f"scheduler submission: {destination}")
+        print(
+            "scheduler_submission_digest: "
+            f"{scheduler_record.scheduler_submission_digest}"
+        )
+        for group in scheduler_record.groups:
+            print(
+                f"{group.group_id}: cluster={group.cluster} "
+                f"job_id={group.job_id}"
+            )
+        print("Live Slurm submission completed and job IDs were durably recorded.")
+        return 0
+
+    raise ValueError(f"unsupported submission command {args.submission_command!r}")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
@@ -420,6 +591,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "execute": _command_execute,
         "execute-task": _command_execute_task,
         "reservations": _command_reservations,
+        "submission": _command_submission,
     }
     try:
         return commands[args.command](args)
@@ -439,6 +611,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                     f"{issue.message}{location}",
                     file=sys.stderr,
                 )
+        return 2
+    except SubmissionReadinessError as exc:
+        print("submission readiness failed:", file=sys.stderr)
+        for issue in exc.issues:
+            print(f"  {issue}", file=sys.stderr)
+        if getattr(args, "submission_command", None) in {"test-only", "submit"}:
+            print(
+                "No Slurm command was submitted; existing reservations were "
+                "left unchanged.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "No reservation was acquired. No Slurm command was submitted.",
+                file=sys.stderr,
+            )
         return 2
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)

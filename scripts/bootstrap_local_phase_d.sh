@@ -4,11 +4,11 @@ set -euo pipefail
 usage() {
     echo "Usage: $0 [--merged] [--verify-only]"
     echo
-    echo "  --merged       Expect merged component work on each repository's main branch."
+    echo "  --merged       Retained for compatibility; merged main branches are the default."
     echo "  --verify-only  Check branches and imports without changing the environment."
 }
 
-mode="development"
+mode="merged"
 verify_only="false"
 while (($#)); do
     case "$1" in
@@ -49,15 +49,6 @@ repositories=(
     "spires-postprocess"
     "spires-batch"
 )
-development_branches=(
-    "batch-support"
-    "batch-support"
-    "ross-dev"
-    "main"
-    "main"
-    "main"
-)
-
 repo_paths=()
 for index in "${!repositories[@]}"; do
     repository="${repositories[$index]}"
@@ -70,9 +61,6 @@ for index in "${!repositories[@]}"; do
     fi
 
     expected_branch="main"
-    if [[ "${mode}" == "development" ]]; then
-        expected_branch="${development_branches[$index]}"
-    fi
     actual_branch="$(git -C "${repo_path}" branch --show-current)"
     if [[ "${actual_branch}" != "${expected_branch}" ]]; then
         echo "${repository}: expected branch ${expected_branch}, found ${actual_branch}" >&2

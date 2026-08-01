@@ -18,6 +18,13 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest"]
+science = [
+    "spires-contract @ git+https://github.com/SPIReS-Organization/spires-contract.git@main",
+    "spires-io @ git+https://github.com/SPIReS-Organization/spires-io.git@main",
+    "spires-r0 @ git+https://github.com/SPIReS-Organization/spires-r0.git@main",
+    "spires-inversion @ git+https://github.com/SPIReS-Organization/spires-inversion.git@main",
+    "spires-postprocess @ git+https://github.com/SPIReS-Organization/spires-postprocess.git@main",
+]
 
 [project.scripts]
 spires-batch = "spires_batch.cli:main"

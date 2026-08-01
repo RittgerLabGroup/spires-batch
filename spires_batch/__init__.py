@@ -19,16 +19,33 @@ from spires_batch.models import (
     R0Recipe,
     RequestConfig,
     ResolvedPlan,
+    ReservationSet,
     ResourceProfile,
+    SchedulerSubmissionRecord,
+    SchedulerTestRecord,
     ScenePreparationConfig,
     Stage,
+    SubmissionRecord,
     Task,
     TaskAttempt,
 )
 from spires_batch.planner import plan_request
 from spires_batch.reservations import ReservationStore
+from spires_batch.scheduler import (
+    load_scheduler_submission_record,
+    load_scheduler_test_record,
+    submit_scheduler_submission,
+    test_scheduler_submission,
+)
 from spires_batch.science import ScientificExecutor, validate_scientific_outputs
 from spires_batch.serialization import load_plan, load_request, write_plan
+from spires_batch.submission import (
+    acquire_submission_reservations,
+    load_reservation_set,
+    load_submission_record,
+    prepare_submission,
+    rollback_submission_reservations,
+)
 
 __all__ = [
     "__version__",
@@ -43,20 +60,33 @@ __all__ = [
     "R0Recipe",
     "RequestConfig",
     "ReservationStore",
+    "ReservationSet",
     "ResolvedPlan",
     "ResourceProfile",
+    "SchedulerSubmissionRecord",
+    "SchedulerTestRecord",
     "ScenePreparationConfig",
     "ScientificExecutor",
     "SerialBackend",
     "Stage",
+    "SubmissionRecord",
     "Task",
     "TaskAttempt",
     "InvertScienceConfig",
     "discover_inputs",
+    "acquire_submission_reservations",
     "load_plan",
+    "load_reservation_set",
     "load_request",
+    "load_scheduler_submission_record",
+    "load_scheduler_test_record",
+    "load_submission_record",
     "parse_path_identity",
     "plan_request",
+    "prepare_submission",
+    "rollback_submission_reservations",
+    "submit_scheduler_submission",
+    "test_scheduler_submission",
     "validate_scientific_outputs",
     "write_plan",
 ]

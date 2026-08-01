@@ -41,16 +41,19 @@ def resolve_resource_profile(request: RequestConfig) -> ResourceProfile:
     builtins = {
         "blanca-snow": {"cluster": "blanca", "partition": "blanca-snow"},
         "blanca-rittger": {"cluster": "blanca", "partition": "blanca-rittger"},
+        "alpine": {"cluster": "alpine", "partition": "acpu"},
     }
     defaults = builtins.get(execution.profile)
-    if defaults is None and overrides.partition is None:
+    if defaults is None and (
+        overrides.cluster is None or overrides.partition is None
+    ):
         raise PlanningError(
             f"unknown resource profile {execution.profile!r}; a custom profile must "
-            "provide execution.resources.partition"
+            "provide execution.resources.cluster and execution.resources.partition"
         )
     return ResourceProfile(
         name=execution.profile,
-        cluster=(defaults or {}).get("cluster", "blanca"),
+        cluster=overrides.cluster or (defaults or {})["cluster"],
         partition=overrides.partition or (defaults or {})["partition"],
         account=overrides.account,
         qos=overrides.qos,

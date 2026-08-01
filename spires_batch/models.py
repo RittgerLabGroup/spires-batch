@@ -144,6 +144,10 @@ class ReservationState(str, Enum):
     FAILED = "failed"
 
 
+class SubmissionStatus(str, Enum):
+    PREPARED = "prepared"
+
+
 def _normalize_token(value: str) -> str:
     return value.strip().lower().replace("_", "").replace(" ", "")
 
@@ -613,6 +617,7 @@ class StagingConfig(FrozenModel):
 
 
 class ResourceOverrides(FrozenModel):
+    cluster: str | None = None
     partition: str | None = None
     account: str | None = None
     qos: str | None = None
@@ -805,6 +810,19 @@ class ResourceProfile(FrozenModel):
     environment_name: str = "spipy14"
     extra_directives: tuple[str, ...] = ()
 
+    @field_validator("cluster", "partition", "account", "qos")
+    @classmethod
+    def validate_scheduler_token(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", normalized):
+            raise ValueError(
+                "scheduler cluster, partition, account, and qos values must "
+                "contain only letters, numbers, '.', '_', or '-'"
+            )
+        return normalized
+
 
 class ResolvedInput(FrozenModel):
     role: InputRole
@@ -965,6 +983,227 @@ class Reservation(FrozenModel):
     created_at: datetime
     updated_at: datetime
     config_digest: str
+    plan_digest: str | None = None
+    submission_id: str | None = None
     output_path: Path
+    slurm_cluster: str | None = None
     slurm_job_id: str | None = None
+    slurm_array_task_id: str | None = None
+    submission_group_id: str | None = None
     message: str | None = None
+
+
+class SubmissionReadinessCheck(FrozenModel):
+    code: str
+    message: str
+    path: Path | None = None
+    task_id: str | None = None
+
+
+class SubmissionReservationIntent(FrozenModel):
+    reservation_id: str
+    task_id: str
+    output_path: Path
+
+
+class SubmissionGroupRecord(FrozenModel):
+    group_id: str
+    task_ids: tuple[str, ...]
+    dependency_group_ids: tuple[str, ...] = ()
+    resource_profile: str
+    script_path: Path
+    script_sha256: str
+    index_path: Path
+    index_sha256: str
+    sbatch_command_preview: str
+
+
+class SubmissionRecord(FrozenModel):
+    artifact_type: Literal["spires_batch_submission_record"] = (
+        "spires_batch_submission_record"
+    )
+    schema_version: Literal[SCHEMA_VERSION] = SCHEMA_VERSION
+    submission_id: str
+    submission_digest: str
+    status: Literal[SubmissionStatus.PREPARED] = SubmissionStatus.PREPARED
+    created_at: datetime
+    attempt: int = Field(ge=1)
+    run_id: str
+    manifest_family_id: str
+    config_digest: str
+    plan_digest: str
+    manifest_path: Path
+    manifest_sha256: str
+    state_root: Path
+    output_directory: Path
+    submit_script_path: Path
+    submit_script_sha256: str
+    readiness_checks: tuple[SubmissionReadinessCheck, ...]
+    groups: tuple[SubmissionGroupRecord, ...]
+    reservation_intents: tuple[SubmissionReservationIntent, ...]
+
+    @model_validator(mode="after")
+    def validate_submission_inventory(self) -> "SubmissionRecord":
+        group_ids = [group.group_id for group in self.groups]
+        if not group_ids or len(group_ids) != len(set(group_ids)):
+            raise ValueError("submission record requires unique Slurm group IDs")
+        known_groups = set(group_ids)
+        for group in self.groups:
+            missing = set(group.dependency_group_ids) - known_groups
+            if missing:
+                raise ValueError(
+                    f"submission group {group.group_id!r} depends on unknown "
+                    f"group IDs {sorted(missing)}"
+                )
+        task_ids = [
+            task_id
+            for group in self.groups
+            for task_id in group.task_ids
+        ]
+        if len(task_ids) != len(set(task_ids)):
+            raise ValueError("submission groups contain duplicate task IDs")
+        output_paths = [
+            str(intent.output_path) for intent in self.reservation_intents
+        ]
+        reservation_ids = [
+            intent.reservation_id for intent in self.reservation_intents
+        ]
+        if len(output_paths) != len(set(output_paths)):
+            raise ValueError("submission record contains duplicate output paths")
+        if len(reservation_ids) != len(set(reservation_ids)):
+            raise ValueError("submission record contains duplicate reservation IDs")
+        if not self.readiness_checks:
+            raise ValueError("submission record requires readiness checks")
+        return self
+
+
+class ReservationSet(FrozenModel):
+    artifact_type: Literal["spires_batch_reservation_set"] = (
+        "spires_batch_reservation_set"
+    )
+    schema_version: Literal[SCHEMA_VERSION] = SCHEMA_VERSION
+    reservation_set_digest: str
+    submission_id: str
+    run_id: str
+    plan_digest: str
+    submission_record_path: Path | None = None
+    state_root: Path
+    acquired_at: datetime
+    reservations: tuple[Reservation, ...]
+
+    @model_validator(mode="after")
+    def validate_reservations(self) -> "ReservationSet":
+        reservation_ids = [
+            reservation.reservation_id for reservation in self.reservations
+        ]
+        if not reservation_ids or len(reservation_ids) != len(set(reservation_ids)):
+            raise ValueError("reservation set requires unique reservations")
+        invalid = [
+            reservation.reservation_id
+            for reservation in self.reservations
+            if reservation.submission_id != self.submission_id
+            or reservation.plan_digest != self.plan_digest
+        ]
+        if invalid:
+            raise ValueError(
+                "reservation set contains reservations for a different submission: "
+                f"{invalid}"
+            )
+        return self
+
+
+class SubmissionEvent(FrozenModel):
+    artifact_type: Literal["spires_batch_submission_event"] = (
+        "spires_batch_submission_event"
+    )
+    schema_version: Literal[SCHEMA_VERSION] = SCHEMA_VERSION
+    timestamp: datetime
+    event_type: str
+    submission_id: str
+    run_id: str
+    plan_digest: str
+    message: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class SchedulerTestGroup(FrozenModel):
+    group_id: str
+    cluster: str
+    tested_at: datetime
+    command: tuple[str, ...]
+    response: str
+
+
+class SchedulerTestRecord(FrozenModel):
+    artifact_type: Literal["spires_batch_scheduler_test"] = (
+        "spires_batch_scheduler_test"
+    )
+    schema_version: Literal[SCHEMA_VERSION] = SCHEMA_VERSION
+    scheduler_test_digest: str
+    tested_at: datetime
+    submission_id: str
+    submission_digest: str
+    reservation_set_digest: str
+    run_id: str
+    plan_digest: str
+    groups: tuple[SchedulerTestGroup, ...]
+
+    @model_validator(mode="after")
+    def validate_test_groups(self) -> "SchedulerTestRecord":
+        group_ids = [group.group_id for group in self.groups]
+        if not group_ids or len(group_ids) != len(set(group_ids)):
+            raise ValueError("scheduler test requires unique group IDs")
+        return self
+
+
+class SchedulerSubmissionGroup(FrozenModel):
+    group_id: str
+    cluster: str
+    submitted_at: datetime
+    job_id: str
+    raw_response: str
+    command: tuple[str, ...]
+    task_ids: tuple[str, ...]
+    dependency_job_ids: tuple[str, ...] = ()
+
+    @field_validator("job_id")
+    @classmethod
+    def validate_job_id(cls, value: str) -> str:
+        normalized = value.strip()
+        if not re.fullmatch(r"\d+", normalized):
+            raise ValueError(f"invalid Slurm job ID {value!r}")
+        return normalized
+
+
+class SchedulerSubmissionRecord(FrozenModel):
+    artifact_type: Literal["spires_batch_scheduler_submission"] = (
+        "spires_batch_scheduler_submission"
+    )
+    schema_version: Literal[SCHEMA_VERSION] = SCHEMA_VERSION
+    scheduler_submission_digest: str
+    submitted_at: datetime
+    submission_id: str
+    submission_digest: str
+    reservation_set_digest: str
+    scheduler_test_digest: str
+    run_id: str
+    plan_digest: str
+    groups: tuple[SchedulerSubmissionGroup, ...]
+
+    @model_validator(mode="after")
+    def validate_submission_groups(self) -> "SchedulerSubmissionRecord":
+        group_ids = [group.group_id for group in self.groups]
+        job_ids = [(group.cluster, group.job_id) for group in self.groups]
+        if not group_ids or len(group_ids) != len(set(group_ids)):
+            raise ValueError("scheduler submission requires unique group IDs")
+        if len(job_ids) != len(set(job_ids)):
+            raise ValueError("scheduler submission contains duplicate cluster/job IDs")
+        known_groups = set(group_ids)
+        for group in self.groups:
+            if not group.task_ids:
+                raise ValueError(
+                    f"scheduler submission group {group.group_id!r} has no tasks"
+                )
+        if not known_groups:
+            raise ValueError("scheduler submission requires at least one group")
+        return self

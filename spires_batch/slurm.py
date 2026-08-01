@@ -74,6 +74,7 @@ def render_slurm(
     raw_groups = _group_tasks(plan)
     task_to_group: dict[str, str] = {}
     groups: list[SlurmArrayGroup] = []
+    (output_dir / "logs").mkdir(parents=True, exist_ok=True)
 
     for index, tasks in enumerate(raw_groups):
         stages = "-".join(stage.value for stage in tasks[0].stages)
@@ -102,7 +103,9 @@ def render_slurm(
 
         directives = [
             "#!/bin/bash",
+            *_directive("clusters", profile.cluster),
             *_directive("job-name", f"spires-{stages}"[:128]),
+            *_directive("comment", f"spires-batch:{plan.run_id}:{group_id}"),
             *_directive("partition", profile.partition),
             *_directive("account", profile.account),
             *_directive("qos", profile.qos),
@@ -148,7 +151,6 @@ def render_slurm(
     submit_lines = [
         "#!/bin/bash",
         "set -euo pipefail",
-        "module load slurm/blanca",
         "",
     ]
     for group in groups:

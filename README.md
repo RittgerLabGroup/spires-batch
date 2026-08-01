@@ -10,7 +10,10 @@ manifest-backed existing-R0 inversion, fused inversion/postprocessing,
 standalone full-product postprocessing, atomic persistence, and scientific
 output validation. R0 construction uses strict sensor-specific summer-composite
 recipes, and standalone postprocessing rejects compact `results_subset` inputs
-during preflight.
+during preflight. The Phase E0 controlled serial exit gate passed on
+2026-08-01. Phase E1-E3 now provide audited preparation, reservation,
+test-only validation, and live Slurm submission with durable job identities;
+worker-side reservation terminalization remains Phase E4 work.
 
 ## Installed capabilities
 
@@ -20,7 +23,12 @@ during preflight.
 - Four-layer schema, semantic, inventory, and metadata preflight.
 - Optional validated staging from authoritative storage to shared scratch.
 - Dry-run and scientific serial execution backends.
-- Direct Blanca `sbatch` rendering without submission.
+- Profile-driven Blanca or Alpine Slurm rendering with explicit cluster,
+  partition, account, and QoS selection.
+- Immutable submission records, mutable-readiness rechecks, all-or-none output
+  reservation acquisition, and audited pre-submission rollback.
+- Non-mutating `sbatch --test-only` records and single-use live submission with
+  durable group, job, array-element, and reservation identities.
 - Structured JSON Lines task events, output-derived status, retry manifests,
   tile summaries, and run summaries.
 - Persistent duplicate-output reservations and auditable cleanup.
@@ -40,38 +48,39 @@ validation.
 pip install spires-batch
 ```
 
-The planning core depends only on Pydantic. During coordinated Phase D
-development the scientific stack is supplied by sibling editable installs.
-Stable scientific dependency references will be added after the component
-branches merge; temporary branch references are not added to package metadata.
+The default installation provides the Pydantic-only planning core. Install the
+merged scientific runtime from a source checkout with:
 
-### Coordinated Phase D development
+```bash
+pip install '.[science]'
+```
 
-Phase D is developed against sibling working trees so unmerged scientific
-branches do not become package or Git-history dependencies. From an environment
-with `mamba` available, run:
+The `science` extra follows the merged `main` branches until compatible
+scientific package releases are published.
+
+### Coordinated scientific stack
+
+On CURC, sibling editable checkouts remain the preferred development and
+operational environment. From an environment with `mamba` available, run:
 
 ```bash
 module load miniforge
-mamba run -n spipy14 bash scripts/bootstrap_local_phase_d.sh
+mamba run -n spipy14 bash scripts/bootstrap_local_phase_d.sh --merged
 ```
 
-The bootstrap verifies and installs this development stack editably, without
+The bootstrap verifies and installs this merged stack editably, without
 resolving dependencies from GitHub:
 
-- `spires-contract/batch-support`
-- `spires-io/batch-support`
-- `spires-r0/ross-dev`
+- `spires-contract/main`
+- `spires-io/main`
+- `spires-r0/main`
 - `spires-inversion/main`
 - `spires-postprocess/main`
 - `RittgerLabGroup/spires-batch/main`
 
 It never checks out, merges, or rebases a branch. Use `--verify-only` to inspect
-an existing environment. After the component PRs merge, update each component
-checkout to `main` and run the same command with `--merged`. Temporary branch
-selection therefore remains local development policy and does not enter
-`spires-batch` dependency metadata. On CURC, the bootstrap uses `/usr/bin/gcc`
-and `/usr/bin/g++` for the inversion extension to avoid the `spipy14` conda
+an existing environment. On CURC, the bootstrap uses `/usr/bin/gcc` and
+`/usr/bin/g++` for the inversion extension to avoid the `spipy14` conda
 GCC/glibc conflict; override these with `SPIRES_PHASE_D_CC` and
 `SPIRES_PHASE_D_CXX` if needed.
 
@@ -341,11 +350,69 @@ failures.
 spires-batch render-slurm resolved-plan.json --output-dir slurm-preview
 ```
 
-This writes strict dependency array scripts and a `submit.sh` preview using
-`slurm/blanca`, the selected partition, and the `spipy14` environment. It never
-submits a job. Rendered arrays invoke the same scientific executor used by
-serial execution. Operational submission and reservation ownership checks
-remain Phase E work.
+This writes strict dependency array scripts and a `submit.sh` preview using the
+profile's explicit Slurm cluster, partition, account, QoS, and environment. The
+built-in profiles are `blanca-snow`, `blanca-rittger`, and Alpine's `acpu`
+CPU partition; custom profiles must supply both cluster and partition.
+Rendering never submits a job. Rendered arrays invoke the same scientific
+executor used by serial execution.
+
+## Audited submission and scheduling
+
+Phase E1/E2 prepare the exact scheduler intent and reserve outputs without
+calling `sbatch`. Phase E3 adds the non-mutating scheduler gate and the
+single-use live transition:
+
+```bash
+spires-batch submission prepare resolved-plan.json \
+    --state-root /product/root \
+    --output-dir submission-preview
+
+spires-batch submission reserve \
+    submission-preview/submission.json
+
+spires-batch submission test-only \
+    submission-preview/reservation-set.json
+
+spires-batch submission submit \
+    submission-preview/reservation-set.json
+```
+
+Preparation reloads and verifies both manifest digests, rechecks preflight,
+validates current external or staged inputs, confirms output policies and
+writable parents, diagnoses every intended reservation, renders immutable
+Slurm scripts and indices, hashes every artifact, and writes
+`submission.json`. It does not mutate reservation state.
+
+Reservation acquisition repeats the mutable readiness checks, verifies that
+the manifest and rendered artifacts still match their recorded hashes, and
+acquires the complete output set. If any acquisition conflicts, reservations
+created earlier by the same operation are removed with an audit event. The
+successful set is retained as immutable `reservation-set.json`; submission
+lifecycle transitions are appended to `submission-events.jsonl`.
+
+`test-only` rechecks the manifest, rendered hashes, mutable inputs and outputs,
+and exact reservation ownership before invoking `sbatch --test-only` for every
+array. Its responses are retained in immutable `scheduler-test.json`; no jobs
+are created. `submit` requires that matching test record, repeats all checks,
+uses an exclusive submission lock, executes the dependency-ordered
+`sbatch --parsable` commands, appends each returned job identity immediately,
+attaches the base job and array index to every affected reservation, and writes
+immutable `scheduler-submission.json`. Each script carries an explicit Slurm
+cluster and a recoverable run/group comment.
+
+If scheduler submission will not follow, roll back the unsubmitted set
+explicitly:
+
+```bash
+spires-batch submission rollback-reservations \
+    submission-preview/reservation-set.json \
+    --reason "operator cancelled before submission"
+```
+
+Rollback prevalidates the complete set and refuses to remove anything if any
+reservation carries a Slurm job ID. Worker-side reservation ownership
+enforcement and terminal state transitions remain E4 work.
 
 ## Status and retries
 
@@ -368,9 +435,10 @@ Only transient failures below the configured retry cap enter a retry manifest.
 
 ## Output reservations
 
-The reservation store can diagnose and protect shared output paths. Automatic
-acquisition and ownership checks around submission and execution remain Phase E
-work. Preview current conflicts with:
+The reservation store diagnoses and protects shared output paths. E2
+automatically acquires the complete submission set; E3 durably attaches
+scheduler identities. Worker-side ownership and terminal transitions remain
+E4 work. Preview current conflicts with:
 
 ```bash
 spires-batch reservations diagnose resolved-plan.json --state-root /product/root
