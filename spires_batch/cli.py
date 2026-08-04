@@ -14,6 +14,10 @@ from pydantic import ValidationError
 
 from spires_batch.backends import DryRunBackend, SerialBackend
 from spires_batch.events import EventLog, read_event_logs, write_attempt
+from spires_batch.operational import (
+    advance_operational_run,
+    start_operational_run,
+)
 from spires_batch.planner import plan_request
 from spires_batch.preflight import PreflightFailedError
 from spires_batch.reservations import (
@@ -51,6 +55,8 @@ from spires_batch.status import (
 )
 from spires_batch.models import (
     RequestConfig,
+    OperationalAdvanceRecord,
+    OperationalRunRecord,
     ReservationSet,
     ResolvedPlan,
     SchedulerSubmissionRecord,
@@ -81,6 +87,8 @@ def _parser() -> argparse.ArgumentParser:
             "reservation-set",
             "scheduler-test",
             "scheduler-submission",
+            "operational-run",
+            "operational-advance",
         ),
     )
     schema.add_argument("--output", "-o", type=Path)
@@ -216,6 +224,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     submission_reserve.add_argument("submission_record", type=Path)
     submission_reserve.add_argument("--output", type=Path)
+    submission_reserve.add_argument(
+        "--rearm-failed",
+        action="store_true",
+        help="re-arm only failed same-family reservations for an eligible retry",
+    )
 
     submission_rollback = submission_commands.add_parser(
         "rollback-reservations",
@@ -238,6 +251,24 @@ def _parser() -> argparse.ArgumentParser:
     submission_submit.add_argument("reservation_set", type=Path)
     submission_submit.add_argument("--scheduler-test", type=Path)
     submission_submit.add_argument("--output", type=Path)
+
+    submission_operational = submission_commands.add_parser(
+        "start-operational",
+        help=(
+            "start stage-gated execution with afterany reconciliation and "
+            "automatic capped retries"
+        ),
+    )
+    submission_operational.add_argument("manifest", type=Path)
+    submission_operational.add_argument("--state-root", type=Path, required=True)
+    submission_operational.add_argument("--output-dir", type=Path, required=True)
+
+    submission_advance = submission_commands.add_parser(
+        "advance",
+        help="reconcile one terminal operational wave and submit its successor",
+    )
+    submission_advance.add_argument("operation_record", type=Path)
+    submission_advance.add_argument("--wave-dir", type=Path, required=True)
     return parser
 
 
@@ -281,6 +312,8 @@ def _command_schema(args: argparse.Namespace) -> int:
         "reservation-set": ReservationSet,
         "scheduler-test": SchedulerTestRecord,
         "scheduler-submission": SchedulerSubmissionRecord,
+        "operational-run": OperationalRunRecord,
+        "operational-advance": OperationalAdvanceRecord,
     }[args.artifact]
     payload = json.dumps(model.model_json_schema(), indent=2, sort_keys=True) + "\n"
     if args.output is None:
@@ -603,6 +636,7 @@ def _command_submission(args: argparse.Namespace) -> int:
         reservation_set = acquire_submission_reservations(
             args.submission_record,
             reservation_set_path=args.output,
+            rearm_failed=args.rearm_failed,
         )
         destination = (
             args.output
@@ -666,6 +700,41 @@ def _command_submission(args: argparse.Namespace) -> int:
             )
         print("Live Slurm submission completed and job IDs were durably recorded.")
         return 0
+
+    if args.submission_command == "start-operational":
+        launch = start_operational_run(
+            args.manifest,
+            state_root=args.state_root,
+            output_directory=args.output_dir,
+        )
+        print(
+            f"operational run: "
+            f"{launch.operation.output_directory / 'operation.json'}"
+        )
+        print(f"operational_run_id: {launch.operation.operational_run_id}")
+        print(f"initial wave: {launch.wave_directory}")
+        for group in launch.scheduler_submission.groups:
+            print(
+                f"{group.group_id}: cluster={group.cluster} "
+                f"job_id={group.job_id}"
+            )
+        print(f"afterany coordinator job_id={launch.coordinator_job_id}")
+        print(
+            "Stage-gated execution started; its coordinator will reconcile "
+            "terminal state and submit retries or downstream work."
+        )
+        return 0
+
+    if args.submission_command == "advance":
+        advance = advance_operational_run(
+            args.operation_record,
+            wave_directory=args.wave_dir,
+        )
+        print(f"operational status: {advance.status}")
+        print(advance.message)
+        if advance.next_wave_directory is not None:
+            print(f"next wave: {advance.next_wave_directory}")
+        return 0 if advance.status != "failed" else 1
 
     raise ValueError(f"unsupported submission command {args.submission_command!r}")
 

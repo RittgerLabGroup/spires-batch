@@ -11,9 +11,11 @@ standalone full-product postprocessing, atomic persistence, and scientific
 output validation. R0 construction uses strict sensor-specific summer-composite
 recipes, and standalone postprocessing rejects compact `results_subset` inputs
 during preflight. The Phase E0 controlled serial exit gate passed on
-2026-08-01. Phase E1-E4 now provide audited preparation, reservation,
+2026-08-01. Phase E1-E5 now provide audited preparation, reservation,
 test-only validation, live Slurm submission with durable job identities, and
 worker-side ownership enforcement with outcome-derived reservation state.
+Operational runs add strict stage gates, scheduler reconciliation, and capped
+automatic retries through small `afterany` coordinator jobs.
 
 ## Installed capabilities
 
@@ -32,6 +34,9 @@ worker-side ownership enforcement with outcome-derived reservation state.
 - Worker-side reservation verification immediately before scientific writes,
   failed-state retention, and automatic cleanup after validated completion is
   durably recorded.
+- Stage-gated operational waves, scheduler-derived terminal failures,
+  audited same-family retry reservation re-arming, and capped automatic retry
+  submission.
 - Structured JSON Lines task events, output-derived status, retry manifests,
   tile summaries, and run summaries.
 - Persistent duplicate-output reservations and auditable cleanup.
@@ -442,6 +447,57 @@ spires-batch retry-manifest resolved-plan.json \
 
 Summaries are written as JSON, CSV, and concise text at run and tile levels.
 Only transient failures below the configured retry cap enter a retry manifest.
+
+## Stage-gated operational execution
+
+E5 wraps the immutable E1-E4 submission lifecycle in strict operational waves:
+
+```bash
+module try-load slurm/blanca
+
+spires-batch submission start-operational resolved-plan.json \
+    --state-root /product/root \
+    --output-dir operational-run
+```
+
+This is a live scheduler mutation. The command validates and submits only
+dependency-free tasks, then submits a small coordinator with an `afterany`
+dependency on that wave. The coordinator:
+
+- trusts exact worker terminal events when present;
+- uses `sacct` to terminalize workers that exited without an event;
+- treats node failure, boot failure, preemption, timeout, and out-of-memory as
+  transient scheduler failures;
+- treats cancellation and unclassified scheduler/protocol failures as
+  non-retryable;
+- re-arms only failed reservations with the same manifest family, task,
+  configuration, and output identity;
+- writes and submits immutable retry manifests until
+  `max_auto_retry_count` is exhausted; and
+- releases a downstream wave only after every task in the preceding wave has
+  validated success.
+
+On Blanca the coordinator uses `module try-load slurm/blanca`; installations
+with the Slurm client already on `PATH` therefore continue safely when that
+module name is unavailable.
+
+Successful-subset release is intentionally unsupported. Any deterministic,
+cancelled, or retry-exhausted failure durably blocks every unsubmitted
+downstream task. Each wave retains its submission, reservation, scheduler,
+events, retry lineage, coordinator, and advance artifacts beneath
+`operational-run/waves/`.
+
+The coordinator normally invokes the following single-use command itself:
+
+```bash
+spires-batch submission advance operational-run/operation.json \
+    --wave-dir operational-run/waves/0001-initial
+```
+
+An `advance.lock` retained without `advance-result.json` means advancement
+failed after scheduler mutation began. Inspect that wave's submission events,
+scheduler record, reservations, and coordinator log before any recovery; the
+lock prevents an unsafe duplicate submission.
 
 ## Output reservations
 

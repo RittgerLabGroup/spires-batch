@@ -19,6 +19,8 @@ implemented. The Phase E0 controlled serial exit gate passed on 2026-08-01:
   identities;
 - worker-side reservation verification before scientific writes and
   outcome-derived completed or failed reservation transitions;
+- strict stage-gated operational waves, scheduler reconciliation, and capped
+  automatic retries through tested `afterany` coordinators;
 - structured status, retries, summaries, and output reservations;
 - typed preparation, clustering, inversion, and postprocessing options;
 - atomic raw-product persistence and reopened scientific validation.
@@ -60,6 +62,14 @@ state only after the terminal task event is durable. Use
 ``submission rollback-reservations`` only when a prepared run will not
 proceed; it refuses the complete set after any job identity is attached.
 
+E5 adds ``submission start-operational``. It submits only dependency-free
+tasks, then a small ``afterany`` coordinator reconciles exact worker events
+with ``sacct``. Eligible transient failures are written to immutable retry
+manifests, failed same-family reservations are re-armed under new submission
+and Slurm identities, and downstream tasks are released only after complete
+upstream success. Deterministic, cancelled, and retry-exhausted failures
+durably block all unsubmitted downstream tasks.
+
 The default package installation provides the planning core. Install the
 scientific runtime from a source checkout with ``pip install '.[science]'``;
 on CURC, the merged sibling editable stack in ``spipy14`` remains preferred.
@@ -73,6 +83,8 @@ spires-batch schema submission-record
 spires-batch schema reservation-set
 spires-batch schema scheduler-test
 spires-batch schema scheduler-submission
+spires-batch schema operational-run
+spires-batch schema operational-advance
 ```
 
 Requests and manifests use schema version `1`. Canonical JSON SHA-256 digests

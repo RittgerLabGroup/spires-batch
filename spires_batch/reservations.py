@@ -82,6 +82,7 @@ class ReservationStore:
         run_id: str,
         task_id: str,
         config_digest: str,
+        manifest_family_id: str | None = None,
         plan_digest: str | None = None,
         submission_id: str | None = None,
         output_path: str | Path,
@@ -101,6 +102,7 @@ class ReservationStore:
             created_at=now,
             updated_at=now,
             config_digest=config_digest,
+            manifest_family_id=manifest_family_id,
             plan_digest=plan_digest,
             submission_id=submission_id,
             output_path=Path(output_path).expanduser().resolve(strict=False),
@@ -121,6 +123,7 @@ class ReservationStore:
         intents: Iterable[SubmissionReservationIntent],
         *,
         run_id: str,
+        manifest_family_id: str | None = None,
         config_digest: str,
         plan_digest: str,
         submission_id: str,
@@ -143,6 +146,7 @@ class ReservationStore:
                         run_id=run_id,
                         task_id=intent.task_id,
                         config_digest=config_digest,
+                        manifest_family_id=manifest_family_id,
                         plan_digest=plan_digest,
                         submission_id=submission_id,
                         output_path=intent.output_path,
@@ -162,6 +166,133 @@ class ReservationStore:
                 rolled_back=rolled_back,
             ) from exc
         return tuple(acquired)
+
+    def rearm_failed_many(
+        self,
+        intents: Iterable[SubmissionReservationIntent],
+        *,
+        run_id: str,
+        manifest_family_id: str,
+        config_digest: str,
+        plan_digest: str,
+        submission_id: str,
+        user: str | None = None,
+    ) -> tuple[Reservation, ...]:
+        """Atomically re-arm one failed same-family reservation set for retry."""
+        ordered = tuple(
+            sorted(
+                intents,
+                key=lambda intent: (str(intent.output_path), intent.task_id),
+            )
+        )
+        if not ordered:
+            raise ValueError("reservation retry re-arm requires at least one output")
+
+        current_reservations: list[Reservation] = []
+        for intent in ordered:
+            current = self.load(intent.output_path)
+            if current is None:
+                raise RuntimeError(
+                    f"cannot re-arm missing failed reservation {intent.output_path}"
+                )
+            if (
+                current.reservation_id != intent.reservation_id
+                or current.task_id != intent.task_id
+                or current.output_path
+                != Path(intent.output_path).expanduser().resolve(strict=False)
+                or current.manifest_family_id != manifest_family_id
+                or current.config_digest != config_digest
+            ):
+                raise ReservationConflict(current)
+            if current.state != ReservationState.FAILED:
+                raise RuntimeError(
+                    f"cannot re-arm reservation {current.reservation_id} from "
+                    f"state {current.state.value!r}"
+                )
+            current_reservations.append(current)
+
+        now = datetime.now(timezone.utc)
+        retry_user = user or getpass.getuser()
+        rearmed = tuple(
+            current.model_copy(
+                update={
+                    "state": ReservationState.ACTIVE,
+                    "run_id": run_id,
+                    "user": retry_user,
+                    "updated_at": now,
+                    "plan_digest": plan_digest,
+                    "submission_id": submission_id,
+                    "slurm_cluster": None,
+                    "slurm_job_id": None,
+                    "slurm_array_task_id": None,
+                    "submission_group_id": None,
+                    "message": "failed reservation re-armed for eligible retry",
+                }
+            )
+            for current in current_reservations
+        )
+        replaced: list[tuple[Reservation, Reservation]] = []
+        try:
+            for previous, retry in zip(current_reservations, rearmed, strict=True):
+                self._replace(self.path_for_output(retry.output_path), retry)
+                replaced.append((previous, retry))
+                self._audit("rearmed_for_retry", retry)
+        except Exception:
+            for previous, retry in reversed(replaced):
+                self._replace(self.path_for_output(retry.output_path), previous)
+                self._audit("retry_rearm_rolled_back", previous)
+            raise
+        return rearmed
+
+    def fail_rearmed(
+        self,
+        reservations: Iterable[Reservation],
+        *,
+        reason: str,
+    ) -> tuple[Reservation, ...]:
+        """Return an unsubmitted retry set to protected failed state."""
+        normalized_reason = reason.strip()
+        if not normalized_reason:
+            raise ValueError("retry re-arm failure requires an audit reason")
+        current_reservations: list[Reservation] = []
+        for expected in reservations:
+            current = self.load(expected.output_path)
+            if current is None:
+                raise RuntimeError(
+                    f"cannot fail missing re-armed reservation {expected.output_path}"
+                )
+            if (
+                current.reservation_id != expected.reservation_id
+                or current.run_id != expected.run_id
+                or current.task_id != expected.task_id
+                or current.submission_id != expected.submission_id
+            ):
+                raise ReservationConflict(current)
+            if current.state != ReservationState.ACTIVE:
+                raise RuntimeError(
+                    f"cannot fail re-armed reservation {current.reservation_id} "
+                    f"from state {current.state.value!r}"
+                )
+            if current.slurm_job_id is not None:
+                raise RuntimeError(
+                    f"cannot fail submitted retry reservation "
+                    f"{current.reservation_id}"
+                )
+            current_reservations.append(current)
+
+        failed: list[Reservation] = []
+        for current in current_reservations:
+            restored = current.model_copy(
+                update={
+                    "state": ReservationState.FAILED,
+                    "updated_at": datetime.now(timezone.utc),
+                    "message": normalized_reason,
+                }
+            )
+            self._replace(self.path_for_output(current.output_path), restored)
+            self._audit("retry_rearm_failed", restored)
+            failed.append(restored)
+        return tuple(failed)
 
     def rollback_acquired(
         self,
@@ -334,6 +465,147 @@ class ReservationStore:
         self._replace(self.path_for_output(output_path), failed)
         self._audit("failed", failed)
         return failed
+
+    def reconcile_scheduler_terminal(
+        self,
+        reservation_set: ReservationSet,
+        task: Task,
+        attempt: TaskAttempt,
+        *,
+        group_id: str,
+        cluster: str,
+        job_id: str,
+        array_task_id: str,
+    ) -> tuple[Reservation, ...]:
+        """Complete worker terminalization when the scheduler outlives a worker."""
+        if attempt.task_id != task.task_id:
+            raise WorkerReservationError(
+                f"scheduler attempt belongs to {attempt.task_id!r}, "
+                f"expected {task.task_id!r}"
+            )
+        if attempt.status not in {
+            TaskStatus.SUCCEEDED,
+            TaskStatus.LOADED_EXISTING,
+            TaskStatus.FAILED,
+        }:
+            raise WorkerReservationError(
+                f"cannot reconcile scheduler status {attempt.status.value!r}"
+            )
+        expected = tuple(
+            reservation
+            for reservation in reservation_set.reservations
+            if reservation.task_id == task.task_id
+        )
+        if not expected:
+            raise WorkerReservationError(
+                f"reservation set has no outputs for task {task.task_id!r}"
+            )
+
+        successful = attempt.status in {
+            TaskStatus.SUCCEEDED,
+            TaskStatus.LOADED_EXISTING,
+        }
+        terminalized: list[Reservation] = []
+        for recorded in expected:
+            current = self.load(recorded.output_path)
+            if current is None:
+                if successful:
+                    terminalized.append(
+                        recorded.model_copy(
+                            update={
+                                "state": ReservationState.COMPLETED,
+                                "message": "worker already removed completed reservation",
+                            }
+                        )
+                    )
+                    continue
+                raise WorkerReservationError(
+                    f"failed task reservation disappeared: {recorded.output_path}"
+                )
+            immutable_identity = (
+                current.reservation_id,
+                current.run_id,
+                current.task_id,
+                current.config_digest,
+                current.manifest_family_id,
+                current.plan_digest,
+                current.submission_id,
+                current.output_path,
+            )
+            recorded_identity = (
+                recorded.reservation_id,
+                recorded.run_id,
+                recorded.task_id,
+                recorded.config_digest,
+                recorded.manifest_family_id,
+                recorded.plan_digest,
+                recorded.submission_id,
+                recorded.output_path,
+            )
+            if immutable_identity != recorded_identity:
+                raise ReservationConflict(current)
+            scheduler_identity = (
+                current.slurm_cluster,
+                current.slurm_job_id,
+                current.slurm_array_task_id,
+                current.submission_group_id,
+            )
+            if scheduler_identity != (
+                cluster,
+                job_id,
+                array_task_id,
+                group_id,
+            ):
+                raise WorkerReservationError(
+                    "reservation scheduler identity does not match terminal "
+                    f"accounting for {recorded.output_path}"
+                )
+
+            if successful:
+                if current.state != ReservationState.ACTIVE:
+                    raise WorkerReservationError(
+                        f"successful task reservation is {current.state.value!r}"
+                    )
+                completed = current.model_copy(
+                    update={
+                        "state": ReservationState.COMPLETED,
+                        "updated_at": datetime.now(timezone.utc),
+                        "message": (
+                            "controller completed reservation from durable "
+                            f"task status {attempt.status.value}"
+                        ),
+                    }
+                )
+                path = self.path_for_output(current.output_path)
+                self._replace(path, completed)
+                self._audit("controller_completed", completed)
+                path.unlink()
+                terminalized.append(completed)
+                continue
+
+            if current.state == ReservationState.FAILED:
+                terminalized.append(current)
+                continue
+            if current.state != ReservationState.ACTIVE:
+                raise WorkerReservationError(
+                    f"failed task reservation is {current.state.value!r}"
+                )
+            failed = current.model_copy(
+                update={
+                    "state": ReservationState.FAILED,
+                    "updated_at": datetime.now(timezone.utc),
+                    "message": (
+                        "controller terminalized scheduler failure "
+                        f"[{attempt.failure_class.value if attempt.failure_class else 'unknown'}/"
+                        f"{attempt.failure_code or 'unknown'}]: "
+                        f"{attempt.message or 'no task message'}"
+                    ),
+                }
+            )
+            self._replace(self.path_for_output(current.output_path), failed)
+            self._audit("controller_failed", failed)
+            terminalized.append(failed)
+        return tuple(terminalized)
 
     def list(self) -> tuple[Reservation, ...]:
         if not self.directory.exists():
@@ -512,6 +784,11 @@ class WorkerReservationGuard:
                 or reservation.run_id != self.plan.run_id
                 or reservation.task_id != self.task.task_id
                 or reservation.config_digest != self.plan.config_digest
+                or (
+                    reservation.manifest_family_id is not None
+                    and reservation.manifest_family_id
+                    != self.plan.manifest_family_id
+                )
                 or reservation.plan_digest != self.plan.plan_digest
                 or reservation.submission_id != self.reservation_set.submission_id
                 or reservation.state != ReservationState.ACTIVE
@@ -539,6 +816,7 @@ class WorkerReservationGuard:
                 current.run_id,
                 current.task_id,
                 current.config_digest,
+                current.manifest_family_id,
                 current.plan_digest,
                 current.submission_id,
                 current.output_path,
@@ -548,6 +826,7 @@ class WorkerReservationGuard:
                 recorded.run_id,
                 recorded.task_id,
                 recorded.config_digest,
+                recorded.manifest_family_id,
                 recorded.plan_digest,
                 recorded.submission_id,
                 recorded.output_path,

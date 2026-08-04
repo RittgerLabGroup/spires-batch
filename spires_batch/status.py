@@ -249,6 +249,9 @@ def tile_summaries(summary: Summary) -> dict[str, Summary]:
 def build_retry_plan(
     plan: ResolvedPlan,
     attempts: Iterable[TaskAttempt],
+    *,
+    eligible_task_ids: Iterable[str] | None = None,
+    retry_number: int | None = None,
 ) -> ResolvedPlan:
     latest: dict[str, TaskAttempt] = {}
     for attempt in attempts:
@@ -256,23 +259,31 @@ def build_retry_plan(
         if previous is None or attempt.attempt > previous.attempt:
             latest[attempt.task_id] = attempt
 
+    requested_ids = (
+        None if eligible_task_ids is None else frozenset(eligible_task_ids)
+    )
     eligible_ids = {
         task_id
         for task_id, attempt in latest.items()
         if attempt.status == TaskStatus.FAILED
         and attempt.failure_class == FailureClass.TRANSIENT
         and attempt.attempt <= plan.request.execution.max_auto_retry_count
+        and (requested_ids is None or task_id in requested_ids)
     }
     retry_tasks = tuple(task for task in plan.tasks if task.task_id in eligible_ids)
-    retry_number = plan.retry_number + 1
+    next_retry_number = (
+        plan.retry_number + 1 if retry_number is None else retry_number
+    )
+    if next_retry_number < 1:
+        raise ValueError("retry manifest number must be positive")
     placeholder = plan.model_copy(
         update={
-            "run_id": f"{plan.manifest_family_id}-retry-{retry_number}",
+            "run_id": f"{plan.manifest_family_id}-retry-{next_retry_number}",
             "created_at": datetime.now(timezone.utc),
             "plan_digest": "sha256:" + "0" * 64,
             "tasks": retry_tasks,
             "retry_of_plan_digest": plan.plan_digest,
-            "retry_number": retry_number,
+            "retry_number": next_retry_number,
         }
     )
     return placeholder.model_copy(

@@ -113,6 +113,8 @@ def validate_submission_readiness(
     output_directory: str | Path | None = None,
     require_empty_output_directory: bool = False,
     check_reservations: bool = True,
+    task_ids: tuple[str, ...] | None = None,
+    allow_failed_reservations: bool = False,
 ) -> tuple[SubmissionReadinessCheck, ...]:
     """Validate all mutable prerequisites immediately before reservation."""
     manifest = _resolved(manifest_path)
@@ -138,7 +140,19 @@ def validate_submission_readiness(
                 message="resolved manifest records a passing preflight",
             )
         )
-    if not plan.tasks:
+    selected_ids = (
+        {task.task_id for task in plan.tasks}
+        if task_ids is None
+        else set(task_ids)
+    )
+    known_ids = {task.task_id for task in plan.tasks}
+    missing_ids = selected_ids - known_ids
+    if missing_ids:
+        issues.append(f"submission selects unknown task IDs {sorted(missing_ids)}")
+    selected_tasks = tuple(
+        task for task in plan.tasks if task.task_id in selected_ids
+    )
+    if not selected_tasks:
         issues.append("resolved manifest contains no tasks")
 
     if not state.is_dir():
@@ -189,12 +203,12 @@ def validate_submission_readiness(
 
     output_owners = {
         _resolved(output.path): task.task_id
-        for task in plan.tasks
+        for task in selected_tasks
         for output in task.outputs
     }
     external_inputs: dict[Path, ResolvedInput] = {}
     generated_inputs = 0
-    for task in plan.tasks:
+    for task in selected_tasks:
         for item in task.inputs:
             path = _resolved(item.execution_path)
             producer = output_owners.get(path)
@@ -230,7 +244,7 @@ def validate_submission_readiness(
     )
 
     output_count = 0
-    for task in plan.tasks:
+    for task in selected_tasks:
         for output in task.outputs:
             output_count += 1
             path = _resolved(output.path)
@@ -264,14 +278,26 @@ def validate_submission_readiness(
         )
     )
 
-    intents = submission_reservation_intents(plan)
+    intents = submission_reservation_intents(plan, task_ids=task_ids)
     if check_reservations and state.is_dir():
         store = ReservationStore(state)
-        conflicts = [
-            store.load(intent.output_path)
-            for intent in intents
-        ]
+        conflicts = [store.load(intent.output_path) for intent in intents]
         conflicts = [reservation for reservation in conflicts if reservation is not None]
+        if allow_failed_reservations:
+            intents_by_path = {
+                _resolved(intent.output_path): intent for intent in intents
+            }
+            conflicts = [
+                reservation
+                for reservation in conflicts
+                if not (
+                    reservation.state.value == "failed"
+                    and reservation.task_id
+                    == intents_by_path[_resolved(reservation.output_path)].task_id
+                    and reservation.config_digest == plan.config_digest
+                    and reservation.manifest_family_id == plan.manifest_family_id
+                )
+            ]
         if conflicts:
             issues.extend(
                 (
@@ -297,7 +323,10 @@ def validate_submission_readiness(
 
 def submission_reservation_intents(
     plan: ResolvedPlan,
+    *,
+    task_ids: tuple[str, ...] | None = None,
 ) -> tuple[SubmissionReservationIntent, ...]:
+    selected = None if task_ids is None else set(task_ids)
     return tuple(
         SubmissionReservationIntent(
             reservation_id=ReservationStore.reservation_id(output.path),
@@ -305,6 +334,7 @@ def submission_reservation_intents(
             output_path=_resolved(output.path),
         )
         for task in plan.tasks
+        if selected is None or task.task_id in selected
         for output in task.outputs
     )
 
@@ -353,6 +383,9 @@ def prepare_submission(
     *,
     state_root: str | Path,
     output_directory: str | Path,
+    task_ids: tuple[str, ...] | None = None,
+    attempt_number: int | None = None,
+    allow_failed_reservations: bool = False,
 ) -> SubmissionRecord:
     """Create a fully audited, immutable submission preview without sbatch."""
     manifest = _resolved(manifest_path)
@@ -365,15 +398,21 @@ def prepare_submission(
         state_root=state,
         output_directory=output_dir,
         require_empty_output_directory=True,
+        task_ids=task_ids,
+        allow_failed_reservations=allow_failed_reservations,
     )
     rendered = render_slurm(
         plan,
         manifest_path=manifest,
         output_directory=output_dir,
         reservation_set_path=output_dir / RESERVATION_SET_NAME,
+        task_ids=task_ids,
+        attempt_number=attempt_number,
     )
     created_at = datetime.now(timezone.utc)
-    attempt = plan.retry_number + 1
+    attempt = plan.retry_number + 1 if attempt_number is None else attempt_number
+    if attempt < 1:
+        raise ValueError("submission attempt number must be positive")
     groups = tuple(
         SubmissionGroupRecord(
             group_id=group.group_id,
@@ -406,7 +445,10 @@ def prepare_submission(
         "submit_script_sha256": file_sha256(rendered.submit_script),
         "readiness_checks": readiness,
         "groups": groups,
-        "reservation_intents": submission_reservation_intents(plan),
+        "reservation_intents": submission_reservation_intents(
+            plan,
+            task_ids=task_ids,
+        ),
     }
     submission_digest = sha256_digest(deterministic_submission_payload(payload))
     record = SubmissionRecord(
@@ -516,6 +558,7 @@ def acquire_submission_reservations(
     submission_path: str | Path,
     *,
     reservation_set_path: str | Path | None = None,
+    rearm_failed: bool = False,
 ) -> ReservationSet:
     """Recheck readiness and acquire every output reservation all-or-none."""
     record = load_submission_record(submission_path)
@@ -525,6 +568,10 @@ def acquire_submission_reservations(
         manifest_path=record.manifest_path,
         state_root=record.state_root,
         check_reservations=True,
+        task_ids=tuple(
+            task_id for group in record.groups for task_id in group.task_ids
+        ),
+        allow_failed_reservations=rearm_failed,
     )
     destination = (
         record.output_directory / RESERVATION_SET_NAME
@@ -537,13 +584,24 @@ def acquire_submission_reservations(
         )
     store = ReservationStore(record.state_root)
     try:
-        reservations = store.acquire_many(
-            record.reservation_intents,
-            run_id=record.run_id,
-            config_digest=record.config_digest,
-            plan_digest=record.plan_digest,
-            submission_id=record.submission_id,
-        )
+        if rearm_failed:
+            reservations = store.rearm_failed_many(
+                record.reservation_intents,
+                run_id=record.run_id,
+                manifest_family_id=record.manifest_family_id,
+                config_digest=record.config_digest,
+                plan_digest=record.plan_digest,
+                submission_id=record.submission_id,
+            )
+        else:
+            reservations = store.acquire_many(
+                record.reservation_intents,
+                run_id=record.run_id,
+                manifest_family_id=record.manifest_family_id,
+                config_digest=record.config_digest,
+                plan_digest=record.plan_digest,
+                submission_id=record.submission_id,
+            )
     except ReservationBatchError as exc:
         append_submission_event(
             record.output_directory / SUBMISSION_EVENTS_NAME,
@@ -579,10 +637,21 @@ def acquire_submission_reservations(
     try:
         write_immutable_json(destination, reservation_set)
     except Exception:
-        store.rollback_acquired(
-            reservations,
-            reason="reservation-set artifact could not be written before submission",
-        )
+        if rearm_failed:
+            store.fail_rearmed(
+                reservations,
+                reason=(
+                    "retry reservation-set artifact could not be written; "
+                    "reservation remains protected in failed state"
+                ),
+            )
+        else:
+            store.rollback_acquired(
+                reservations,
+                reason=(
+                    "reservation-set artifact could not be written before submission"
+                ),
+            )
         raise
     append_submission_event(
         record.output_directory / SUBMISSION_EVENTS_NAME,
@@ -592,10 +661,16 @@ def acquire_submission_reservations(
             submission_id=record.submission_id,
             run_id=record.run_id,
             plan_digest=record.plan_digest,
-            message="all output reservations acquired; no sbatch command executed",
+            message=(
+                "failed output reservations re-armed for retry; no sbatch "
+                "command executed"
+                if rearm_failed
+                else "all output reservations acquired; no sbatch command executed"
+            ),
             details={
                 "reservation_set": str(destination),
                 "reservations": len(reservations),
+                "rearmed_failed": rearm_failed,
             },
         ),
     )

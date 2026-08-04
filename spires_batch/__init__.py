@@ -14,6 +14,8 @@ from spires_batch.models import (
     ClusteringScienceConfig,
     InvertScienceConfig,
     MetadataCheck,
+    OperationalAdvanceRecord,
+    OperationalRunRecord,
     ProductContents,
     R0BuildScienceConfig,
     R0Recipe,
@@ -30,6 +32,12 @@ from spires_batch.models import (
     TaskAttempt,
 )
 from spires_batch.planner import plan_request
+from spires_batch.operational import (
+    advance_operational_run,
+    load_operational_advance,
+    load_operational_run,
+    start_operational_run,
+)
 from spires_batch.reservations import (
     ReservationStore,
     WorkerReservationError,
@@ -59,6 +67,8 @@ __all__ = [
     "DryRunBackend",
     "ExplicitFileDiscoveryAdapter",
     "MetadataCheck",
+    "OperationalAdvanceRecord",
+    "OperationalRunRecord",
     "ProductContents",
     "R0BuildScienceConfig",
     "R0Recipe",
@@ -80,8 +90,11 @@ __all__ = [
     "TaskAttempt",
     "InvertScienceConfig",
     "discover_inputs",
+    "advance_operational_run",
     "acquire_submission_reservations",
     "load_plan",
+    "load_operational_advance",
+    "load_operational_run",
     "load_reservation_set",
     "load_request",
     "load_scheduler_submission_record",
@@ -92,6 +105,7 @@ __all__ = [
     "prepare_submission",
     "rollback_submission_reservations",
     "submit_scheduler_submission",
+    "start_operational_run",
     "test_scheduler_submission",
     "validate_scientific_outputs",
     "write_plan",

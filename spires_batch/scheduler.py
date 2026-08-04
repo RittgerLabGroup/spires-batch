@@ -153,6 +153,9 @@ def _load_scheduler_context(
         manifest_path=record.manifest_path,
         state_root=record.state_root,
         check_reservations=False,
+        task_ids=tuple(
+            task_id for group in record.groups for task_id in group.task_ids
+        ),
     )
     store = _verify_current_reservations(
         record,

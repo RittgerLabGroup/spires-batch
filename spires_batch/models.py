@@ -983,6 +983,7 @@ class Reservation(FrozenModel):
     created_at: datetime
     updated_at: datetime
     config_digest: str
+    manifest_family_id: str | None = None
     plan_digest: str | None = None
     submission_id: str | None = None
     output_path: Path
@@ -1206,4 +1207,60 @@ class SchedulerSubmissionRecord(FrozenModel):
                 )
         if not known_groups:
             raise ValueError("scheduler submission requires at least one group")
+        return self
+
+
+class OperationalRunRecord(FrozenModel):
+    artifact_type: Literal["spires_batch_operational_run"] = (
+        "spires_batch_operational_run"
+    )
+    schema_version: Literal[SCHEMA_VERSION] = SCHEMA_VERSION
+    operational_run_id: str
+    operational_run_digest: str
+    created_at: datetime
+    manifest_family_id: str
+    config_digest: str
+    plan_digest: str
+    manifest_path: Path
+    manifest_sha256: str
+    state_root: Path
+    output_directory: Path
+
+
+class OperationalAdvanceRecord(FrozenModel):
+    artifact_type: Literal["spires_batch_operational_advance"] = (
+        "spires_batch_operational_advance"
+    )
+    schema_version: Literal[SCHEMA_VERSION] = SCHEMA_VERSION
+    advance_digest: str
+    advanced_at: datetime
+    operational_run_id: str
+    completed_wave: int = Field(ge=1)
+    status: Literal[
+        "retry_submitted",
+        "downstream_submitted",
+        "succeeded",
+        "failed",
+    ]
+    task_ids: tuple[str, ...]
+    next_wave_directory: Path | None = None
+    message: str
+
+    @model_validator(mode="after")
+    def validate_transition(self) -> "OperationalAdvanceRecord":
+        if not self.task_ids or len(self.task_ids) != len(set(self.task_ids)):
+            raise ValueError(
+                "operational advance requires unique affected task IDs"
+            )
+        submitted = self.status in {
+            "retry_submitted",
+            "downstream_submitted",
+        }
+        if submitted != (self.next_wave_directory is not None):
+            raise ValueError(
+                "submitted operational advances require a next wave and "
+                "terminal advances must not have one"
+            )
+        if not self.message.strip():
+            raise ValueError("operational advance requires a message")
         return self

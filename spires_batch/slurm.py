@@ -28,9 +28,23 @@ class SlurmRenderResult:
     submit_script: Path
 
 
-def _group_tasks(plan: ResolvedPlan) -> tuple[tuple[Task, ...], ...]:
+def _group_tasks(
+    plan: ResolvedPlan,
+    *,
+    task_ids: frozenset[str] | None = None,
+) -> tuple[tuple[Task, ...], ...]:
     profiles = {profile.name: profile for profile in plan.resource_profiles}
-    ordered = topological_tasks(plan)
+    ordered = tuple(
+        task
+        for task in topological_tasks(plan)
+        if task_ids is None or task.task_id in task_ids
+    )
+    if task_ids is not None:
+        missing = task_ids - {task.task_id for task in ordered}
+        if missing:
+            raise ValueError(f"Slurm selection contains unknown task IDs {sorted(missing)}")
+    if not ordered:
+        raise ValueError("Slurm rendering requires at least one selected task")
     grouped: dict[tuple[tuple[str, ...], str], list[Task]] = defaultdict(list)
     order: list[tuple[tuple[str, ...], str]] = []
     for task in ordered:
@@ -67,6 +81,8 @@ def render_slurm(
     manifest_path: str | Path,
     output_directory: str | Path,
     reservation_set_path: str | Path | None = None,
+    task_ids: tuple[str, ...] | None = None,
+    attempt_number: int | None = None,
 ) -> SlurmRenderResult:
     """Render strict dependency arrays without submitting any jobs."""
     manifest = Path(manifest_path).resolve()
@@ -77,7 +93,8 @@ def render_slurm(
         else Path(reservation_set_path).resolve()
     )
     profiles = {profile.name: profile for profile in plan.resource_profiles}
-    raw_groups = _group_tasks(plan)
+    selected_task_ids = None if task_ids is None else frozenset(task_ids)
+    raw_groups = _group_tasks(plan, task_ids=selected_task_ids)
     task_to_group: dict[str, str] = {}
     groups: list[SlurmArrayGroup] = []
     (output_dir / "logs").mkdir(parents=True, exist_ok=True)
@@ -136,6 +153,10 @@ def render_slurm(
             f"--task-index {shlex.quote(str(index_path))} "
             '--array-index "${SLURM_ARRAY_TASK_ID}"'
         )
+        if attempt_number is not None:
+            if attempt_number < 1:
+                raise ValueError("Slurm worker attempt number must be positive")
+            worker_command += f" --attempt {attempt_number}"
         if reservation_set is not None:
             worker_command += (
                 " --reservation-set "
