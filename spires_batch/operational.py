@@ -44,7 +44,14 @@ from spires_batch.serialization import (
     write_immutable_json,
     write_plan,
 )
-from spires_batch.status import attempts_from_events, build_retry_plan
+from spires_batch.status import (
+    attempts_from_events,
+    attempts_from_event_paths,
+    build_retry_plan,
+    summarize,
+    tile_summaries,
+    write_summary_files,
+)
 from spires_batch.submission import (
     RESERVATION_SET_NAME,
     SUBMISSION_RECORD_NAME,
@@ -63,6 +70,8 @@ ADVANCE_RECORD_NAME = "advance-result.json"
 ADVANCE_LOCK_NAME = "advance.lock"
 COORDINATOR_SCRIPT_NAME = "coordinator.sbatch"
 COORDINATOR_RECORD_NAME = "coordinator-submission.json"
+SUMMARY_DIRECTORY_NAME = "summaries"
+SUMMARY_INDEX_NAME = "summary-index.json"
 
 SacctRunner = Callable[
     [tuple[str, ...]],
@@ -94,6 +103,13 @@ class OperationalLaunch:
     wave_directory: Path
     scheduler_submission: SchedulerSubmissionRecord
     coordinator_job_id: str
+
+
+@dataclass(frozen=True)
+class OperationalSummaryArtifacts:
+    index_path: Path
+    run_summary_paths: tuple[Path, Path, Path]
+    tile_summary_paths: dict[str, tuple[Path, Path, Path]]
 
 
 def _resolved(path: str | Path) -> Path:
@@ -780,7 +796,111 @@ def _all_operational_attempts(
             )
         )
     )
-    return attempts_from_events(read_event_logs(paths))
+    return attempts_from_event_paths(paths)
+
+
+def _summary_path_payload(
+    paths: tuple[Path, Path, Path],
+) -> dict[str, str]:
+    return {
+        "json": str(paths[0]),
+        "csv": str(paths[1]),
+        "text": str(paths[2]),
+    }
+
+
+def _write_operational_summaries(
+    operation: OperationalRunRecord,
+    *,
+    overall_status: str,
+    message: str,
+) -> OperationalSummaryArtifacts:
+    plan = load_plan(operation.manifest_path)
+    attempts = _all_operational_attempts(operation)
+    run_summary = summarize(plan, attempts)
+    if (
+        overall_status == "succeeded"
+        and run_summary.counts["completed"] != run_summary.counts["total"]
+    ):
+        raise RuntimeError(
+            "refusing to finalize a successful operation whose terminal "
+            "summary contains incomplete or invalid outputs"
+        )
+
+    summary_directory = operation.output_directory / SUMMARY_DIRECTORY_NAME
+    run_paths = write_summary_files(run_summary, summary_directory)
+    tile_paths: dict[str, tuple[Path, Path, Path]] = {}
+    tile_payload: dict[str, dict[str, object]] = {}
+    for tile, tile_summary in tile_summaries(run_summary).items():
+        paths = write_summary_files(
+            tile_summary,
+            summary_directory / "tiles" / tile,
+            basename="tile-summary",
+        )
+        tile_paths[tile] = paths
+        tile_payload[tile] = {
+            "counts": tile_summary.counts,
+            "files": _summary_path_payload(paths),
+        }
+
+    index_path = summary_directory / SUMMARY_INDEX_NAME
+    index_payload = {
+        "artifact_type": "spires_batch_operational_summary_index",
+        "schema_version": operation.schema_version,
+        "generated_at": run_summary.generated_at,
+        "operational_run_id": operation.operational_run_id,
+        "manifest_family_id": operation.manifest_family_id,
+        "run_id": run_summary.run_id,
+        "plan_digest": run_summary.plan_digest,
+        "overall_status": overall_status,
+        "message": message,
+        "terminal_stage": run_summary.terminal_stage,
+        "counts": run_summary.counts,
+        "run_summary": _summary_path_payload(run_paths),
+        "tiles": tile_payload,
+    }
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    index_path.write_text(
+        json.dumps(
+            _JSON_OBJECT_ADAPTER.dump_python(index_payload, mode="json"),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return OperationalSummaryArtifacts(
+        index_path=index_path,
+        run_summary_paths=run_paths,
+        tile_summary_paths=tile_paths,
+    )
+
+
+def summarize_operational_run(
+    operation_path: str | Path,
+) -> OperationalSummaryArtifacts:
+    """Regenerate terminal run and tile summaries from all operational waves."""
+    operation = load_operational_run(operation_path)
+    result_path = operation.output_directory / OPERATION_TERMINAL_NAME
+    if not result_path.is_file():
+        raise RuntimeError(
+            "operational summaries are terminal artifacts; "
+            f"no {OPERATION_TERMINAL_NAME} exists for this run"
+        )
+    result = load_json_object(result_path)
+    if (
+        result.get("artifact_type") != "spires_batch_operational_result"
+        or result.get("operational_run_id") != operation.operational_run_id
+    ):
+        raise ValueError("operational result does not match the requested run")
+    status = str(result.get("status", ""))
+    if status not in {"succeeded", "failed"}:
+        raise ValueError(f"invalid terminal operational status {status!r}")
+    return _write_operational_summaries(
+        operation,
+        overall_status=status,
+        message=str(result.get("message", "")),
+    )
 
 
 def _latest_attempts(
@@ -854,6 +974,7 @@ def _write_advance(
 def _write_terminal_operation(
     operation: OperationalRunRecord,
     advance: OperationalAdvanceRecord,
+    summaries: OperationalSummaryArtifacts,
 ) -> None:
     write_immutable_json(
         operation.output_directory / OPERATION_TERMINAL_NAME,
@@ -867,6 +988,16 @@ def _write_terminal_operation(
                 "status": advance.status,
                 "message": advance.message,
                 "terminal_advance_digest": advance.advance_digest,
+                "summary_index": summaries.index_path,
+                "run_summary": _summary_path_payload(
+                    summaries.run_summary_paths
+                ),
+                "tile_summaries": {
+                    tile: _summary_path_payload(paths)
+                    for tile, paths in sorted(
+                        summaries.tile_summary_paths.items()
+                    )
+                },
             },
             mode="json",
         ),
@@ -894,7 +1025,23 @@ def advance_operational_run(
         raise ValueError(f"invalid operational wave directory {wave.name!r}") from exc
     advance_path = wave / ADVANCE_RECORD_NAME
     if advance_path.exists():
-        return load_operational_advance(advance_path)
+        advance = load_operational_advance(advance_path)
+        if advance.status in {"succeeded", "failed"}:
+            terminal_path = operation.output_directory / OPERATION_TERMINAL_NAME
+            summary_index = (
+                operation.output_directory
+                / SUMMARY_DIRECTORY_NAME
+                / SUMMARY_INDEX_NAME
+            )
+            if not terminal_path.exists() or not summary_index.exists():
+                summaries = _write_operational_summaries(
+                    operation,
+                    overall_status=advance.status,
+                    message=advance.message,
+                )
+                if not terminal_path.exists():
+                    _write_terminal_operation(operation, advance, summaries)
+        return advance
 
     lock_path = wave / ADVANCE_LOCK_NAME
     try:
@@ -1045,7 +1192,12 @@ def advance_operational_run(
                 next_wave_directory=None,
                 message=failure_message,
             )
-            _write_terminal_operation(operation, advance)
+            summaries = _write_operational_summaries(
+                operation,
+                overall_status=advance.status,
+                message=advance.message,
+            )
+            _write_terminal_operation(operation, advance, summaries)
             _append_operation_event(
                 operation,
                 event_type="operational_run_failed",
@@ -1089,7 +1241,12 @@ def advance_operational_run(
                 next_wave_directory=None,
                 message=failure_message,
             )
-            _write_terminal_operation(operation, advance)
+            summaries = _write_operational_summaries(
+                operation,
+                overall_status=advance.status,
+                message=advance.message,
+            )
+            _write_terminal_operation(operation, advance, summaries)
             _append_operation_event(
                 operation,
                 event_type="operational_run_failed",
@@ -1171,7 +1328,12 @@ def advance_operational_run(
                 next_wave_directory=None,
                 message=message,
             )
-            _write_terminal_operation(operation, advance)
+            summaries = _write_operational_summaries(
+                operation,
+                overall_status=advance.status,
+                message=advance.message,
+            )
+            _write_terminal_operation(operation, advance, summaries)
             completed = True
             return advance
 
@@ -1185,7 +1347,12 @@ def advance_operational_run(
             next_wave_directory=None,
             message=message,
         )
-        _write_terminal_operation(operation, advance)
+        summaries = _write_operational_summaries(
+            operation,
+            overall_status=advance.status,
+            message=advance.message,
+        )
+        _write_terminal_operation(operation, advance, summaries)
         _append_operation_event(
             operation,
             event_type="operational_run_succeeded",

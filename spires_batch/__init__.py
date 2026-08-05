@@ -37,6 +37,7 @@ from spires_batch.operational import (
     load_operational_advance,
     load_operational_run,
     start_operational_run,
+    summarize_operational_run,
 )
 from spires_batch.reservations import (
     ReservationStore,
@@ -106,6 +107,7 @@ __all__ = [
     "rollback_submission_reservations",
     "submit_scheduler_submission",
     "start_operational_run",
+    "summarize_operational_run",
     "test_scheduler_submission",
     "validate_scientific_outputs",
     "write_plan",

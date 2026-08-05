@@ -17,6 +17,7 @@ from spires_batch.events import EventLog, read_event_logs, write_attempt
 from spires_batch.operational import (
     advance_operational_run,
     start_operational_run,
+    summarize_operational_run,
 )
 from spires_batch.planner import plan_request
 from spires_batch.preflight import PreflightFailedError
@@ -269,6 +270,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     submission_advance.add_argument("operation_record", type=Path)
     submission_advance.add_argument("--wave-dir", type=Path, required=True)
+
+    submission_summary = submission_commands.add_parser(
+        "summarize-operational",
+        help="regenerate terminal run and tile summaries from every wave",
+    )
+    submission_summary.add_argument("operation_record", type=Path)
     return parser
 
 
@@ -735,6 +742,16 @@ def _command_submission(args: argparse.Namespace) -> int:
         if advance.next_wave_directory is not None:
             print(f"next wave: {advance.next_wave_directory}")
         return 0 if advance.status != "failed" else 1
+
+    if args.submission_command == "summarize-operational":
+        artifacts = summarize_operational_run(args.operation_record)
+        print(f"summary index: {artifacts.index_path}")
+        for path in artifacts.run_summary_paths:
+            print(f"run summary: {path}")
+        for tile, paths in sorted(artifacts.tile_summary_paths.items()):
+            for path in paths:
+                print(f"tile summary [{tile}]: {path}")
+        return 0
 
     raise ValueError(f"unsupported submission command {args.submission_command!r}")
 

@@ -487,6 +487,28 @@ downstream task. Each wave retains its submission, reservation, scheduler,
 events, retry lineage, coordinator, and advance artifacts beneath
 `operational-run/waves/`.
 
+When the operation reaches terminal success or failure, the coordinator
+collects every initial, downstream, retry, and blocked-task event and writes:
+
+- `operational-run/summaries/run-summary.{json,csv,txt}`;
+- `operational-run/summaries/tiles/<tile>/tile-summary.{json,csv,txt}`; and
+- `operational-run/summaries/summary-index.json`, which links the run and tile
+  reports and carries their terminal counts.
+
+The reports include final task status, complete attempt history, retry counts,
+failure codes and messages, output and event-log paths, Slurm job and array
+identities, start/end times, active elapsed seconds, and the terminal requested
+stage. The terminal `operational-result.json` links the same summary artifacts.
+Successful outputs are reopened and validated again before a successful
+terminal summary is accepted.
+
+Terminal reports can be regenerated safely from retained operational artifacts:
+
+```bash
+spires-batch submission summarize-operational \
+    operational-run/operation.json
+```
+
 The coordinator normally invokes the following single-use command itself:
 
 ```bash
