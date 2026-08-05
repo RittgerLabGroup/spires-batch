@@ -213,6 +213,18 @@ def validate_submission_readiness(
             path = _resolved(item.execution_path)
             producer = output_owners.get(path)
             if producer is not None:
+                updates_own_input = (
+                    producer == task.task_id
+                    and any(
+                        _resolved(output.path) == path
+                        and output.existing_file_handling
+                        == ExistingFileHandling.UPDATE_ATOMICALLY
+                        for output in task.outputs
+                    )
+                )
+                if updates_own_input:
+                    external_inputs.setdefault(path, item)
+                    continue
                 if producer not in task.depends_on:
                     issues.append(
                         f"task {task.task_id!r} consumes planned output {path} "
