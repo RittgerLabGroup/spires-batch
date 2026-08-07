@@ -73,6 +73,7 @@ class Summary:
     plan_digest: str
     generated_at: datetime
     terminal_stage: str
+    output_validation_mode: str
     counts: dict[str, int]
     records: tuple[TaskStatusRecord, ...]
 
@@ -222,8 +223,15 @@ def summarize(
     plan: ResolvedPlan,
     attempts: Iterable[TaskAttempt],
     *,
-    output_validator: OutputValidator = validate_scientific_outputs,
+    output_validator: OutputValidator | None = None,
 ) -> Summary:
+    """Summarize task events, optionally revalidating persisted outputs.
+
+    Successful worker terminal events already mean the atomically published
+    outputs were reopened and scientifically validated. The default summary
+    therefore trusts those durable events. Supplying an output validator
+    requests an additional persistence audit while building the summary.
+    """
     by_task: dict[str, list[TaskAttempt]] = defaultdict(list)
     for attempt in attempts:
         by_task[attempt.task_id].append(attempt)
@@ -242,7 +250,10 @@ def summarize(
             status = latest.status
             message = latest.message
             failure_code = latest.failure_code
-            if status in {TaskStatus.SUCCEEDED, TaskStatus.LOADED_EXISTING}:
+            if (
+                output_validator is not None
+                and status in {TaskStatus.SUCCEEDED, TaskStatus.LOADED_EXISTING}
+            ):
                 valid, validation_message = output_validator(task)
                 if not valid:
                     status = TaskStatus.MISSING
@@ -302,6 +313,15 @@ def summarize(
         plan_digest=plan.plan_digest,
         generated_at=datetime.now(timezone.utc),
         terminal_stage=terminal_stage,
+        output_validation_mode=(
+            "trusted_worker_terminal_events"
+            if output_validator is None
+            else (
+                "scientific_revalidation"
+                if output_validator is validate_scientific_outputs
+                else "custom_output_validation"
+            )
+        ),
         counts=_summary_counts(records),
         records=tuple(records),
     )
@@ -386,6 +406,7 @@ def write_summary_files(
         "plan_digest": summary.plan_digest,
         "generated_at": summary.generated_at.isoformat(),
         "terminal_stage": summary.terminal_stage,
+        "output_validation_mode": summary.output_validation_mode,
         "counts": summary.counts,
         "tile_counts": tile_counts,
         "records": [_task_payload(record) for record in summary.records],
@@ -434,6 +455,7 @@ def write_summary_files(
         f"run_id: {summary.run_id}",
         f"plan_digest: {summary.plan_digest}",
         f"terminal_stage: {summary.terminal_stage}",
+        f"output_validation_mode: {summary.output_validation_mode}",
         "counts: "
         + ", ".join(f"{key}={value}" for key, value in summary.counts.items()),
         "",
@@ -479,6 +501,7 @@ def tile_summaries(summary: Summary) -> dict[str, Summary]:
             plan_digest=summary.plan_digest,
             generated_at=summary.generated_at,
             terminal_stage=summary.terminal_stage,
+            output_validation_mode=summary.output_validation_mode,
             counts=_summary_counts(records),
             records=tuple(records),
         )

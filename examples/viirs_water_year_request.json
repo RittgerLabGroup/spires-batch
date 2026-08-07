@@ -1,0 +1,181 @@
+{
+  "artifact_type": "spires_batch_request",
+  "schema_version": 1,
+  "run": {
+    "name": "viirs-westernUS-wy2024",
+    "sensor": "viirs",
+    "platform": "noaa20"
+  },
+  "selection": {
+    "tiles": [
+      "h08v04",
+      "h08v05",
+      "h09v04",
+      "h09v05",
+      "h10v04"
+    ],
+    "water_years": [
+      2024
+    ],
+    "dates": []
+  },
+  "steps": [
+    "invert",
+    "albedo"
+  ],
+  "inputs": {
+    "files": [
+      {
+        "role": "lut",
+        "name": "inversion_lut",
+        "path": "/scratch/alpine/ropa5718/lut/20260721_disort_reflectance_viirs.nc"
+      },
+      {
+        "role": "lut",
+        "name": "albedo_lookup",
+        "path": "/scratch/alpine/ropa5718/lut/20260721_disort_albedo.nc"
+      },
+      {
+        "role": "lut",
+        "name": "forcing_lookup",
+        "path": "/scratch/alpine/ropa5718/lut/Darkening_RadiativeForcing_SanJuanDust_BlackCarbon.nc"
+      }
+    ],
+    "roots": [
+      {
+        "adapter": "curc",
+        "role": "reflectance",
+        "path": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/reflectance",
+        "pattern": "**/V*09GA.A*.h??v??.*.h5",
+        "required": true
+      },
+      {
+        "adapter": "curc",
+        "role": "mask",
+        "name": "cloud_mask",
+        "path": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/ancillary/cloud",
+        "pattern": "h??v??/*/*_cloud_mask.tif",
+        "required": true
+      }
+    ],
+    "static_context_roots": [
+      {
+        "adapter": "tiled_static_context",
+        "path": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/ancillary",
+        "pattern": "h??v??/*.tif",
+        "required": true
+      }
+    ]
+  },
+  "r0": {
+    "mode": "existing",
+    "artifacts": [
+      {
+        "id": "viirs-r0-h08v04-wy2024",
+        "path": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/ancillary/r0/h08v04/2023/noaa20_r0_h08v04_2023.nc",
+        "tile": "h08v04",
+        "water_year": 2024,
+        "start_date": "2023-06-01",
+        "end_date": "2023-09-28"
+      },
+      {
+        "id": "viirs-r0-h08v05-wy2024",
+        "path": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/ancillary/r0/h08v05/2023/noaa20_r0_h08v05_2023.nc",
+        "tile": "h08v05",
+        "water_year": 2024,
+        "start_date": "2023-06-01",
+        "end_date": "2023-09-28"
+      },
+      {
+        "id": "viirs-r0-h09v04-wy2024",
+        "path": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/ancillary/r0/h09v04/2023/noaa20_r0_h09v04_2023.nc",
+        "tile": "h09v04",
+        "water_year": 2024,
+        "start_date": "2023-06-01",
+        "end_date": "2023-09-28"
+      },
+      {
+        "id": "viirs-r0-h09v05-wy2024",
+        "path": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/ancillary/r0/h09v05/2023/noaa20_r0_h09v05_2023.nc",
+        "tile": "h09v05",
+        "water_year": 2024,
+        "start_date": "2023-06-01",
+        "end_date": "2023-09-28"
+      },
+      {
+        "id": "viirs-r0-h10v04-wy2024",
+        "path": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/ancillary/r0/h10v04/2023/noaa20_r0_h10v04_2023.nc",
+        "tile": "h10v04",
+        "water_year": 2024,
+        "start_date": "2023-06-01",
+        "end_date": "2023-09-28"
+      }
+    ]
+  },
+  "science": {
+    "invert": {
+      "preparation": {
+        "max_sensor_zenith": 65.0,
+        "max_solar_zenith": 85.0,
+        "mask_water_using_reflectance_qf": false,
+        "mask_water_using_external_file": true,
+        "mask_low_reflectance_for_inversion": true,
+        "low_reflectance_threshold": 0.1
+      },
+      "clustering": {
+        "enabled": false
+      },
+      "algorithm": 6,
+      "max_eval": 200,
+      "initial_grain_radius_um": 250.0,
+      "apply_valid_inversion_mask": true,
+      "n_workers": 1
+    },
+    "albedo": {
+      "apply_canopy_correction": true,
+      "apply_ice_adjustment": true,
+      "calculate_albedo": true,
+      "calculate_delta_vis": true,
+      "calculate_radiative_forcing": true
+    }
+  },
+  "output": {
+    "root": "/scratch/alpine/ropa5718/spipy/output/batch-test",
+    "product_contents": "full",
+    "existing_file_handling": "write_new_file",
+    "existing_output_policy": "reuse_valid"
+  },
+  "execution": {
+    "profiles": {
+      "blanca-snow": {
+        "max_concurrent_tasks": 60,
+        "resources": {
+          "account": "blanca-snow",
+          "qos": "blanca-snow",
+          "time_limit": "04:00:00",
+          "cpus_per_task": 1,
+          "memory": "16G",
+          "environment_name": "spipy14",
+          "extra_directives": []
+        }
+      }
+    },
+    "tile_profiles": {
+      "h08v04": "blanca-snow",
+      "h08v05": "blanca-snow",
+      "h09v04": "blanca-snow",
+      "h09v05": "blanca-snow",
+      "h10v04": "blanca-snow"
+    },
+    "coordinator_profile": "blanca-snow",
+    "max_auto_retry_count": 3,
+    "staging": {
+      "enabled": false,
+      "verification": "stat",
+      "reuse_valid": true
+    }
+  },
+  "preflight": {
+    "metadata_check": "sample"
+  }
+}

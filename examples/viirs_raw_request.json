@@ -30,27 +30,6 @@
         "role": "lut",
         "name": "albedo_lookup",
         "path": "/pl/active/rittger_ops/example/lookups/albedo.nc"
-      },
-      {
-        "role": "ancillary",
-        "name": "dem",
-        "path": "/pl/active/rittger_ops/example/ancillary/h09v04_dem.tif",
-        "tile": "h09v04",
-        "metadata": {
-          "units": "m"
-        }
-      },
-      {
-        "role": "ancillary",
-        "name": "slope",
-        "path": "/pl/active/rittger_ops/example/ancillary/h09v04_slope.tif",
-        "tile": "h09v04"
-      },
-      {
-        "role": "ancillary",
-        "name": "aspect",
-        "path": "/pl/active/rittger_ops/example/ancillary/h09v04_aspect.tif",
-        "tile": "h09v04"
       }
     ],
     "roots": [
@@ -59,6 +38,14 @@
         "role": "reflectance",
         "path": "/pl/active/rittger_ops/example/vj109ga.002",
         "pattern": "**/VJ109GA.A*.h09v04.*.h5"
+      }
+    ],
+    "static_context_roots": [
+      {
+        "adapter": "tiled_static_context",
+        "path": "/pl/active/rittger_ops/example/ancillary",
+        "pattern": "h??v??/*.tif",
+        "required": true
       }
     ]
   },

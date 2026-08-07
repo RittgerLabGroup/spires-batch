@@ -47,6 +47,11 @@ class SchedulerSubmissionError(RuntimeError):
     """A Slurm validation or mutation could not be completed safely."""
 
 
+def current_slurm_parent_job_id() -> str | None:
+    """Return the durable job ID used by sbatch and array reservations."""
+    return os.environ.get("SLURM_ARRAY_JOB_ID") or os.environ.get("SLURM_JOB_ID")
+
+
 def _resolved(path: str | Path) -> Path:
     return Path(path).expanduser().resolve(strict=False)
 

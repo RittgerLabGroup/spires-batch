@@ -29,6 +29,7 @@ from spires_batch.reservations import (
 from spires_batch.scheduler import (
     SCHEDULER_SUBMISSION_NAME,
     SCHEDULER_TEST_NAME,
+    current_slurm_parent_job_id,
     submit_scheduler_submission,
     test_scheduler_submission,
 )
@@ -45,7 +46,10 @@ from spires_batch.submission import (
     rollback_submission_reservations,
 )
 from spires_batch.slurm import render_slurm
-from spires_batch.science import ScientificExecutor
+from spires_batch.science import (
+    ScientificExecutor,
+    validate_scientific_outputs,
+)
 from spires_batch.staging import execute_staging
 from spires_batch.status import (
     attempts_from_events,
@@ -133,11 +137,19 @@ def _parser() -> argparse.ArgumentParser:
 
     summary = subparsers.add_parser(
         "summarize",
-        help="derive run and tile summaries from task event logs and outputs",
+        help="derive run and tile summaries from validated task event logs",
     )
     summary.add_argument("manifest", type=Path)
     summary.add_argument("--events-dir", type=Path, required=True)
     summary.add_argument("--output-dir", type=Path, required=True)
+    summary.add_argument(
+        "--revalidate-outputs",
+        action="store_true",
+        help=(
+            "reopen and scientifically validate every successful output; "
+            "slower than the default event-backed summary"
+        ),
+    )
 
     retry = subparsers.add_parser(
         "retry-manifest",
@@ -270,12 +282,28 @@ def _parser() -> argparse.ArgumentParser:
     )
     submission_advance.add_argument("operation_record", type=Path)
     submission_advance.add_argument("--wave-dir", type=Path, required=True)
+    submission_advance.add_argument(
+        "--revalidate-outputs",
+        action="store_true",
+        help=(
+            "reopen and scientifically validate every successful output "
+            "during terminal finalization"
+        ),
+    )
 
     submission_summary = submission_commands.add_parser(
         "summarize-operational",
         help="regenerate terminal run and tile summaries from every wave",
     )
     submission_summary.add_argument("operation_record", type=Path)
+    submission_summary.add_argument(
+        "--revalidate-outputs",
+        action="store_true",
+        help=(
+            "reopen and scientifically validate every successful output; "
+            "slower than the default event-backed summary"
+        ),
+    )
     return parser
 
 
@@ -396,7 +424,15 @@ def _command_summarize(args: argparse.Namespace) -> int:
     plan = load_plan(args.manifest)
     events = read_event_logs(_event_paths(args.events_dir))
     attempts = attempts_from_events(events)
-    run_summary = summarize(plan, attempts)
+    run_summary = summarize(
+        plan,
+        attempts,
+        output_validator=(
+            validate_scientific_outputs
+            if args.revalidate_outputs
+            else None
+        ),
+    )
     paths = write_summary_files(run_summary, args.output_dir)
     for tile, tile_summary in tile_summaries(run_summary).items():
         write_summary_files(
@@ -404,6 +440,7 @@ def _command_summarize(args: argparse.Namespace) -> int:
             args.output_dir / "tiles" / tile,
             basename="tile-summary",
         )
+    print(f"output validation: {run_summary.output_validation_mode}")
     print("\n".join(str(path) for path in paths))
     return 0
 
@@ -473,7 +510,9 @@ def _command_execute_task(args: argparse.Namespace) -> int:
                     task=task,
                     group_id=index.get("group_id"),
                     cluster=index.get("cluster"),
-                    job_id=os.environ.get("SLURM_JOB_ID"),
+                    # Reservations are attached to the durable array parent
+                    # returned by sbatch, not Slurm's per-element allocation ID.
+                    job_id=current_slurm_parent_job_id(),
                     array_task_id=os.environ.get("SLURM_ARRAY_TASK_ID"),
                 )
             return reservation_guard.verify(selected_task)
@@ -736,6 +775,7 @@ def _command_submission(args: argparse.Namespace) -> int:
         advance = advance_operational_run(
             args.operation_record,
             wave_directory=args.wave_dir,
+            revalidate_outputs=args.revalidate_outputs,
         )
         print(f"operational status: {advance.status}")
         print(advance.message)
@@ -744,7 +784,18 @@ def _command_submission(args: argparse.Namespace) -> int:
         return 0 if advance.status != "failed" else 1
 
     if args.submission_command == "summarize-operational":
-        artifacts = summarize_operational_run(args.operation_record)
+        artifacts = summarize_operational_run(
+            args.operation_record,
+            revalidate_outputs=args.revalidate_outputs,
+        )
+        print(
+            "output validation: "
+            + (
+                "scientific_revalidation"
+                if args.revalidate_outputs
+                else "trusted_worker_terminal_events"
+            )
+        )
         print(f"summary index: {artifacts.index_path}")
         for path in artifacts.run_summary_paths:
             print(f"run summary: {path}")

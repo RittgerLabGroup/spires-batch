@@ -9,7 +9,14 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 
 SCHEMA_VERSION = 1
@@ -347,15 +354,43 @@ class DiscoveryRootConfig(FrozenModel):
         return self
 
 
+class StaticContextRootConfig(FrozenModel):
+    """Discover canonical static ancillary and mask files by tile."""
+
+    adapter: Literal["tiled_static_context"] = "tiled_static_context"
+    path: Path
+    pattern: str = "h??v??/*.tif"
+    required: bool = True
+
+    @field_validator("pattern")
+    @classmethod
+    def validate_pattern(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("static context discovery pattern cannot be empty")
+        return value
+
+
 class InputsConfig(FrozenModel):
     files: tuple[InputFileConfig, ...] = ()
     roots: tuple[DiscoveryRootConfig, ...] = ()
+    static_context_roots: tuple[StaticContextRootConfig, ...] = ()
 
     @model_validator(mode="after")
     def require_sources(self) -> "InputsConfig":
-        if not self.files and not self.roots:
-            raise ValueError("inputs must contain at least one explicit file or discovery root")
+        if not self.files and not self.roots and not self.static_context_roots:
+            raise ValueError(
+                "inputs must contain at least one explicit file, discovery root, "
+                "or static context root"
+            )
         return self
+
+    @model_serializer(mode="wrap")
+    def omit_empty_static_context_roots(self, handler: Any) -> dict[str, Any]:
+        """Preserve schema-v1 digests for requests written before this field."""
+        data = handler(self)
+        if not self.static_context_roots:
+            data.pop("static_context_roots", None)
+        return data
 
 
 class R0ArtifactConfig(FrozenModel):
@@ -628,12 +663,120 @@ class ResourceOverrides(FrozenModel):
     extra_directives: tuple[str, ...] = ()
 
 
+class ExecutionProfileConfig(FrozenModel):
+    """One named scheduler profile available to explicitly routed tiles."""
+
+    max_concurrent_tasks: int = Field(default=20, ge=1)
+    resources: ResourceOverrides = Field(default_factory=ResourceOverrides)
+
+
 class ExecutionConfig(FrozenModel):
+    # Legacy single-profile fields remain supported for schema-v1 requests.
     profile: str = "blanca-snow"
     max_concurrent_tasks: int = Field(default=20, ge=1)
-    max_auto_retry_count: int = Field(default=3, ge=0)
     resources: ResourceOverrides = Field(default_factory=ResourceOverrides)
+    profiles: dict[str, ExecutionProfileConfig] = Field(default_factory=dict)
+    tile_profiles: dict[str, str] = Field(default_factory=dict)
+    coordinator_profile: str | None = None
+    max_auto_retry_count: int = Field(default=3, ge=0)
     staging: StagingConfig = Field(default_factory=StagingConfig)
+
+    @field_validator("profiles")
+    @classmethod
+    def validate_profile_names(
+        cls,
+        value: dict[str, ExecutionProfileConfig],
+    ) -> dict[str, ExecutionProfileConfig]:
+        for name in value:
+            if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]*", name):
+                raise ValueError(
+                    "execution profile names must contain only lowercase letters, "
+                    "numbers, '.', '_', or '-'"
+                )
+        return value
+
+    @field_validator("tile_profiles")
+    @classmethod
+    def validate_tile_profiles(cls, value: dict[str, str]) -> dict[str, str]:
+        normalized: dict[str, str] = {}
+        for tile, profile in value.items():
+            normalized_tile = tile.strip().lower()
+            normalized_profile = profile.strip().lower()
+            if not re.fullmatch(r"h\d{2}v\d{2}", normalized_tile):
+                raise ValueError(
+                    f"execution.tile_profiles contains invalid tile {tile!r}"
+                )
+            if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]*", normalized_profile):
+                raise ValueError(
+                    "execution.tile_profiles profile names must contain only "
+                    "lowercase letters, numbers, '.', '_', or '-'"
+                )
+            normalized[normalized_tile] = normalized_profile
+        return normalized
+
+    @field_validator("coordinator_profile")
+    @classmethod
+    def validate_coordinator_profile(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]*", normalized):
+            raise ValueError(
+                "execution.coordinator_profile must contain only lowercase "
+                "letters, numbers, '.', '_', or '-'"
+            )
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_routing(self) -> "ExecutionConfig":
+        routed = bool(self.profiles or self.tile_profiles or self.coordinator_profile)
+        if not routed:
+            return self
+        if not self.profiles or not self.tile_profiles:
+            raise ValueError(
+                "explicit tile routing requires both execution.profiles and "
+                "execution.tile_profiles"
+            )
+        if self.coordinator_profile is None:
+            raise ValueError(
+                "explicit tile routing requires execution.coordinator_profile"
+            )
+        known_profiles = set(self.profiles)
+        referenced_profiles = set(self.tile_profiles.values())
+        unknown = sorted(referenced_profiles - known_profiles)
+        if unknown:
+            raise ValueError(
+                f"execution.tile_profiles references undefined profiles {unknown}"
+            )
+        if self.coordinator_profile not in known_profiles:
+            raise ValueError(
+                "execution.coordinator_profile references undefined profile "
+                f"{self.coordinator_profile!r}"
+            )
+        if (
+            self.profile != "blanca-snow"
+            or self.max_concurrent_tasks != 20
+            or self.resources != ResourceOverrides()
+        ):
+            raise ValueError(
+                "legacy execution.profile, execution.max_concurrent_tasks, and "
+                "execution.resources cannot be combined with explicit tile routing"
+            )
+        return self
+
+    @model_serializer(mode="wrap")
+    def omit_inactive_execution_style(self, handler: Any) -> dict[str, Any]:
+        """Preserve old schema-v1 digests and omit ineffective legacy defaults."""
+        data = handler(self)
+        if self.profiles:
+            data.pop("profile", None)
+            data.pop("max_concurrent_tasks", None)
+            data.pop("resources", None)
+        else:
+            data.pop("profiles", None)
+            data.pop("tile_profiles", None)
+            data.pop("coordinator_profile", None)
+        return data
 
 
 class PreflightConfig(FrozenModel):
@@ -677,6 +820,21 @@ class RequestConfig(FrozenModel):
             for item in (*self.inputs.files, *self.inputs.roots)
             if item.name is not None
         }
+        if self.inputs.static_context_roots:
+            roles.update({InputRole.ANCILLARY, InputRole.MASK})
+            named_inputs.update(
+                {
+                    (InputRole.ANCILLARY, "dem"),
+                    (InputRole.ANCILLARY, "slope"),
+                    (InputRole.ANCILLARY, "aspect"),
+                    (InputRole.ANCILLARY, "skyview"),
+                    (InputRole.ANCILLARY, "canopy_fraction"),
+                    (InputRole.ANCILLARY, "ice_fraction"),
+                    (InputRole.MASK, "water_mask"),
+                    (InputRole.MASK, "ice_mask"),
+                    (InputRole.MASK, "playa_mask"),
+                }
+            )
 
         supported_names = {
             InputRole.LUT: {
@@ -793,6 +951,20 @@ class RequestConfig(FrozenModel):
                 "output.existing_file_handling='update_atomically' is initially supported "
                 "only for standalone albedo enrichment of an existing raw product"
             )
+        if self.execution.tile_profiles:
+            selected_tiles = set(self.selection.tiles)
+            routed_tiles = set(self.execution.tile_profiles)
+            if not selected_tiles:
+                raise ValueError(
+                    "explicit tile routing requires selection.tiles to be non-empty"
+                )
+            missing = sorted(selected_tiles - routed_tiles)
+            extra = sorted(routed_tiles - selected_tiles)
+            if missing or extra:
+                raise ValueError(
+                    "execution.tile_profiles must exactly cover selection.tiles; "
+                    f"missing={missing}, extra={extra}"
+                )
         return self
 
 
@@ -923,6 +1095,21 @@ class ResolvedPlan(FrozenModel):
         ]
         if len(output_paths) != len(set(output_paths)):
             raise ValueError("resolved plan contains duplicate output paths")
+        profile_names = [profile.name for profile in self.resource_profiles]
+        if len(profile_names) != len(set(profile_names)):
+            raise ValueError("resolved plan contains duplicate resource profile names")
+        known_profiles = set(profile_names)
+        unknown_profiles = sorted(
+            {
+                task.resource_profile
+                for task in self.tasks
+                if task.resource_profile not in known_profiles
+            }
+        )
+        if unknown_profiles:
+            raise ValueError(
+                f"resolved tasks reference unknown resource profiles {unknown_profiles}"
+            )
         known = set(task_ids)
         for task in self.tasks:
             missing = set(task.depends_on) - known

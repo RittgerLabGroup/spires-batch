@@ -8,3 +8,7 @@ dist/
 .tox/
 .venv/
 .claude/
+
+# Generated batch plans, submission artifacts, task events, and Slurm logs.
+# New runs default to scratch, but keep this ignored for older/local runs.
+/spires-batch-runs/

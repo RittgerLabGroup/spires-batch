@@ -26,6 +26,7 @@ from spires_batch.models import (
     TaskStatus,
 )
 from spires_batch.reservations import WorkerReservationError
+from spires_batch.scheduler import current_slurm_parent_job_id
 
 
 _TRANSIENT_ERRNOS = {
@@ -827,7 +828,10 @@ class ScientificExecutor:
 
     def __call__(self, task: Task, attempt_number: int) -> TaskAttempt:
         started = datetime.now(timezone.utc)
-        slurm_job_id = os.environ.get("SLURM_JOB_ID")
+        # Use the array parent as the durable scheduler identity. On Blanca,
+        # SLURM_JOB_ID is a distinct allocation ID for most array elements,
+        # while reservations and sbatch responses identify the parent array.
+        slurm_job_id = current_slurm_parent_job_id()
         slurm_array_task_id = os.environ.get("SLURM_ARRAY_TASK_ID")
         try:
             known_task = next(

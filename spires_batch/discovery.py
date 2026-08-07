@@ -1,4 +1,4 @@
-"""Explicit-file and configuration-driven CURC path discovery."""
+"""Explicit-file and configuration-driven input discovery."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from spires_batch.models import (
     PreflightIssue,
     RequestConfig,
     ResolvedInput,
+    StaticContextRootConfig,
 )
 
 
@@ -38,7 +39,31 @@ _R0_PATTERN = re.compile(
     r"^r0_(?P<start>\d{8})_(?P<end>\d{8})\.nc$",
     re.IGNORECASE,
 )
+_DAILY_CLOUD_MASK_PATTERN = re.compile(
+    r"^(?P<platform>[a-z0-9]+)_(?P<tile>h\d{2}v\d{2})_"
+    r"(?P<date>\d{8})_cloud_mask\.tiff?$",
+    re.IGNORECASE,
+)
 _TILE_COMPONENT = re.compile(r"^h\d{2}v\d{2}$", re.IGNORECASE)
+_STATIC_CONTEXT_PREFIX = re.compile(
+    r"^(?P<tile>h\d{2}v\d{2})_(?P<body>.+)\.tiff?$",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True)
+class StaticContextIdentity:
+    """Semantic identity inferred from one canonical tiled static file."""
+
+    tile: str
+    role: InputRole
+    name: str
+    expected_units: tuple[str, ...]
+    valid_min: float
+    valid_max: float
+    maximum_inclusive: bool = True
+    allowed_values: tuple[float, ...] | None = None
+    angular_convention: str | None = None
 
 
 @dataclass(frozen=True)
@@ -107,6 +132,9 @@ class CurcPathDiscoveryAdapter:
             parsed_product = parsed.get("product")
             if parsed_product is not None and parsed_product != request.run.product:
                 continue
+            parsed_platform = parsed.get("platform")
+            if parsed_platform is not None and parsed_platform != request.run.platform:
+                continue
             configured = InputFileConfig(
                 role=root.role,
                 path=path,
@@ -135,6 +163,295 @@ class CurcPathDiscoveryAdapter:
                 )
             )
         return configured_files, issues
+
+
+class TiledStaticContextDiscoveryAdapter:
+    """Discover canonical static ancillary and mask files in tile directories."""
+
+    name = "tiled_static_context"
+
+    def expand(
+        self,
+        root: StaticContextRootConfig,
+        *,
+        request: RequestConfig,
+        base_dir: Path,
+    ) -> tuple[list[InputFileConfig], list[PreflightIssue]]:
+        root_path = _absolute(root.path, base_dir)
+        if not root_path.is_dir():
+            severity = CheckSeverity.ERROR if root.required else CheckSeverity.WARNING
+            return [], [
+                PreflightIssue(
+                    layer=CheckLayer.INVENTORY,
+                    severity=severity,
+                    code="missing_static_context_root",
+                    message=f"static context root does not exist: {root_path}",
+                    path=root_path,
+                )
+            ]
+
+        configured_files: list[InputFileConfig] = []
+        issues: list[PreflightIssue] = []
+        candidates: dict[tuple[str, InputRole, str], list[Path]] = {}
+        selected_tiles = set(request.selection.tiles)
+
+        matches = sorted(
+            candidate
+            for candidate in root_path.glob(root.pattern)
+            if candidate.is_file()
+        )
+        for path in matches:
+            try:
+                identity = classify_static_context_file(path)
+            except ValueError as exc:
+                issues.append(
+                    PreflightIssue(
+                        layer=CheckLayer.INVENTORY,
+                        severity=CheckSeverity.ERROR,
+                        code="static_context_identity_mismatch",
+                        message=str(exc),
+                        path=path,
+                    )
+                )
+                continue
+            if identity is None:
+                continue
+            if selected_tiles and identity.tile not in selected_tiles:
+                continue
+
+            key = (identity.tile, identity.role, identity.name)
+            candidates.setdefault(key, []).append(path)
+            metadata = {
+                "discovery_adapter": self.name,
+                "static_context_root": str(root_path),
+                "expected_units": identity.expected_units,
+                "valid_min": identity.valid_min,
+                "valid_max": identity.valid_max,
+                "maximum_inclusive": identity.maximum_inclusive,
+            }
+            if identity.allowed_values is not None:
+                metadata["allowed_values"] = identity.allowed_values
+            if identity.angular_convention is not None:
+                metadata["angular_convention"] = identity.angular_convention
+            configured_files.append(
+                InputFileConfig(
+                    role=identity.role,
+                    path=path,
+                    name=identity.name,
+                    tile=identity.tile,
+                    metadata=metadata,
+                )
+            )
+
+        for (tile, role, name), paths in sorted(
+            candidates.items(),
+            key=lambda item: (item[0][0], item[0][1].value, item[0][2]),
+        ):
+            if len(paths) <= 1:
+                continue
+            issues.append(
+                PreflightIssue(
+                    layer=CheckLayer.INVENTORY,
+                    severity=CheckSeverity.ERROR,
+                    code="duplicate_static_context",
+                    message=(
+                        f"static context root resolved multiple {role.value}:{name} "
+                        f"files for tile={tile}: {[str(path) for path in paths]}"
+                    ),
+                    path=root_path / tile,
+                )
+            )
+
+        if root.required:
+            discovered_tiles = {
+                item.tile for item in configured_files if item.tile is not None
+            }
+            if selected_tiles:
+                for tile in sorted(selected_tiles - discovered_tiles):
+                    issues.append(
+                        PreflightIssue(
+                            layer=CheckLayer.INVENTORY,
+                            severity=CheckSeverity.ERROR,
+                            code="missing_static_context_tile",
+                            message=(
+                                f"static context root resolved no canonical files "
+                                f"for selected tile={tile}"
+                            ),
+                            path=root_path / tile,
+                        )
+                    )
+            elif not configured_files:
+                issues.append(
+                    PreflightIssue(
+                        layer=CheckLayer.INVENTORY,
+                        severity=CheckSeverity.ERROR,
+                        code="empty_static_context_discovery",
+                        message=(
+                            f"static context root {root_path} with pattern "
+                            f"{root.pattern!r} resolved no canonical files"
+                        ),
+                        path=root_path,
+                    )
+                )
+        return configured_files, issues
+
+
+def classify_static_context_file(path: str | Path) -> StaticContextIdentity | None:
+    """Classify one canonical static file without using sensor or platform names."""
+    candidate = Path(path)
+    match = _STATIC_CONTEXT_PREFIX.fullmatch(candidate.name)
+    if match is None:
+        return None
+
+    tile = match.group("tile").lower()
+    body = match.group("body").lower()
+    identity: tuple[
+        InputRole,
+        str,
+        tuple[str, ...],
+        float,
+        float,
+        bool,
+        tuple[float, ...] | None,
+        str | None,
+    ] | None = None
+    if re.fullmatch(r"(?:dem|elevation)(?:_.+)?", body):
+        identity = (
+            InputRole.ANCILLARY,
+            "dem",
+            (
+                "m",
+                "meter",
+                "meters",
+                "metre",
+                "metres",
+                "km",
+                "kilometer",
+                "kilometers",
+                "kilometre",
+                "kilometres",
+            ),
+            -1000.0,
+            8000.0,
+            True,
+            None,
+            None,
+        )
+    elif re.fullmatch(r"slope(?:_.+)?", body):
+        identity = (
+            InputRole.ANCILLARY,
+            "slope",
+            ("degrees",),
+            0.0,
+            90.0,
+            True,
+            None,
+            None,
+        )
+    elif re.fullmatch(r"aspect(?:_.+)?_cw_from_north", body):
+        identity = (
+            InputRole.ANCILLARY,
+            "aspect",
+            ("degrees",),
+            0.0,
+            360.0,
+            False,
+            None,
+            "clockwise_from_north",
+        )
+    elif re.fullmatch(r"canopy_fraction(?:_.+)?_0to1", body):
+        identity = (
+            InputRole.ANCILLARY,
+            "canopy_fraction",
+            ("1",),
+            0.0,
+            1.0,
+            True,
+            None,
+            None,
+        )
+    elif re.fullmatch(r"ice_fraction(?:_.+)?_0to1", body):
+        identity = (
+            InputRole.ANCILLARY,
+            "ice_fraction",
+            ("1",),
+            0.0,
+            1.0,
+            True,
+            None,
+            None,
+        )
+    elif re.fullmatch(r"skyview(?:_.+)?", body):
+        identity = (
+            InputRole.ANCILLARY,
+            "skyview",
+            ("1",),
+            0.0,
+            1.0,
+            True,
+            None,
+            None,
+        )
+    elif re.fullmatch(r"water(?:_mask)?(?:_.+)?", body):
+        identity = (
+            InputRole.MASK,
+            "water_mask",
+            ("1",),
+            0.0,
+            1.0,
+            True,
+            (0.0, 1.0),
+            None,
+        )
+    elif re.fullmatch(r"ice_mask(?:_.+)?", body):
+        identity = (
+            InputRole.MASK,
+            "ice_mask",
+            ("1",),
+            0.0,
+            1.0,
+            True,
+            (0.0, 1.0),
+            None,
+        )
+    elif re.fullmatch(r"playa_mask(?:_.+)?", body):
+        identity = (
+            InputRole.MASK,
+            "playa_mask",
+            ("1",),
+            0.0,
+            1.0,
+            True,
+            (0.0, 1.0),
+            None,
+        )
+    if identity is None:
+        return None
+
+    parent_tile = candidate.parent.name.lower()
+    if not _TILE_COMPONENT.fullmatch(parent_tile):
+        raise ValueError(
+            f"canonical static context file must be directly inside its tile "
+            f"directory: {candidate}"
+        )
+    if parent_tile != tile:
+        raise ValueError(
+            f"static context filename declares tile={tile}, but parent directory "
+            f"declares tile={parent_tile}: {candidate}"
+        )
+
+    role, name, units, minimum, maximum, inclusive, allowed, convention = identity
+    return StaticContextIdentity(
+        tile=tile,
+        role=role,
+        name=name,
+        expected_units=units,
+        valid_min=minimum,
+        valid_max=maximum,
+        maximum_inclusive=inclusive,
+        allowed_values=allowed,
+        angular_convention=convention,
+    )
 
 
 def water_year(acquisition_date: date) -> int:
@@ -180,6 +497,17 @@ def parse_path_identity(path: str | Path) -> dict[str, Any]:
                 result["tile"] = component.lower()
                 break
         return result
+
+    match = _DAILY_CLOUD_MASK_PATTERN.match(name)
+    if match:
+        acquisition_date = datetime.strptime(match.group("date"), "%Y%m%d").date()
+        return {
+            "platform": match.group("platform").lower(),
+            "tile": match.group("tile").lower(),
+            "date": acquisition_date,
+            "water_year": water_year(acquisition_date),
+            "content": "cloud_mask",
+        }
 
     return {}
 
@@ -358,6 +686,17 @@ def _matches_selection(item: InputFileConfig, request: RequestConfig) -> bool:
     }:
         if item.tile is not None and selection.tiles and item.tile not in selection.tiles:
             return False
+        if item.date is not None and selection.dates and item.date not in selection.dates:
+            return False
+        item_wy = item.water_year or (
+            water_year(item.date) if item.date else None
+        )
+        if (
+            item_wy is not None
+            and selection.water_years
+            and item_wy not in selection.water_years
+        ):
+            return False
         return True
     if item.tile is not None and selection.tiles and item.tile not in selection.tiles:
         return False
@@ -387,6 +726,33 @@ def discover_inputs(request: RequestConfig, *, base_dir: str | Path = ".") -> Di
                     message=(
                         f"unknown discovery adapter {root.adapter!r}; installed adapters "
                         f"are {sorted(adapters)}"
+                    ),
+                    path=_absolute(root.path, base),
+                )
+            )
+            continue
+        expanded, adapter_issues = adapter.expand(
+            root,
+            request=request,
+            base_dir=base,
+        )
+        configured_files.extend(expanded)
+        issues.extend(adapter_issues)
+
+    static_context_adapters = {
+        TiledStaticContextDiscoveryAdapter.name: TiledStaticContextDiscoveryAdapter()
+    }
+    for root in request.inputs.static_context_roots:
+        adapter = static_context_adapters.get(root.adapter)
+        if adapter is None:
+            issues.append(
+                PreflightIssue(
+                    layer=CheckLayer.INVENTORY,
+                    severity=CheckSeverity.ERROR,
+                    code="unknown_static_context_adapter",
+                    message=(
+                        f"unknown static context adapter {root.adapter!r}; installed "
+                        f"adapters are {sorted(static_context_adapters)}"
                     ),
                     path=_absolute(root.path, base),
                 )

@@ -12,12 +12,16 @@ from spires_batch.models import ResolvedPlan, ResourceProfile, Task
 from spires_batch.serialization import write_immutable_json
 
 
+MAX_TASKS_PER_SLURM_ARRAY = 1000
+
+
 @dataclass(frozen=True)
 class SlurmArrayGroup:
     group_id: str
     tasks: tuple[Task, ...]
     dependency_group_ids: tuple[str, ...]
     profile: ResourceProfile
+    max_concurrent_tasks: int
     script_path: Path
     index_path: Path
 
@@ -45,10 +49,14 @@ def _group_tasks(
             raise ValueError(f"Slurm selection contains unknown task IDs {sorted(missing)}")
     if not ordered:
         raise ValueError("Slurm rendering requires at least one selected task")
-    grouped: dict[tuple[tuple[str, ...], str], list[Task]] = defaultdict(list)
-    order: list[tuple[tuple[str, ...], str]] = []
+    grouped: dict[tuple[tuple[str, ...], str, str], list[Task]] = defaultdict(list)
+    order: list[tuple[tuple[str, ...], str, str]] = []
     for task in ordered:
-        key = (tuple(stage.value for stage in task.stages), task.resource_profile)
+        key = (
+            tuple(stage.value for stage in task.stages),
+            task.resource_profile,
+            task.tile or "global",
+        )
         if key not in grouped:
             order.append(key)
         grouped[key].append(task)
@@ -57,7 +65,12 @@ def _group_tasks(
                 f"task {task.task_id!r} names unknown resource profile "
                 f"{task.resource_profile!r}"
             )
-    return tuple(tuple(grouped[key]) for key in order)
+    return tuple(
+        tuple(tasks[offset : offset + MAX_TASKS_PER_SLURM_ARRAY])
+        for key in order
+        for tasks in (grouped[key],)
+        for offset in range(0, len(tasks), MAX_TASKS_PER_SLURM_ARRAY)
+    )
 
 
 def _directive(flag: str, value: str | int | None) -> list[str]:
@@ -95,13 +108,22 @@ def render_slurm(
     profiles = {profile.name: profile for profile in plan.resource_profiles}
     selected_task_ids = None if task_ids is None else frozenset(task_ids)
     raw_groups = _group_tasks(plan, task_ids=selected_task_ids)
+    group_counts: dict[tuple[tuple[str, ...], str], int] = defaultdict(int)
+    for tasks in raw_groups:
+        key = (
+            tuple(stage.value for stage in tasks[0].stages),
+            tasks[0].resource_profile,
+        )
+        group_counts[key] += 1
+    group_ordinals: dict[tuple[tuple[str, ...], str], int] = defaultdict(int)
     task_to_group: dict[str, str] = {}
     groups: list[SlurmArrayGroup] = []
     (output_dir / "logs").mkdir(parents=True, exist_ok=True)
 
     for index, tasks in enumerate(raw_groups):
         stages = "-".join(stage.value for stage in tasks[0].stages)
-        group_id = f"g{index:03d}-{stages}"
+        tile = tasks[0].tile or "global"
+        group_id = f"g{index:03d}-{stages}-{tile}"
         dependency_groups = sorted(
             {
                 task_to_group[dependency]
@@ -111,6 +133,28 @@ def render_slurm(
             }
         )
         profile = profiles[tasks[0].resource_profile]
+        concurrency_key = (
+            tuple(stage.value for stage in tasks[0].stages),
+            tasks[0].resource_profile,
+        )
+        group_ordinal = group_ordinals[concurrency_key]
+        group_ordinals[concurrency_key] += 1
+        sibling_count = group_counts[concurrency_key]
+        if profile.max_concurrent_tasks < sibling_count:
+            raise ValueError(
+                f"resource profile {profile.name!r} has "
+                f"max_concurrent_tasks={profile.max_concurrent_tasks}, but stage "
+                f"{stages!r} renders {sibling_count} sibling arrays; raise the "
+                "profile cap to at least the number of arrays"
+            )
+        base_concurrency, remainder = divmod(
+            profile.max_concurrent_tasks,
+            sibling_count,
+        )
+        array_concurrency = max(
+            1,
+            base_concurrency + (1 if group_ordinal < remainder else 0),
+        )
         script_path = output_dir / f"{group_id}.sbatch"
         index_path = output_dir / f"{group_id}.tasks.json"
         write_immutable_json(
@@ -137,7 +181,7 @@ def render_slurm(
             *_directive("time", profile.time_limit),
             *_directive("cpus-per-task", profile.cpus_per_task),
             *_directive("mem", profile.memory),
-            f"#SBATCH --array=0-{len(tasks) - 1}%{profile.max_concurrent_tasks}",
+            f"#SBATCH --array=0-{len(tasks) - 1}%{array_concurrency}",
             f"#SBATCH --output={output_dir}/logs/{group_id}-%A_%a.out",
             f"#SBATCH --error={output_dir}/logs/{group_id}-%A_%a.err",
         ]
@@ -175,6 +219,7 @@ def render_slurm(
             tasks=tasks,
             dependency_group_ids=tuple(dependency_groups),
             profile=profile,
+            max_concurrent_tasks=array_concurrency,
             script_path=script_path,
             index_path=index_path,
         )

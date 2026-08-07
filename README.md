@@ -123,25 +123,6 @@ one sensor/platform combination:
         "role": "lut",
         "name": "albedo_lookup",
         "path": "/exact/path/albedo-lut.nc"
-      },
-      {
-        "role": "ancillary",
-        "name": "dem",
-        "path": "/exact/path/h09v04-dem.tif",
-        "tile": "h09v04",
-        "metadata": {"units": "m"}
-      },
-      {
-        "role": "ancillary",
-        "name": "slope",
-        "path": "/exact/path/h09v04-slope.tif",
-        "tile": "h09v04"
-      },
-      {
-        "role": "ancillary",
-        "name": "aspect",
-        "path": "/exact/path/h09v04-aspect.tif",
-        "tile": "h09v04"
       }
     ],
     "roots": [
@@ -150,6 +131,13 @@ one sensor/platform combination:
         "role": "reflectance",
         "path": "/current/authoritative/root",
         "pattern": "**/VJ109GA.A*.h09v04.*.h5"
+      }
+    ],
+    "static_context_roots": [
+      {
+        "adapter": "tiled_static_context",
+        "path": "/exact/path/static-context",
+        "pattern": "h??v??/*.tif"
       }
     ]
   },
@@ -193,6 +181,40 @@ spires-batch schema request
 spires-batch schema resolved-plan
 ```
 
+For a multi-tile VIIRS water-year starting point, copy
+[`examples/viirs_water_year_request.json`](examples/viirs_water_year_request.json).
+Set `run.platform` to `snpp`, `noaa20`, or `noaa21`; the request model derives
+`vnp09ga`, `vj109ga`, or `vj209ga`, respectively. Update the authoritative
+reflectance root, R0 artifacts, LUTs, tiled static-context root, output root,
+and resource account before planning.
+
+[`examples/config_template.json`](examples/config_template.json) is a valid
+JSON reference document describing every request field, its defaults, allowed
+values, and important cross-field rules. It is documentation, not a runnable
+request; generate the authoritative machine schema with
+`spires-batch schema request`.
+
+Plan safely from a config with the example wrapper:
+
+```bash
+examples/submit_from_config.sh examples/viirs_water_year_request.json \
+    --env-prefix /path/to/spipy14
+```
+
+The wrapper defaults to validation and planning only. Live Slurm mutation
+requires both `--submit` and a persistent shared reservation root:
+
+```bash
+examples/submit_from_config.sh examples/viirs_water_year_request.json \
+    --env-prefix /path/to/spipy14 \
+    --submit \
+    --state-root /persistent/shared/spires-batch-state
+```
+
+It snapshots the request, writes an immutable resolved plan, saves task and
+staging previews, executes configured staging only for a live submission, and
+starts the audited stage-gated operational runner.
+
 Unknown fields are rejected. Relative paths are resolved relative to the
 request file.
 
@@ -205,6 +227,52 @@ Scientific context files use stable names:
 
 Names are validated during request loading, and each resolved task must contain
 exactly one copy of every context input required by its selected operations.
+Explicit `files` and fixed-name `roots` remain available. When static
+ancillary and mask files share one directory tree organized as
+`hNNvNN/*.tif`, `inputs.static_context_roots` can replace the per-file entries:
+
+```json
+{
+  "adapter": "tiled_static_context",
+  "path": "/authoritative/static-context",
+  "pattern": "h??v??/*.tif",
+  "required": true
+}
+```
+
+The adapter is sensor-independent. It derives the tile from the immediate
+parent directory and canonical filename prefix, then classifies canonical
+elevation/DEM, slope, clockwise-from-north aspect, sky-view, canopy-fraction,
+and ice-fraction rasters as ancillary inputs. Static water, ice, and playa
+masks are classified as mask inputs. Daily cloud masks, R0 products, legacy
+percentage fractions, counterclockwise-from-south aspect files, STC files, and
+other unrecognized names are excluded. Multiple canonical matches for the same
+tile, role, and name are a preflight error.
+
+Date-specific cloud masks remain separate from static context. They can be
+discovered with a named mask root when files use the canonical
+`<platform>_hNNvNN_YYYYMMDD_cloud_mask.tif` convention:
+
+```json
+{
+  "adapter": "curc",
+  "role": "mask",
+  "name": "cloud_mask",
+  "path": "/authoritative/daily-cloud-masks",
+  "pattern": "h??v??/*/*_cloud_mask.tif",
+  "required": true
+}
+```
+
+The platform, tile, and acquisition date are derived from each filename so
+that a mask is attached only to its matching task. External cloud masks are
+combined with the source product's QA cloud and cloud-shadow masks.
+
+Static-context metadata preflight requires a single-band GeoTIFF with explicit
+units and a CRS, checks complete finite-value ranges, enforces binary mask
+codes, and requires exact shape, CRS, and transform agreement among the
+selected layers for each inspected tile. Aspect files must declare
+`angular_convention=clockwise_from_north` in their band metadata.
 If `science.invert.preparation.bands` is omitted, execution derives the ordered
 band set from a labeled R0 product. Positional GeoTIFF R0 bands require an
 explicit band list. The executor then selects those exact bands, in scene
@@ -365,6 +433,51 @@ CPU partition; custom profiles must supply both cluster and partition.
 Rendering never submits a job. Rendered arrays invoke the same scientific
 executor used by serial execution.
 
+Explicit tile routing defines named profiles, maps every selected tile to
+exactly one profile, and selects a non-preemptable coordinator profile:
+
+```json
+{
+  "profiles": {
+    "blanca-snow": {
+      "max_concurrent_tasks": 24,
+      "resources": {
+        "account": "blanca-snow",
+        "qos": "blanca-snow",
+        "memory": "16G"
+      }
+    },
+    "blanca-rittger": {
+      "max_concurrent_tasks": 36,
+      "resources": {
+        "account": "blanca-rittger",
+        "qos": "blanca-rittger",
+        "memory": "16G"
+      }
+    }
+  },
+  "tile_profiles": {
+    "h08v04": "blanca-snow",
+    "h08v05": "blanca-snow",
+    "h09v04": "blanca-rittger"
+  },
+  "coordinator_profile": "blanca-snow"
+}
+```
+
+The planner assigns the routed profile to every tile task. Slurm arrays are
+grouped by stage, profile, and tile. A profile's concurrency cap is distributed
+across its sibling tile arrays, so five tiles sharing a cap of 60 render as
+five arrays throttled to 12 each. Routed profiles in one operational request
+must use the same Slurm cluster and environment. Legacy single-profile
+requests remain supported.
+
+Tile arrays larger than 1,000 tasks are split into multiple
+Slurm arrays for compatibility with clusters that enforce
+`max_array_tasks=1000`. The configured concurrency is distributed across the
+sibling arrays so splitting does not multiply the requested simultaneous task
+limit.
+
 ## Audited submission and scheduling
 
 Phase E1/E2 prepare the exact scheduler intent and reserve outputs without
@@ -446,6 +559,10 @@ spires-batch retry-manifest resolved-plan.json \
 ```
 
 Summaries are written as JSON, CSV, and concise text at run and tile levels.
+By default they trust successful worker terminal events, which are emitted only
+after the worker atomically publishes, reopens, and scientifically validates
+its output. Add `--revalidate-outputs` to reopen and scientifically validate
+every successful output again while building a detailed persistence audit.
 Only transient failures below the configured retry cap enter a retry manifest.
 
 ## Stage-gated operational execution
@@ -498,15 +615,27 @@ collects every initial, downstream, retry, and blocked-task event and writes:
 The reports include final task status, complete attempt history, retry counts,
 failure codes and messages, output and event-log paths, Slurm job and array
 identities, start/end times, active elapsed seconds, and the terminal requested
-stage. The terminal `operational-result.json` links the same summary artifacts.
-Successful outputs are reopened and validated again before a successful
-terminal summary is accepted.
+stage. Their `output_validation_mode` records whether they trusted validated
+worker events or performed an explicit scientific revalidation. The terminal
+`operational-result.json` links the same summary artifacts.
+
+The operational coordinator uses the fast event-backed mode by default. Worker
+events already reflect post-write validation, so terminal reporting does not
+serially reopen every output.
 
 Terminal reports can be regenerated safely from retained operational artifacts:
 
 ```bash
 spires-batch submission summarize-operational \
     operational-run/operation.json
+```
+
+Use the detailed persistence-audit mode when needed:
+
+```bash
+spires-batch submission summarize-operational \
+    operational-run/operation.json \
+    --revalidate-outputs
 ```
 
 The coordinator normally invokes the following single-use command itself:

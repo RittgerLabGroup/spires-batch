@@ -44,6 +44,7 @@ from spires_batch.serialization import (
     write_immutable_json,
     write_plan,
 )
+from spires_batch.science import validate_scientific_outputs
 from spires_batch.status import (
     attempts_from_events,
     attempts_from_event_paths,
@@ -60,6 +61,7 @@ from spires_batch.submission import (
     load_reservation_set,
     load_submission_record,
     prepare_submission,
+    rollback_submission_reservations,
 )
 
 
@@ -307,8 +309,26 @@ def _submit_coordinator(
         raise ValueError(
             "operational waves must use one environment for their coordinator"
         )
-    first_profile = profiles[sorted(profile_names)[0]]
+    coordinator_profile_name = plan.request.execution.coordinator_profile
+    if coordinator_profile_name is None:
+        if len(profile_names) != 1:
+            raise ValueError(
+                "operational waves using multiple profiles require an explicit "
+                "execution.coordinator_profile"
+            )
+        coordinator_profile_name = next(iter(profile_names))
+    if coordinator_profile_name not in profiles:
+        raise ValueError(
+            "execution.coordinator_profile is absent from the resolved profiles: "
+            f"{coordinator_profile_name!r}"
+        )
+    coordinator_profile = profiles[coordinator_profile_name]
     cluster = next(iter(clusters))
+    if coordinator_profile.cluster != cluster:
+        raise ValueError(
+            "execution.coordinator_profile must use the same cluster as the "
+            "operational wave"
+        )
     script_path = wave_directory / COORDINATOR_SCRIPT_NAME
     _write_exclusive_text(
         script_path,
@@ -316,9 +336,9 @@ def _submit_coordinator(
             operation_path,
             wave_directory,
             cluster=cluster,
-            partition=first_profile.partition,
-            account=first_profile.account,
-            qos=first_profile.qos,
+            partition=coordinator_profile.partition,
+            account=coordinator_profile.account,
+            qos=coordinator_profile.qos,
             environment_name=next(iter(environments)),
         ),
         executable=True,
@@ -422,7 +442,32 @@ def _launch_wave(
         wave_directory / SUBMISSION_RECORD_NAME,
         rearm_failed=rearm_failed,
     )
-    test_scheduler_submission(wave_directory / RESERVATION_SET_NAME)
+    try:
+        test_scheduler_submission(wave_directory / RESERVATION_SET_NAME)
+    except Exception as exc:
+        reason = f"scheduler test failed before submission: {exc}"
+        if rearm_failed:
+            ReservationStore(reservation_set.state_root).fail_rearmed(
+                reservation_set.reservations,
+                reason=reason,
+            )
+        else:
+            rollback_submission_reservations(
+                wave_directory / RESERVATION_SET_NAME,
+                reason=reason,
+            )
+        _append_operation_event(
+            operation,
+            event_type="scheduler_test_failed_before_submission",
+            message=reason,
+            details={
+                "wave_number": wave_number,
+                "wave_directory": str(wave_directory),
+                "reservations_released": not rearm_failed,
+                "retry_reservations_restored_to_failed": rearm_failed,
+            },
+        )
+        raise
     scheduler_record = submit_scheduler_submission(
         wave_directory / RESERVATION_SET_NAME
     )
@@ -644,7 +689,10 @@ def _query_scheduler_attempt(
         group.cluster,
         "-j",
         group.job_id,
-        "--format=JobIDRaw,State,ExitCode,Start,End",
+        # JobID is the canonical array identity (for example 27446034_0).
+        # On Blanca, JobIDRaw is the distinct numeric allocation ID assigned
+        # to that element and therefore cannot be matched to the sbatch parent.
+        "--format=JobID%64,State,ExitCode,Start,End",
     )
     result = runner(command)
     if result.returncode != 0:
@@ -814,10 +862,17 @@ def _write_operational_summaries(
     *,
     overall_status: str,
     message: str,
+    revalidate_outputs: bool = False,
 ) -> OperationalSummaryArtifacts:
     plan = load_plan(operation.manifest_path)
     attempts = _all_operational_attempts(operation)
-    run_summary = summarize(plan, attempts)
+    run_summary = summarize(
+        plan,
+        attempts,
+        output_validator=(
+            validate_scientific_outputs if revalidate_outputs else None
+        ),
+    )
     if (
         overall_status == "succeeded"
         and run_summary.counts["completed"] != run_summary.counts["total"]
@@ -855,6 +910,7 @@ def _write_operational_summaries(
         "overall_status": overall_status,
         "message": message,
         "terminal_stage": run_summary.terminal_stage,
+        "output_validation_mode": run_summary.output_validation_mode,
         "counts": run_summary.counts,
         "run_summary": _summary_path_payload(run_paths),
         "tiles": tile_payload,
@@ -878,8 +934,10 @@ def _write_operational_summaries(
 
 def summarize_operational_run(
     operation_path: str | Path,
+    *,
+    revalidate_outputs: bool = False,
 ) -> OperationalSummaryArtifacts:
-    """Regenerate terminal run and tile summaries from all operational waves."""
+    """Regenerate terminal summaries, optionally auditing persisted outputs."""
     operation = load_operational_run(operation_path)
     result_path = operation.output_directory / OPERATION_TERMINAL_NAME
     if not result_path.is_file():
@@ -900,6 +958,7 @@ def summarize_operational_run(
         operation,
         overall_status=status,
         message=str(result.get("message", "")),
+        revalidate_outputs=revalidate_outputs,
     )
 
 
@@ -1009,6 +1068,7 @@ def advance_operational_run(
     *,
     wave_directory: str | Path,
     sacct_runner: SacctRunner | None = None,
+    revalidate_outputs: bool = False,
 ) -> OperationalAdvanceRecord:
     """Reconcile one terminal wave, retry it, or submit the next ready wave."""
     operation_source = _resolved(operation_path)
@@ -1024,6 +1084,7 @@ def advance_operational_run(
     except ValueError as exc:
         raise ValueError(f"invalid operational wave directory {wave.name!r}") from exc
     advance_path = wave / ADVANCE_RECORD_NAME
+    lock_path = wave / ADVANCE_LOCK_NAME
     if advance_path.exists():
         advance = load_operational_advance(advance_path)
         if advance.status in {"succeeded", "failed"}:
@@ -1038,12 +1099,13 @@ def advance_operational_run(
                     operation,
                     overall_status=advance.status,
                     message=advance.message,
+                    revalidate_outputs=revalidate_outputs,
                 )
                 if not terminal_path.exists():
                     _write_terminal_operation(operation, advance, summaries)
+        lock_path.unlink(missing_ok=True)
         return advance
 
-    lock_path = wave / ADVANCE_LOCK_NAME
     try:
         lock_descriptor = os.open(
             lock_path,
@@ -1196,6 +1258,7 @@ def advance_operational_run(
                 operation,
                 overall_status=advance.status,
                 message=advance.message,
+                revalidate_outputs=revalidate_outputs,
             )
             _write_terminal_operation(operation, advance, summaries)
             _append_operation_event(
@@ -1245,6 +1308,7 @@ def advance_operational_run(
                 operation,
                 overall_status=advance.status,
                 message=advance.message,
+                revalidate_outputs=revalidate_outputs,
             )
             _write_terminal_operation(operation, advance, summaries)
             _append_operation_event(
@@ -1332,6 +1396,7 @@ def advance_operational_run(
                 operation,
                 overall_status=advance.status,
                 message=advance.message,
+                revalidate_outputs=revalidate_outputs,
             )
             _write_terminal_operation(operation, advance, summaries)
             completed = True
@@ -1351,6 +1416,7 @@ def advance_operational_run(
             operation,
             overall_status=advance.status,
             message=advance.message,
+            revalidate_outputs=revalidate_outputs,
         )
         _write_terminal_operation(operation, advance, summaries)
         _append_operation_event(

@@ -1,0 +1,1165 @@
+{
+  "document_type": "spires_batch_request_configuration_reference",
+  "documented_schema_version": 1,
+  "runnable_request": false,
+  "description": "Valid JSON documentation for every field accepted by a spires_batch_request. JSON has no comment syntax, so descriptions, defaults, constraints, and allowed_values act as comments. Copy examples/viirs_water_year_request.json for a runnable starting point. The authoritative machine schema is produced by `spires-batch schema request`.",
+  "sensor_platform_products": [
+    {
+      "sensor": "viirs",
+      "platform": "snpp",
+      "platform_aliases": [
+        "npp",
+        "suomi-npp",
+        "suominpp"
+      ],
+      "derived_product": "vnp09ga"
+    },
+    {
+      "sensor": "viirs",
+      "platform": "noaa20",
+      "platform_aliases": [
+        "noaa-20",
+        "jpss-1",
+        "jpss1"
+      ],
+      "derived_product": "vj109ga"
+    },
+    {
+      "sensor": "viirs",
+      "platform": "noaa21",
+      "platform_aliases": [
+        "noaa-21",
+        "jpss-2",
+        "jpss2"
+      ],
+      "derived_product": "vj209ga"
+    },
+    {
+      "sensor": "modis",
+      "platform": "terra",
+      "platform_aliases": [],
+      "derived_product": "mod09ga"
+    },
+    {
+      "sensor": "modis",
+      "platform": "aqua",
+      "platform_aliases": [],
+      "derived_product": "myd09ga"
+    }
+  ],
+  "request_fields": {
+    "artifact_type": {
+      "type": "string",
+      "required": false,
+      "default": "spires_batch_request",
+      "allowed_values": [
+        "spires_batch_request"
+      ],
+      "description": "Artifact discriminator. Omit it or use the only allowed value."
+    },
+    "schema_version": {
+      "type": "integer",
+      "required": false,
+      "default": 1,
+      "allowed_values": [
+        1
+      ],
+      "description": "Request schema version. This is independent of package versions and Git tags."
+    },
+    "run": {
+      "type": "object",
+      "required": true,
+      "additional_fields_allowed": false,
+      "fields": {
+        "name": {
+          "type": "string",
+          "required": true,
+          "minimum_length": 1,
+          "maximum_length": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+          "description": "Human-readable run name used in immutable operational identities."
+        },
+        "sensor": {
+          "type": "string",
+          "required": true,
+          "allowed_values": [
+            "viirs",
+            "modis"
+          ],
+          "description": "Sensor family. Case, spaces, and underscores are normalized."
+        },
+        "platform": {
+          "type": "string",
+          "required": true,
+          "allowed_values_by_sensor": {
+            "viirs": [
+              "snpp",
+              "noaa20",
+              "noaa21"
+            ],
+            "modis": [
+              "terra",
+              "aqua"
+            ]
+          },
+          "description": "Satellite/platform. Common VIIRS aliases are accepted and normalized."
+        },
+        "product": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "allowed_values": [
+            "vnp09ga",
+            "vj109ga",
+            "vj209ga",
+            "mod09ga",
+            "myd09ga",
+            null
+          ],
+          "description": "Normally omit this field. It is derived from sensor/platform. If supplied, it must match that pair."
+        }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "required": true,
+      "additional_fields_allowed": false,
+      "fields": {
+        "tiles": {
+          "type": "array[string]",
+          "required": false,
+          "default": [],
+          "item_pattern": "^h[0-9]{2}v[0-9]{2}$",
+          "unique_items": true,
+          "description": "Selected MODIS-grid tiles. Empty means no tile filter; operational requests should normally be explicit."
+        },
+        "water_years": {
+          "type": "array[integer]",
+          "required": false,
+          "default": [],
+          "minimum_item": 1900,
+          "maximum_item": 2200,
+          "unique_items": true,
+          "description": "Selected water years. Water year N runs from October 1 of N-1 through September 30 of N."
+        },
+        "dates": {
+          "type": "array[date]",
+          "required": false,
+          "default": [],
+          "format": "YYYY-MM-DD",
+          "unique_items": true,
+          "description": "Optional exact acquisition dates. Empty means all discovered dates that pass tile and water-year filters."
+        }
+      }
+    },
+    "steps": {
+      "type": "array[string]",
+      "required": true,
+      "allowed_values": [
+        "build_r0",
+        "invert",
+        "albedo",
+        "interpolate"
+      ],
+      "required_order": [
+        "build_r0",
+        "invert",
+        "albedo",
+        "interpolate"
+      ],
+      "unique_items": true,
+      "description": "Explicit scientific stages. Select any supported ordered subset. interpolate is reserved but not implemented in schema version 1."
+    },
+    "inputs": {
+      "type": "object",
+      "required": true,
+      "additional_fields_allowed": false,
+      "description": "At least one explicit file, discovery root, or static context root is required.",
+      "fields": {
+        "files": {
+          "type": "array[object]",
+          "required": false,
+          "default": [],
+          "item_reference": "definitions.input_file"
+        },
+        "roots": {
+          "type": "array[object]",
+          "required": false,
+          "default": [],
+          "item_reference": "definitions.discovery_root"
+        },
+        "static_context_roots": {
+          "type": "array[object]",
+          "required": false,
+          "default": [],
+          "item_reference": "definitions.static_context_root",
+          "description": "Sensor-independent discovery of canonical ancillary and static mask files organized as one directory per hNNvNN tile."
+        }
+      }
+    },
+    "r0": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": false,
+      "default": null,
+      "additional_fields_allowed": false,
+      "description": "Required for inversion. Existing mode points to validated R0 files; build mode defines R0 output artifacts and requires build_r0 inputs.",
+      "fields": {
+        "mode": {
+          "type": "string",
+          "required": true,
+          "allowed_values": [
+            "existing",
+            "build"
+          ]
+        },
+        "recipe": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "allowed_values": [
+            "viirs_summer_composite",
+            "modis_summer_composite",
+            null
+          ],
+          "description": "Required only in build mode. VIIRS and MODIS must use their corresponding recipe."
+        },
+        "artifacts": {
+          "type": "array[object]",
+          "required": true,
+          "minimum_items": 1,
+          "unique_by": "path",
+          "item_reference": "definitions.r0_artifact"
+        }
+      }
+    },
+    "science": {
+      "type": "object",
+      "required": false,
+      "additional_fields_allowed": false,
+      "description": "Only options for selected stages are attached to resolved tasks. Entire sections may be omitted to use defaults.",
+      "fields": {
+        "build_r0": {
+          "type": "object",
+          "required": false,
+          "default_reference": "definitions.build_r0_science.defaults",
+          "field_reference": "definitions.build_r0_science"
+        },
+        "invert": {
+          "type": "object",
+          "required": false,
+          "default_reference": "definitions.invert_science.defaults",
+          "field_reference": "definitions.invert_science"
+        },
+        "albedo": {
+          "type": "object",
+          "required": false,
+          "default_reference": "definitions.albedo_science.defaults",
+          "field_reference": "definitions.albedo_science"
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "required": true,
+      "additional_fields_allowed": false,
+      "fields": {
+        "root": {
+          "type": "path",
+          "required": true,
+          "description": "Root directory for scientific products. Relative paths resolve relative to the request file."
+        },
+        "product_contents": {
+          "type": "string",
+          "required": false,
+          "default": "full",
+          "allowed_values": [
+            "full",
+            "results_subset"
+          ],
+          "description": "full persists scene, background, ancillary, and results groups. results_subset stores compact results where the selected workflow permits it."
+        },
+        "existing_file_handling": {
+          "type": "string",
+          "required": false,
+          "default": "write_new_file",
+          "allowed_values": [
+            "write_new_file",
+            "update_atomically"
+          ],
+          "description": "update_atomically is supported only for standalone albedo enrichment of an existing full raw product."
+        },
+        "existing_output_policy": {
+          "type": "string",
+          "required": false,
+          "default": "error",
+          "allowed_values": [
+            "error",
+            "reuse_valid"
+          ],
+          "description": "error rejects an existing destination. reuse_valid reopens and validates a compatible existing output before treating it as complete."
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "required": false,
+      "additional_fields_allowed": false,
+      "fields": {
+        "profile": {
+          "type": "string",
+          "required": false,
+          "default": "blanca-snow",
+          "built_in_values": [
+            "blanca-snow",
+            "blanca-rittger",
+            "alpine"
+          ],
+          "description": "Legacy single-profile mode. Custom names are allowed only when execution.resources supplies both cluster and partition. Do not combine with explicit tile routing."
+        },
+        "max_concurrent_tasks": {
+          "type": "integer",
+          "required": false,
+          "default": 20,
+          "minimum": 1,
+          "description": "Legacy single-profile concurrency cap. Do not combine with explicit tile routing."
+        },
+        "max_auto_retry_count": {
+          "type": "integer",
+          "required": false,
+          "default": 3,
+          "minimum": 0,
+          "description": "Maximum automatic retries after the initial attempt for eligible transient failures."
+        },
+        "resources": {
+          "type": "object",
+          "required": false,
+          "field_reference": "definitions.resource_overrides",
+          "description": "Legacy single-profile resource overrides. Do not combine with explicit tile routing."
+        },
+        "profiles": {
+          "type": "object keyed by profile name",
+          "required": false,
+          "default": {},
+          "value_reference": "definitions.execution_profile",
+          "description": "Named profiles available to explicit tile routing. Built-in names inherit their cluster and partition; custom names must set both."
+        },
+        "tile_profiles": {
+          "type": "object mapping hNNvNN tile to profile name",
+          "required": false,
+          "default": {},
+          "description": "Must exactly cover selection.tiles when explicit routing is enabled."
+        },
+        "coordinator_profile": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "description": "Required with explicit routing. Select a durable non-preemptable profile for the operational coordinator."
+        },
+        "staging": {
+          "type": "object",
+          "required": false,
+          "field_reference": "definitions.staging"
+        }
+      }
+    },
+    "preflight": {
+      "type": "object",
+      "required": false,
+      "additional_fields_allowed": false,
+      "fields": {
+        "metadata_check": {
+          "type": "string",
+          "required": false,
+          "default": "sample",
+          "allowed_values": [
+            "none",
+            "sample",
+            "all"
+          ],
+          "description": "none checks inventory only; sample checks deterministic representatives; all opens every resolved input header."
+        }
+      }
+    }
+  },
+  "definitions": {
+    "input_file": {
+      "additional_fields_allowed": false,
+      "fields": {
+        "role": {
+          "type": "string",
+          "required": true,
+          "allowed_values": [
+            "reflectance",
+            "r0",
+            "r0_source",
+            "raw",
+            "interpolated",
+            "ancillary",
+            "lut",
+            "mask"
+          ]
+        },
+        "path": {
+          "type": "path",
+          "required": true,
+          "description": "Exact source path. Relative paths resolve relative to the request file."
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Required for ancillary, lut, and mask roles. Supported semantic names are listed below."
+        },
+        "tile": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "pattern": "^h[0-9]{2}v[0-9]{2}$"
+        },
+        "date": {
+          "type": [
+            "date",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "format": "YYYY-MM-DD"
+        },
+        "water_year": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "required": false,
+          "default": null
+        },
+        "product": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "description": "Optional identity assertion. If the filename supplies a conflicting identity, preflight fails."
+        },
+        "metadata": {
+          "type": "object",
+          "required": false,
+          "default": {},
+          "additional_fields_allowed": true,
+          "description": "Free-form operator metadata copied into the resolved input record."
+        }
+      }
+    },
+    "discovery_root": {
+      "additional_fields_allowed": false,
+      "fields": {
+        "adapter": {
+          "type": "string",
+          "required": false,
+          "default": "curc",
+          "implemented_values": [
+            "curc"
+          ]
+        },
+        "role": {
+          "type": "string",
+          "required": true,
+          "allowed_values": [
+            "reflectance",
+            "r0",
+            "r0_source",
+            "raw",
+            "interpolated",
+            "ancillary",
+            "lut",
+            "mask"
+          ]
+        },
+        "path": {
+          "type": "path",
+          "required": true,
+          "description": "Directory searched recursively or non-recursively according to pattern."
+        },
+        "pattern": {
+          "type": "string",
+          "required": false,
+          "default": "**/*",
+          "description": "pathlib-style glob relative to path. NASA filename identities are parsed and filtered by run product and selection."
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Required for ancillary, lut, and mask discovery roots."
+        },
+        "required": {
+          "type": "boolean",
+          "required": false,
+          "default": true,
+          "description": "If true, a missing root or a root with no selected files is a preflight error. If false, it is a warning."
+        }
+      }
+    },
+    "static_context_root": {
+      "additional_fields_allowed": false,
+      "fields": {
+        "adapter": {
+          "type": "string",
+          "required": false,
+          "default": "tiled_static_context",
+          "implemented_values": [
+            "tiled_static_context"
+          ]
+        },
+        "path": {
+          "type": "path",
+          "required": true,
+          "description": "Top-level directory containing one immediate hNNvNN directory per tile."
+        },
+        "pattern": {
+          "type": "string",
+          "required": false,
+          "default": "h??v??/*.tif",
+          "description": "pathlib-style glob relative to path. Only canonical static-context filenames are classified."
+        },
+        "required": {
+          "type": "boolean",
+          "required": false,
+          "default": true,
+          "description": "If true, a missing root or a selected tile with no canonical files is a preflight error."
+        }
+      }
+    },
+    "r0_artifact": {
+      "additional_fields_allowed": false,
+      "fields": {
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "description": "Defaults to the path stem when omitted."
+        },
+        "path": {
+          "type": "path",
+          "required": true,
+          "description": "Existing R0 path in existing mode or desired output path in build mode."
+        },
+        "tile": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "pattern": "^h[0-9]{2}v[0-9]{2}$"
+        },
+        "water_year": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "required": false,
+          "default": null
+        },
+        "start_date": {
+          "type": [
+            "date",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "format": "YYYY-MM-DD",
+          "description": "Must be supplied together with end_date."
+        },
+        "end_date": {
+          "type": [
+            "date",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "format": "YYYY-MM-DD",
+          "description": "Must be supplied together with start_date and must not precede it."
+        }
+      }
+    },
+    "scene_preparation": {
+      "additional_fields_allowed": false,
+      "description": "Shared preparation options used independently under science.build_r0.preparation and science.invert.preparation.",
+      "fields": {
+        "bands": {
+          "type": [
+            "array[string]",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "unique_items": true,
+          "description": "Ordered bands. Omit for labeled R0 products; positional GeoTIFF R0 inputs require an explicit list."
+        },
+        "max_sensor_zenith": {
+          "type": "number",
+          "required": false,
+          "default": 65.0,
+          "minimum": 0.0,
+          "maximum": 90.0
+        },
+        "max_solar_zenith": {
+          "type": "number",
+          "required": false,
+          "default": 85.0,
+          "minimum": 0.0,
+          "maximum": 90.0
+        },
+        "min_obs_1km": {
+          "type": "integer",
+          "required": false,
+          "default": 1,
+          "minimum": 1
+        },
+        "min_obs_500m": {
+          "type": "integer",
+          "required": false,
+          "default": 1,
+          "minimum": 1
+        },
+        "water_mask_values": {
+          "type": "array[integer]",
+          "required": false,
+          "default": [
+            0,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ]
+        },
+        "mask_water_using_reflectance_qf": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        },
+        "mask_water_using_external_file": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        },
+        "mask_low_reflectance_for_inversion": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "low_reflectance_threshold": {
+          "type": "number",
+          "required": false,
+          "default": 0.1,
+          "minimum": 0.0
+        },
+        "cloud_mask_var": {
+          "type": "string",
+          "required": false,
+          "default": "mask_cloud"
+        },
+        "cloud_shadow_mask_var": {
+          "type": "string",
+          "required": false,
+          "default": "mask_cloud_shadow"
+        },
+        "water_mask_var": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "default": null
+        },
+        "ice_mask_var": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "default": null
+        },
+        "playa_mask_var": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "default": null
+        }
+      }
+    },
+    "clustering": {
+      "additional_fields_allowed": false,
+      "fields": {
+        "enabled": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "features": {
+          "type": "array[string]",
+          "required": false,
+          "default": [
+            "reflectance",
+            "background",
+            "solar_zenith"
+          ],
+          "allowed_items": [
+            "reflectance",
+            "background",
+            "solar_zenith",
+            "cosine_illumination"
+          ],
+          "unique_items": true
+        },
+        "representative_method": {
+          "type": "string",
+          "required": false,
+          "default": "cluster_mean",
+          "allowed_values": [
+            "cluster_mean",
+            "first_pixel"
+          ]
+        },
+        "reflectance_tol": {
+          "type": [
+            "positive number",
+            "array[positive number]"
+          ],
+          "required": false,
+          "default": 0.02
+        },
+        "background_tol": {
+          "type": [
+            "positive number",
+            "array[positive number]"
+          ],
+          "required": false,
+          "default": 0.02
+        },
+        "solar_zenith_tol": {
+          "type": [
+            "positive number",
+            "array[positive number]"
+          ],
+          "required": false,
+          "default": 2.0
+        },
+        "cosine_illumination_tol": {
+          "type": [
+            "positive number",
+            "array[positive number]"
+          ],
+          "required": false,
+          "default": 0.02
+        }
+      }
+    },
+    "build_r0_science": {
+      "defaults": {
+        "max_sensor_zenith": 30.0,
+        "ndvi_tie_epsilon": 0.02,
+        "min_blue_reflectance": 0.1,
+        "show_progress": false,
+        "chunks": null
+      },
+      "fields": {
+        "preparation": {
+          "type": "object",
+          "required": false,
+          "field_reference": "definitions.scene_preparation"
+        },
+        "max_sensor_zenith": {
+          "type": "number",
+          "required": false,
+          "default": 30.0,
+          "minimum": 0.0,
+          "maximum": 90.0,
+          "description": "Additional R0 candidate view-angle threshold."
+        },
+        "ndvi_tie_epsilon": {
+          "type": "number",
+          "required": false,
+          "default": 0.02,
+          "minimum": 0.0
+        },
+        "min_blue_reflectance": {
+          "type": "number",
+          "required": false,
+          "default": 0.1,
+          "minimum": 0.0
+        },
+        "show_progress": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "chunks": {
+          "type": [
+            "object[string, positive integer]",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "description": "Optional xarray/dask chunk sizes keyed by dimension."
+        }
+      }
+    },
+    "invert_science": {
+      "defaults": {
+        "algorithm": 6,
+        "max_eval": null,
+        "initial_grain_radius_um": 250.0,
+        "apply_valid_inversion_mask": true,
+        "n_workers": 1
+      },
+      "fields": {
+        "preparation": {
+          "type": "object",
+          "required": false,
+          "field_reference": "definitions.scene_preparation"
+        },
+        "clustering": {
+          "type": "object",
+          "required": false,
+          "field_reference": "definitions.clustering"
+        },
+        "algorithm": {
+          "type": "integer",
+          "required": false,
+          "default": 6,
+          "minimum": 1,
+          "maximum": 6
+        },
+        "max_eval": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "minimum": 1
+        },
+        "initial_grain_radius_um": {
+          "type": "positive number",
+          "required": false,
+          "default": 250.0
+        },
+        "apply_valid_inversion_mask": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        },
+        "n_workers": {
+          "type": "integer",
+          "required": false,
+          "default": 1,
+          "minimum": 1,
+          "description": "Workers used within one scientific task. Slurm array concurrency is controlled separately."
+        }
+      }
+    },
+    "albedo_science": {
+      "defaults": {
+        "apply_canopy_correction": false,
+        "apply_ice_adjustment": false,
+        "calculate_albedo": true,
+        "calculate_delta_vis": false,
+        "calculate_radiative_forcing": false,
+        "average_vertical_crown_radius": 4.644,
+        "average_horizontal_crown_radius": 1.72
+      },
+      "fields": {
+        "apply_canopy_correction": {
+          "type": "boolean",
+          "required": false,
+          "default": false,
+          "requires_named_input_when_true": "ancillary:canopy_fraction"
+        },
+        "apply_ice_adjustment": {
+          "type": "boolean",
+          "required": false,
+          "default": false,
+          "requires_named_input_when_true": "ancillary:ice_fraction"
+        },
+        "calculate_albedo": {
+          "type": "boolean",
+          "required": false,
+          "default": true,
+          "requires_named_inputs_when_true": [
+            "lut:albedo_lookup",
+            "ancillary:dem",
+            "ancillary:slope",
+            "ancillary:aspect"
+          ]
+        },
+        "calculate_delta_vis": {
+          "type": "boolean",
+          "required": false,
+          "default": false,
+          "requires_named_input_when_true": "lut:forcing_lookup"
+        },
+        "calculate_radiative_forcing": {
+          "type": "boolean",
+          "required": false,
+          "default": false,
+          "requires_named_input_when_true": "lut:forcing_lookup"
+        },
+        "average_vertical_crown_radius": {
+          "type": "positive number",
+          "required": false,
+          "default": 4.644
+        },
+        "average_horizontal_crown_radius": {
+          "type": "positive number",
+          "required": false,
+          "default": 1.72
+        }
+      },
+      "constraint": "At least one albedo/postprocessing operation must be true."
+    },
+    "execution_profile": {
+      "additional_fields_allowed": false,
+      "fields": {
+        "max_concurrent_tasks": {
+          "type": "integer",
+          "required": false,
+          "default": 20,
+          "minimum": 1,
+          "description": "Total concurrency cap distributed across tile arrays using this profile."
+        },
+        "resources": {
+          "type": "object",
+          "required": false,
+          "field_reference": "definitions.resource_overrides"
+        }
+      }
+    },
+    "resource_overrides": {
+      "additional_fields_allowed": false,
+      "fields": {
+        "cluster": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "default": null
+        },
+        "partition": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "default": null
+        },
+        "account": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "default": null
+        },
+        "qos": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "default": null
+        },
+        "time_limit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "effective_default": "04:00:00",
+          "description": "Slurm time limit, conventionally HH:MM:SS."
+        },
+        "cpus_per_task": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "effective_default": 1,
+          "minimum": 1
+        },
+        "memory": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "effective_default": "8G"
+        },
+        "environment_name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "effective_default": "spipy14"
+        },
+        "extra_directives": {
+          "type": "array[string]",
+          "required": false,
+          "default": [],
+          "description": "Additional literal #SBATCH directive bodies. Use only site-approved directives."
+        }
+      }
+    },
+    "staging": {
+      "additional_fields_allowed": false,
+      "fields": {
+        "enabled": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "root": {
+          "type": [
+            "path",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "description": "Required when enabled is true. Must be visible to submit and compute nodes."
+        },
+        "verification": {
+          "type": "string",
+          "required": false,
+          "default": "stat",
+          "allowed_values": [
+            "stat",
+            "sha256"
+          ],
+          "description": "stat verifies size; sha256 is stricter and more expensive."
+        },
+        "reuse_valid": {
+          "type": "boolean",
+          "required": false,
+          "default": true,
+          "description": "Reuse an already staged file only after configured verification passes."
+        }
+      }
+    }
+  },
+  "supported_named_inputs": {
+    "lut": [
+      "inversion_lut",
+      "albedo_lookup",
+      "forcing_lookup"
+    ],
+    "ancillary": [
+      "dem",
+      "slope",
+      "aspect",
+      "skyview",
+      "canopy_fraction",
+      "ice_fraction"
+    ],
+    "mask": [
+      "cloud_mask",
+      "water_mask",
+      "ice_mask",
+      "playa_mask"
+    ]
+  },
+  "tiled_static_context": {
+    "ancillary": {
+      "*_elevation_*.tif or *_dem_*.tif": "dem",
+      "*_slope_*.tif": "slope",
+      "*_aspect_*_cw_from_north.tif": "aspect",
+      "*_skyview*.tif": "skyview",
+      "*_canopy_fraction*_0to1.tif": "canopy_fraction",
+      "*_ice_fraction*_0to1.tif": "ice_fraction"
+    },
+    "mask": {
+      "*_water*.tif": "water_mask",
+      "*_ice_mask*.tif": "ice_mask",
+      "*_playa_mask*.tif": "playa_mask"
+    },
+    "excluded": [
+      "daily cloud masks",
+      "R0 products",
+      "legacy percentage fractions",
+      "counterclockwise-from-south aspect files",
+      "STC files",
+      "unrecognized filenames"
+    ]
+  },
+  "built_in_resource_profiles": {
+    "blanca-snow": {
+      "cluster": "blanca",
+      "partition": "blanca-snow"
+    },
+    "blanca-rittger": {
+      "cluster": "blanca",
+      "partition": "blanca-rittger"
+    },
+    "alpine": {
+      "cluster": "alpine",
+      "partition": "acpu"
+    }
+  },
+  "cross_field_rules": [
+    "Unknown fields are rejected everywhere in a runnable request.",
+    "Relative paths resolve relative to the request file.",
+    "steps must be unique and ordered build_r0, invert, albedo, interpolate.",
+    "interpolate is reserved but rejected because Phase F is not implemented.",
+    "build_r0 requires r0.mode=build, a sensor-appropriate recipe, and r0_source inputs.",
+    "invert requires reflectance inputs, an r0 section, and a LUT named inversion_lut.",
+    "standalone albedo requires raw inputs.",
+    "Selected albedo operations require their named LUT and ancillary inputs.",
+    "A tiled static context root advertises supported ancillary and static-mask names during schema validation; discovery and preflight verify actual per-tile cardinality.",
+    "update_atomically is supported only for standalone albedo on an existing raw product.",
+    "A custom execution profile must supply both resources.cluster and resources.partition.",
+    "Explicit tile routing requires profiles, tile_profiles, and coordinator_profile; tile_profiles must exactly cover selection.tiles.",
+    "All routed profiles in one operational request must use the same Slurm cluster and environment.",
+    "Legacy profile, max_concurrent_tasks, and resources fields cannot be combined with explicit tile routing.",
+    "Staging root is required when staging is enabled.",
+    "Input filename identities must agree with explicitly declared tile, date, water_year, and product.",
+    "R0 start_date and end_date must be supplied together.",
+    "For a complete water year, dates=[] means all discovered files in the selected water year; it does not assert that every calendar date exists."
+  ]
+}

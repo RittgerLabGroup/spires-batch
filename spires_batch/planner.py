@@ -19,6 +19,7 @@ from spires_batch.models import (
     RequestConfig,
     ResolvedInput,
     ResolvedPlan,
+    ResourceOverrides,
     ResourceProfile,
     R0ArtifactConfig,
     R0Mode,
@@ -35,24 +36,27 @@ class PlanningError(ValueError):
     pass
 
 
-def resolve_resource_profile(request: RequestConfig) -> ResourceProfile:
-    execution = request.execution
-    overrides = execution.resources
+def _resolve_resource_profile(
+    name: str,
+    *,
+    max_concurrent_tasks: int,
+    overrides: ResourceOverrides,
+) -> ResourceProfile:
     builtins = {
         "blanca-snow": {"cluster": "blanca", "partition": "blanca-snow"},
         "blanca-rittger": {"cluster": "blanca", "partition": "blanca-rittger"},
         "alpine": {"cluster": "alpine", "partition": "acpu"},
     }
-    defaults = builtins.get(execution.profile)
+    defaults = builtins.get(name)
     if defaults is None and (
         overrides.cluster is None or overrides.partition is None
     ):
         raise PlanningError(
-            f"unknown resource profile {execution.profile!r}; a custom profile must "
-            "provide execution.resources.cluster and execution.resources.partition"
+            f"unknown resource profile {name!r}; a custom profile must "
+            "provide both resource cluster and partition overrides"
         )
     return ResourceProfile(
-        name=execution.profile,
+        name=name,
         cluster=overrides.cluster or (defaults or {})["cluster"],
         partition=overrides.partition or (defaults or {})["partition"],
         account=overrides.account,
@@ -60,10 +64,70 @@ def resolve_resource_profile(request: RequestConfig) -> ResourceProfile:
         time_limit=overrides.time_limit or "04:00:00",
         cpus_per_task=overrides.cpus_per_task or 1,
         memory=overrides.memory or "8G",
-        max_concurrent_tasks=execution.max_concurrent_tasks,
+        max_concurrent_tasks=max_concurrent_tasks,
         environment_name=overrides.environment_name or "spipy14",
         extra_directives=overrides.extra_directives,
     )
+
+
+def resolve_resource_profiles(request: RequestConfig) -> tuple[ResourceProfile, ...]:
+    execution = request.execution
+    if execution.profiles:
+        profiles = tuple(
+            _resolve_resource_profile(
+                name,
+                max_concurrent_tasks=config.max_concurrent_tasks,
+                overrides=config.resources,
+            )
+            for name, config in sorted(execution.profiles.items())
+        )
+    else:
+        profiles = (
+            _resolve_resource_profile(
+                execution.profile,
+                max_concurrent_tasks=execution.max_concurrent_tasks,
+                overrides=execution.resources,
+            ),
+        )
+    clusters = {profile.cluster for profile in profiles}
+    environments = {profile.environment_name for profile in profiles}
+    if len(clusters) != 1:
+        raise PlanningError(
+            "all execution profiles in one operational request must use the "
+            "same Slurm cluster"
+        )
+    if len(environments) != 1:
+        raise PlanningError(
+            "all execution profiles in one operational request must use the "
+            "same environment"
+        )
+    return profiles
+
+
+def resolve_resource_profile(request: RequestConfig) -> ResourceProfile:
+    """Resolve the single effective profile for a legacy request."""
+    profiles = resolve_resource_profiles(request)
+    if len(profiles) != 1:
+        raise PlanningError(
+            "request resolves multiple resource profiles; use "
+            "resolve_resource_profiles()"
+        )
+    return profiles[0]
+
+
+def _task_resource_profile(request: RequestConfig, tile: str | None) -> str:
+    if not request.execution.tile_profiles:
+        return request.execution.profile
+    if tile is None:
+        raise PlanningError(
+            "explicit tile routing cannot assign a global task without a tile"
+        )
+    try:
+        return request.execution.tile_profiles[tile]
+    except KeyError as exc:
+        raise PlanningError(
+            f"explicit tile routing has no profile for tile={tile}"
+        ) from exc
 
 
 def _absolute(path: Path, base_dir: Path) -> Path:
@@ -176,7 +240,7 @@ def _make_task(
         outputs=outputs,
         depends_on=depends_on,
         science=science,
-        resource_profile=request.execution.profile,
+        resource_profile=_task_resource_profile(request, tile),
     )
 
 
@@ -509,10 +573,10 @@ def plan_request(
 
     planning_issues: list[PreflightIssue] = []
     try:
-        profile = resolve_resource_profile(request)
+        profiles = resolve_resource_profiles(request)
         tasks = build_tasks(request, discovery, base_dir=base)
     except PlanningError as exc:
-        profile = resolve_resource_profile(request)
+        profiles = resolve_resource_profiles(request)
         tasks = ()
         planning_issues.append(
             PreflightIssue(
@@ -542,7 +606,7 @@ def plan_request(
         config_digest=config_digest,
         plan_digest="sha256:" + "0" * 64,
         tasks=tasks,
-        resource_profiles=(profile,),
+        resource_profiles=profiles,
         preflight=preflight,
         software_versions=_software_versions(),
     )

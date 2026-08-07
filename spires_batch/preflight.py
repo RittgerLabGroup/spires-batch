@@ -175,13 +175,14 @@ def _task_input_issues(task: Task) -> list[PreflightIssue]:
         if len(matches) == count:
             return
         label = role.value if name is None else f"{role.value}:{name}"
+        tile_context = "" if task.tile is None else f" for tile={task.tile}"
         issues.append(
             PreflightIssue(
                 layer=CheckLayer.INVENTORY,
                 severity=CheckSeverity.ERROR,
                 code="task_input_cardinality",
                 message=(
-                    f"task {task.task_id!r} requires exactly {count} {label} "
+                    f"task {task.task_id!r}{tile_context} requires exactly {count} {label} "
                     f"input(s), found {len(matches)}"
                 ),
                 task_id=task.task_id,
@@ -294,6 +295,12 @@ def inspect_metadata_header(path: Path) -> dict[str, Any]:
                     "shape": (source.height, source.width),
                     "count": source.count,
                     "crs": None if source.crs is None else str(source.crs),
+                    "transform": tuple(source.transform),
+                    "dtypes": tuple(source.dtypes),
+                    "nodata": source.nodata,
+                    "units": tuple(source.units),
+                    "descriptions": tuple(source.descriptions),
+                    "band_tags": source.tags(1) if source.count == 1 else {},
                 }
         except ImportError:
             pass
@@ -390,6 +397,10 @@ def _metadata_issues(
 ) -> list[PreflightIssue]:
     issues: list[PreflightIssue] = []
     candidates = _metadata_candidates(inputs, mode)
+    static_summaries: dict[
+        str,
+        list[tuple[ResolvedInput, dict[str, Any]]],
+    ] = defaultdict(list)
     for item in candidates:
         try:
             summary = inspect_metadata_header(item.source_path)
@@ -404,6 +415,9 @@ def _metadata_issues(
                 )
             )
         else:
+            if item.metadata.get("discovery_adapter") == "tiled_static_context":
+                static_summaries[item.tile or "global"].append((item, summary))
+                issues.extend(_static_context_file_issues(item, summary))
             issues.append(
                 PreflightIssue(
                     layer=CheckLayer.METADATA,
@@ -415,6 +429,7 @@ def _metadata_issues(
                     path=item.source_path,
                 )
             )
+    issues.extend(_static_context_grid_issues(static_summaries))
     if mode == MetadataCheck.NONE:
         issues.append(
             PreflightIssue(
@@ -424,6 +439,163 @@ def _metadata_issues(
                 message="metadata header inspection was disabled",
             )
         )
+    return issues
+
+
+def _static_context_file_issues(
+    item: ResolvedInput,
+    summary: dict[str, Any],
+) -> list[PreflightIssue]:
+    violations: list[str] = []
+    if summary.get("container") != "GTiff":
+        violations.append("container must be GeoTIFF")
+    if summary.get("count") != 1:
+        violations.append("raster must contain exactly one band")
+    if summary.get("crs") is None:
+        violations.append("raster must declare a CRS")
+
+    units = summary.get("units") or ()
+    unit = units[0] if len(units) == 1 else None
+    expected_units = tuple(item.metadata.get("expected_units", ()))
+    normalized_unit = unit.strip().casefold() if isinstance(unit, str) else None
+    normalized_expected = {
+        str(expected).strip().casefold() for expected in expected_units
+    }
+    if normalized_unit not in normalized_expected:
+        violations.append(
+            f"band units are {unit!r}; expected one of {sorted(expected_units)}"
+        )
+
+    expected_convention = item.metadata.get("angular_convention")
+    if expected_convention is not None:
+        actual_convention = (summary.get("band_tags") or {}).get(
+            "angular_convention"
+        )
+        if actual_convention != expected_convention:
+            violations.append(
+                f"angular_convention is {actual_convention!r}; expected "
+                f"{expected_convention!r}"
+            )
+
+    if summary.get("count") == 1:
+        try:
+            import numpy as np
+            import rasterio
+
+            with rasterio.open(item.source_path) as source:
+                values = source.read(1, masked=True).compressed()
+            finite = values[np.isfinite(values)]
+            if finite.size != values.size:
+                violations.append("unmasked values must all be finite")
+            if finite.size:
+                minimum = float(finite.min())
+                maximum = float(finite.max())
+                valid_min = float(item.metadata["valid_min"])
+                valid_max = float(item.metadata["valid_max"])
+                maximum_inclusive = bool(
+                    item.metadata.get("maximum_inclusive", True)
+                )
+                if item.name == "dem" and normalized_unit in {
+                    "km",
+                    "kilometer",
+                    "kilometers",
+                    "kilometre",
+                    "kilometres",
+                }:
+                    valid_min /= 1000.0
+                    valid_max /= 1000.0
+                maximum_invalid = (
+                    maximum > valid_max
+                    if maximum_inclusive
+                    else maximum >= valid_max
+                )
+                if minimum < valid_min or maximum_invalid:
+                    closing = "]" if maximum_inclusive else ")"
+                    violations.append(
+                        f"finite values span [{minimum}, {maximum}]; expected "
+                        f"[{valid_min}, {valid_max}{closing}"
+                    )
+                allowed_values = item.metadata.get("allowed_values")
+                if allowed_values is not None:
+                    unexpected = np.setdiff1d(
+                        np.unique(finite),
+                        np.asarray(allowed_values),
+                    )
+                    if unexpected.size:
+                        violations.append(
+                            f"values include unsupported mask codes "
+                            f"{unexpected[:10].tolist()}"
+                        )
+        except Exception as exc:
+            violations.append(f"scientific value inspection failed: {exc}")
+
+    if not violations:
+        return []
+    label = (
+        item.role.value
+        if item.name is None
+        else f"{item.role.value}:{item.name}"
+    )
+    return [
+        PreflightIssue(
+            layer=CheckLayer.METADATA,
+            severity=CheckSeverity.ERROR,
+            code="invalid_static_context_metadata",
+            message=(
+                f"static context {label} for tile={item.tile} is invalid: "
+                + "; ".join(violations)
+            ),
+            path=item.source_path,
+        )
+    ]
+
+
+def _static_context_grid_issues(
+    summaries: dict[str, list[tuple[ResolvedInput, dict[str, Any]]]],
+) -> list[PreflightIssue]:
+    issues: list[PreflightIssue] = []
+    for tile, entries in sorted(summaries.items()):
+        comparable = [
+            (item, summary)
+            for item, summary in entries
+            if summary.get("count") == 1 and summary.get("crs") is not None
+        ]
+        if len(comparable) < 2:
+            continue
+        reference_item, reference = sorted(
+            comparable,
+            key=lambda entry: (
+                entry[0].role.value,
+                entry[0].name or "",
+                str(entry[0].source_path),
+            ),
+        )[0]
+        reference_grid = (
+            reference.get("shape"),
+            reference.get("crs"),
+            reference.get("transform"),
+        )
+        for item, summary in comparable:
+            grid = (
+                summary.get("shape"),
+                summary.get("crs"),
+                summary.get("transform"),
+            )
+            if grid == reference_grid:
+                continue
+            issues.append(
+                PreflightIssue(
+                    layer=CheckLayer.METADATA,
+                    severity=CheckSeverity.ERROR,
+                    code="static_context_grid_mismatch",
+                    message=(
+                        f"static context grid for {item.role.value}:{item.name} "
+                        f"does not exactly match {reference_item.role.value}:"
+                        f"{reference_item.name} for tile={tile}"
+                    ),
+                    path=item.source_path,
+                )
+            )
     return issues
 
 
