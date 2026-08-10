@@ -265,8 +265,25 @@ discovered with a named mask root when files use the canonical
 ```
 
 The platform, tile, and acquisition date are derived from each filename so
-that a mask is attached only to its matching task. External cloud masks are
-combined with the source product's QA cloud and cloud-shadow masks.
+that a mask is attached only to its matching task. Cloud-mask source and
+application are explicit inversion-preparation policies:
+
+```json
+{
+  "cloud_mask_source_policy": "external_only",
+  "cloud_mask_application_stage": "pre_inversion"
+}
+```
+
+`cloud_mask_source_policy` accepts `external_only`, `qa_only`,
+`qa_or_external`, or `none`. `external_only` requires a matching external
+mask; a single-layer external raster contributes no implicit QA cloud-shadow
+mask. If omitted, the historical behavior applies: QA-only without an
+external mask and external-only when one is supplied.
+`cloud_mask_application_stage` accepts `pre_inversion` or
+`post_inversion`. Post-inversion application keeps cloud and cloud-shadow out
+of inversion exclusions so the persisted retrieval can be combined with a
+versioned cloud mask later.
 
 Static-context metadata preflight requires a single-band GeoTIFF with explicit
 units and a CRS, checks complete finite-value ranges, enforces binary mask

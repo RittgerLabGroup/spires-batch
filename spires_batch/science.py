@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from spires_batch.models import (
+    CloudMaskMode,
+    CloudMaskReusePolicy,
     ExistingFileHandling,
     ExistingOutputPolicy,
     FailureClass,
@@ -48,6 +50,7 @@ _MASK_SOURCE_KWARGS = {
 }
 _SCIENTIFIC_DISTRIBUTIONS = (
     "spires-batch",
+    "viirs-cloudmask-batch",
     "spires-contract",
     "spires-io",
     "spires-r0",
@@ -140,7 +143,41 @@ def validate_scientific_outputs(task: Task) -> tuple[bool, str]:
     """Validate every expected output using its scientific product contract."""
     try:
         for output in task.outputs:
-            if output.content == "raw":
+            if output.content == "cloud_mask":
+                options = task.science.cloud_mask
+                if options is None or options.model_manifest is None:
+                    return False, "cloud-mask output lacks resolved model options"
+                from viirs_cloudmask_batch import (
+                    load_model_manifest,
+                    validate_cloud_mask,
+                )
+
+                manifest = load_model_manifest(options.model_manifest)
+                reflectance = _one_input(task, InputRole.REFLECTANCE)
+                if options.reuse_policy == CloudMaskReusePolicy.VALID_RASTER:
+                    import rasterio
+
+                    with rasterio.open(output.path) as dataset:
+                        generated_provenance = bool(
+                            dataset.tags().get("model_manifest_id")
+                        )
+                    validate_cloud_mask(
+                        output.path,
+                        manifest=manifest if generated_provenance else None,
+                        source_path=(
+                            reflectance.execution_path
+                            if generated_provenance
+                            else None
+                        ),
+                    )
+                else:
+                    validate_cloud_mask(
+                        output.path,
+                        manifest=manifest,
+                        source_path=reflectance.execution_path,
+                        allow_legacy_provenance=True,
+                    )
+            elif output.content == "raw":
                 import spires_io
 
                 inspection = spires_io.validate_spires_product(
@@ -591,6 +628,35 @@ def _reuse_existing(task: Task) -> tuple[bool, str]:
     return True, message
 
 
+def _cloud_mask(task: Task) -> None:
+    options = task.science.cloud_mask
+    if options is None or options.model_manifest is None:
+        raise TaskExecutionError(
+            "cloud-mask task has no resolved model manifest",
+            failure_code="missing_cloud_mask_options",
+        )
+    if len(task.outputs) != 1 or task.outputs[0].content != "cloud_mask":
+        raise TaskExecutionError(
+            "cloud-mask tasks require exactly one cloud_mask output",
+            failure_code="output_cardinality",
+        )
+    reflectance = _one_input(task, InputRole.REFLECTANCE)
+    try:
+        from viirs_cloudmask_batch import predict_scene_to_tiff
+    except ImportError as exc:
+        raise TaskExecutionError(
+            "viirs-cloudmask-batch is required for cloud-mask execution",
+            failure_code="missing_scientific_dependency",
+        ) from exc
+    predict_scene_to_tiff(
+        reflectance.execution_path,
+        task.outputs[0].path,
+        options.model_manifest,
+        overwrite=True,
+        device=options.device,
+    )
+
+
 def _write_daily_product(plan: ResolvedPlan, task: Task, data) -> None:
     import spires_io
 
@@ -858,7 +924,10 @@ class ScientificExecutor:
                     slurm_array_task_id=slurm_array_task_id,
                 )
 
-            if task.stages == (Stage.BUILD_R0,):
+            if task.stages == (Stage.CLOUD_MASK,):
+                self._verify_reservation(task)
+                _cloud_mask(task)
+            elif task.stages == (Stage.BUILD_R0,):
                 self._verify_reservation(task)
                 _build_r0(task)
             elif task.stages == (Stage.INVERT,):

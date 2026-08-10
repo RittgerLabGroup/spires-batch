@@ -72,7 +72,7 @@
     "artifacts": [
       {
         "id": "viirs-r0-h08v04-wy2024",
-        "path": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/ancillary/r0/h08v04/2023/noaa20_r0_h08v04_2023.nc",
+        "path": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/ancillary/r0/h08v04/2023/noaa20_r0_h08v04_20230601_20230930.nc",
         "tile": "h08v04",
         "water_year": 2024,
         "start_date": "2023-06-01",
@@ -80,7 +80,7 @@
       },
       {
         "id": "viirs-r0-h08v05-wy2024",
-        "path": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/ancillary/r0/h08v05/2023/noaa20_r0_h08v05_2023.nc",
+        "path": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/ancillary/r0/h08v05/2023/noaa20_r0_h08v05_20230601_20230930.nc",
         "tile": "h08v05",
         "water_year": 2024,
         "start_date": "2023-06-01",
@@ -88,7 +88,7 @@
       },
       {
         "id": "viirs-r0-h09v04-wy2024",
-        "path": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/ancillary/r0/h09v04/2023/noaa20_r0_h09v04_2023.nc",
+        "path": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/ancillary/r0/h09v04/2023/noaa20_r0_h09v04_20230601_20230930.nc",
         "tile": "h09v04",
         "water_year": 2024,
         "start_date": "2023-06-01",
@@ -96,7 +96,7 @@
       },
       {
         "id": "viirs-r0-h09v05-wy2024",
-        "path": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/ancillary/r0/h09v05/2023/noaa20_r0_h09v05_2023.nc",
+        "path": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/ancillary/r0/h09v05/2023/noaa20_r0_h09v05_20230601_20230930.nc",
         "tile": "h09v05",
         "water_year": 2024,
         "start_date": "2023-06-01",
@@ -104,7 +104,7 @@
       },
       {
         "id": "viirs-r0-h10v04-wy2024",
-        "path": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/ancillary/r0/h10v04/2023/noaa20_r0_h10v04_2023.nc",
+        "path": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/ancillary/r0/h10v04/2023/noaa20_r0_h10v04_20230601_20230930.nc",
         "tile": "h10v04",
         "water_year": 2024,
         "start_date": "2023-06-01",
@@ -115,6 +115,8 @@
   "science": {
     "invert": {
       "preparation": {
+        "cloud_mask_source_policy": "external_only",
+        "cloud_mask_application_stage": "pre_inversion",
         "max_sensor_zenith": 65.0,
         "max_solar_zenith": 85.0,
         "mask_water_using_reflectance_qf": false,

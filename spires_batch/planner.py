@@ -12,7 +12,12 @@ from spires_batch.discovery import DiscoveryResult, discover_inputs, water_year
 from spires_batch.models import (
     CheckLayer,
     CheckSeverity,
+    CloudMaskApplicationStage,
+    CloudMaskConfig,
+    CloudMaskMode,
+    CloudMaskSourcePolicy,
     ExistingFileHandling,
+    ExistingOutputPolicy,
     ExpectedOutput,
     InputRole,
     PreflightIssue,
@@ -34,6 +39,33 @@ from spires_batch.serialization import sha256_digest
 
 class PlanningError(ValueError):
     pass
+
+
+def _uses_external_cloud_mask_pre_inversion(request: RequestConfig) -> bool:
+    invert = request.science.invert
+    if invert is None:
+        return False
+    preparation = invert.preparation
+    if (
+        preparation.cloud_mask_application_stage
+        != CloudMaskApplicationStage.PRE_INVERSION
+    ):
+        return False
+    if preparation.cloud_mask_source_policy in {
+        CloudMaskSourcePolicy.EXTERNAL_ONLY,
+        CloudMaskSourcePolicy.QA_OR_EXTERNAL,
+    }:
+        return True
+    if preparation.cloud_mask_source_policy is not None:
+        return False
+    named_inputs = (
+        *request.inputs.files,
+        *request.inputs.roots,
+    )
+    return Stage.CLOUD_MASK in request.steps or any(
+        item.role == InputRole.MASK and item.name == "cloud_mask"
+        for item in named_inputs
+    )
 
 
 def _resolve_resource_profile(
@@ -90,16 +122,10 @@ def resolve_resource_profiles(request: RequestConfig) -> tuple[ResourceProfile, 
             ),
         )
     clusters = {profile.cluster for profile in profiles}
-    environments = {profile.environment_name for profile in profiles}
     if len(clusters) != 1:
         raise PlanningError(
             "all execution profiles in one operational request must use the "
             "same Slurm cluster"
-        )
-    if len(environments) != 1:
-        raise PlanningError(
-            "all execution profiles in one operational request must use the "
-            "same environment"
         )
     return profiles
 
@@ -115,7 +141,14 @@ def resolve_resource_profile(request: RequestConfig) -> ResourceProfile:
     return profiles[0]
 
 
-def _task_resource_profile(request: RequestConfig, tile: str | None) -> str:
+def _task_resource_profile(
+    request: RequestConfig,
+    tile: str | None,
+    stages: tuple[Stage, ...],
+) -> str:
+    for stage in stages:
+        if stage in request.execution.stage_profiles:
+            return request.execution.stage_profiles[stage]
     if not request.execution.tile_profiles:
         return request.execution.profile
     if tile is None:
@@ -158,6 +191,24 @@ def _raw_output_path(
     )
 
 
+def _cloud_mask_output_path(
+    request: RequestConfig,
+    *,
+    tile: str,
+    acquisition_date: date,
+    base_dir: Path,
+) -> Path:
+    config = request.cloud_mask
+    if config is None or config.output_root is None:
+        raise PlanningError("cloud-mask output path requires cloud_mask.output_root")
+    root = _absolute(config.output_root, base_dir)
+    basename = (
+        f"{request.run.platform}_{tile}_"
+        f"{acquisition_date.strftime('%Y%m%d')}_cloud_mask.tif"
+    )
+    return root / tile / str(water_year(acquisition_date)) / basename
+
+
 def _task_id(payload: dict[str, Any]) -> str:
     digest = sha256_digest(payload).split(":", 1)[1][:16]
     stages = "-".join(payload["stages"])
@@ -180,6 +231,7 @@ def _make_task(
     r0_id: str | None,
     r0_recipe: R0Recipe | None = None,
     depends_on: tuple[str, ...] = (),
+    cloud_mask_options: CloudMaskConfig | None = None,
 ) -> Task:
     resolved_inputs = tuple(
         sorted(inputs, key=lambda item: (item.role.value, str(item.execution_path)))
@@ -218,12 +270,15 @@ def _make_task(
             for output in outputs
         ],
     }
-    science = TaskScienceConfig(
-        **{
-            stage.value: getattr(request.science, stage.value)
-            for stage in stages
-        }
-    )
+    science_values: dict[str, Any] = {}
+    for stage in stages:
+        if stage == Stage.CLOUD_MASK:
+            if cloud_mask_options is None:
+                raise PlanningError("cloud-mask task requires resolved cloud-mask options")
+            science_values[stage.value] = cloud_mask_options
+        else:
+            science_values[stage.value] = getattr(request.science, stage.value)
+    science = TaskScienceConfig(**science_values)
     payload["science"] = science.model_dump(mode="json", exclude_none=True)
     return Task(
         task_id=_task_id(payload),
@@ -240,7 +295,7 @@ def _make_task(
         outputs=outputs,
         depends_on=depends_on,
         science=science,
-        resource_profile=_task_resource_profile(request, tile),
+        resource_profile=_task_resource_profile(request, tile, stages),
     )
 
 
@@ -343,6 +398,8 @@ def build_tasks(
     tasks: list[Task] = []
     r0_task_by_path: dict[Path, str] = {}
     r0_input_by_path: dict[Path, ResolvedInput] = {}
+    cloud_task_by_scene: dict[tuple[str, date], str] = {}
+    cloud_input_by_scene: dict[tuple[str, date], ResolvedInput] = {}
 
     if request.r0 is not None:
         planned_r0 = request.r0.mode == R0Mode.BUILD
@@ -396,13 +453,72 @@ def build_tasks(
             tasks.append(task)
             r0_task_by_path[output_path] = task.task_id
 
+    reflectance_inputs = [
+        item for item in discovery.inputs if item.role == InputRole.REFLECTANCE
+    ]
+    if Stage.CLOUD_MASK in request.steps:
+        assert request.cloud_mask is not None
+        assert request.cloud_mask.model_manifest is not None
+        assert request.cloud_mask.output_root is not None
+        resolved_cloud_config = request.cloud_mask.model_copy(
+            update={
+                "model_manifest": _absolute(request.cloud_mask.model_manifest, base),
+                "output_root": _absolute(request.cloud_mask.output_root, base),
+            }
+        )
+        for reflectance in reflectance_inputs:
+            if reflectance.tile is None or reflectance.date is None:
+                continue
+            output_path = _cloud_mask_output_path(
+                request,
+                tile=reflectance.tile,
+                acquisition_date=reflectance.date,
+                base_dir=base,
+            )
+            task = _make_task(
+                stages=(Stage.CLOUD_MASK,),
+                request=request,
+                inputs=(reflectance,),
+                outputs=(
+                    ExpectedOutput(
+                        path=output_path,
+                        content="cloud_mask",
+                        existing_file_handling=ExistingFileHandling.UPDATE_ATOMICALLY,
+                        existing_output_policy=(
+                            ExistingOutputPolicy.REUSE_VALID
+                            if request.cloud_mask.mode == CloudMaskMode.ENSURE
+                            else ExistingOutputPolicy.ERROR
+                        ),
+                    ),
+                ),
+                tile=reflectance.tile,
+                acquisition_date=reflectance.date,
+                item_water_year=reflectance.water_year,
+                r0_id=None,
+                cloud_mask_options=resolved_cloud_config,
+            )
+            tasks.append(task)
+            scene_key = (reflectance.tile, reflectance.date)
+            cloud_task_by_scene[scene_key] = task.task_id
+            cloud_input_by_scene[scene_key] = ResolvedInput(
+                role=InputRole.MASK,
+                source_path=output_path,
+                execution_path=output_path,
+                name="cloud_mask",
+                tile=reflectance.tile,
+                date=reflectance.date,
+                water_year=reflectance.water_year,
+                product=request.run.product,
+                metadata={
+                    "planned_output": True,
+                    "producer_task_id": task.task_id,
+                    "model_manifest": str(resolved_cloud_config.model_manifest),
+                },
+            )
+
     if Stage.INVERT in request.steps:
         assert request.r0 is not None
-        reflectance_inputs = [
-            item
-            for item in discovery.inputs
-            if item.role == InputRole.REFLECTANCE
-        ]
+        use_external_cloud_mask = _uses_external_cloud_mask_pre_inversion(request)
         for reflectance in reflectance_inputs:
             if reflectance.tile is None or reflectance.date is None:
                 continue
@@ -418,22 +534,56 @@ def build_tasks(
                 if Stage.ALBEDO in request.steps
                 else (Stage.INVERT,)
             )
-            dependencies = (
-                (r0_task_by_path[artifact_path],)
-                if artifact_path in r0_task_by_path
-                else ()
+            scene_key = (reflectance.tile, reflectance.date)
+            dependencies = tuple(
+                dependency
+                for dependency in (
+                    r0_task_by_path.get(artifact_path),
+                    (
+                        cloud_task_by_scene.get(scene_key)
+                        if use_external_cloud_mask
+                        else None
+                    ),
+                )
+                if dependency is not None
             )
+            context = _matching_context(
+                discovery.inputs,
+                tile=reflectance.tile,
+                acquisition_date=reflectance.date,
+            )
+            if not use_external_cloud_mask:
+                context = tuple(
+                    item
+                    for item in context
+                    if not (item.role == InputRole.MASK and item.name == "cloud_mask")
+                )
+            elif scene_key in cloud_input_by_scene:
+                context = tuple(
+                    item
+                    for item in context
+                    if not (item.role == InputRole.MASK and item.name == "cloud_mask")
+                ) + (cloud_input_by_scene[scene_key],)
+            if (
+                use_external_cloud_mask
+                and request.science.invert.preparation.cloud_mask_source_policy
+                == CloudMaskSourcePolicy.EXTERNAL_ONLY
+                and not any(
+                    item.role == InputRole.MASK and item.name == "cloud_mask"
+                    for item in context
+                )
+            ):
+                raise PlanningError(
+                    "cloud_mask_source_policy='external_only' requires a cloud mask "
+                    f"for tile={reflectance.tile}, date={reflectance.date.isoformat()}"
+                )
             task = _make_task(
                 stages=stages,
                 request=request,
                 inputs=(
                     reflectance,
                     r0_input,
-                    *_matching_context(
-                        discovery.inputs,
-                        tile=reflectance.tile,
-                        acquisition_date=reflectance.date,
-                    ),
+                    *context,
                 ),
                 outputs=(
                     ExpectedOutput(

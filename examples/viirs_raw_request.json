@@ -62,6 +62,10 @@
   },
   "science": {
     "invert": {
+      "preparation": {
+        "cloud_mask_source_policy": "qa_only",
+        "cloud_mask_application_stage": "pre_inversion"
+      },
       "algorithm": 6,
       "max_eval": 200,
       "apply_valid_inversion_mask": true,

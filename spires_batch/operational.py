@@ -304,11 +304,6 @@ def _submit_coordinator(
         group.resource_profile for group in submission_record.groups
     }
     profiles = {profile.name: profile for profile in plan.resource_profiles}
-    environments = {profiles[name].environment_name for name in profile_names}
-    if len(environments) != 1:
-        raise ValueError(
-            "operational waves must use one environment for their coordinator"
-        )
     coordinator_profile_name = plan.request.execution.coordinator_profile
     if coordinator_profile_name is None:
         if len(profile_names) != 1:
@@ -339,7 +334,7 @@ def _submit_coordinator(
             partition=coordinator_profile.partition,
             account=coordinator_profile.account,
             qos=coordinator_profile.qos,
-            environment_name=next(iter(environments)),
+            environment_name=coordinator_profile.environment_name,
         ),
         executable=True,
     )
@@ -433,10 +428,6 @@ def _launch_wave(
     if len({profile.cluster for profile in wave_profiles}) != 1:
         raise ValueError(
             "operational wave groups must use one Slurm cluster"
-        )
-    if len({profile.environment_name for profile in wave_profiles}) != 1:
-        raise ValueError(
-            "operational wave groups must use one coordinator environment"
         )
     reservation_set = acquire_submission_reservations(
         wave_directory / SUBMISSION_RECORD_NAME,

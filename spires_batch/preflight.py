@@ -75,7 +75,7 @@ def _inventory_issues(
             )
     relevant_role = (
         InputRole.REFLECTANCE
-        if Stage.INVERT in steps
+        if Stage.CLOUD_MASK in steps or Stage.INVERT in steps
         else InputRole.RAW
         if Stage.ALBEDO in steps or Stage.INTERPOLATE in steps
         else None
@@ -139,7 +139,7 @@ def _inventory_issues(
             ):
                 severity = (
                     CheckSeverity.ERROR
-                    if request.output.existing_output_policy.value == "error"
+                    if output.existing_output_policy.value == "error"
                     else CheckSeverity.WARNING
                 )
                 issues.append(
@@ -149,7 +149,7 @@ def _inventory_issues(
                         code="existing_output",
                         message=(
                             f"expected output already exists under policy "
-                            f"{request.output.existing_output_policy.value!r}: {output.path}"
+                            f"{output.existing_output_policy.value!r}: {output.path}"
                         ),
                         path=output.path,
                         task_id=task.task_id,
@@ -200,6 +200,19 @@ def _task_input_issues(task: Task) -> list[PreflightIssue]:
                     message=(
                         f"task {task.task_id!r} requires at least one r0_source input"
                     ),
+                    task_id=task.task_id,
+                )
+            )
+
+    if Stage.CLOUD_MASK in task.stages:
+        require_count(InputRole.REFLECTANCE)
+        if task.science.cloud_mask is None:
+            issues.append(
+                PreflightIssue(
+                    layer=CheckLayer.SEMANTIC,
+                    severity=CheckSeverity.ERROR,
+                    code="missing_stage_science",
+                    message=f"task {task.task_id!r} has no cloud-mask options",
                     task_id=task.task_id,
                 )
             )

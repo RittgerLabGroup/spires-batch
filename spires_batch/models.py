@@ -21,10 +21,11 @@ from pydantic import (
 
 SCHEMA_VERSION = 1
 STAGE_ORDER = {
-    "build_r0": 0,
-    "invert": 1,
-    "albedo": 2,
-    "interpolate": 3,
+    "cloud_mask": 0,
+    "build_r0": 1,
+    "invert": 2,
+    "albedo": 3,
+    "interpolate": 4,
 }
 PRODUCT_BY_SENSOR_PLATFORM = {
     ("viirs", "snpp"): "vnp09ga",
@@ -62,6 +63,7 @@ class FrozenModel(BaseModel):
 
 
 class Stage(str, Enum):
+    CLOUD_MASK = "cloud_mask"
     BUILD_R0 = "build_r0"
     INVERT = "invert"
     ALBEDO = "albedo"
@@ -92,6 +94,29 @@ class ProductContents(str, Enum):
 class R0Mode(str, Enum):
     EXISTING = "existing"
     BUILD = "build"
+
+
+class CloudMaskMode(str, Enum):
+    EXISTING = "existing"
+    BUILD = "build"
+    ENSURE = "ensure"
+
+
+class CloudMaskReusePolicy(str, Enum):
+    COMPATIBLE_PROVENANCE = "compatible_provenance"
+    VALID_RASTER = "valid_raster"
+
+
+class CloudMaskSourcePolicy(str, Enum):
+    EXTERNAL_ONLY = "external_only"
+    QA_ONLY = "qa_only"
+    QA_OR_EXTERNAL = "qa_or_external"
+    NONE = "none"
+
+
+class CloudMaskApplicationStage(str, Enum):
+    PRE_INVERSION = "pre_inversion"
+    POST_INVERSION = "post_inversion"
 
 
 class R0Recipe(str, Enum):
@@ -453,6 +478,37 @@ class R0Config(FrozenModel):
         return self
 
 
+class CloudMaskConfig(FrozenModel):
+    """Operational cloud-mask production and reuse policy."""
+
+    mode: CloudMaskMode
+    model_manifest: Path | None = None
+    output_root: Path | None = None
+    reuse_policy: CloudMaskReusePolicy | None = None
+    device: Literal["cpu"] = "cpu"
+
+    @model_validator(mode="after")
+    def validate_mode(self) -> "CloudMaskConfig":
+        builds = self.mode in {CloudMaskMode.BUILD, CloudMaskMode.ENSURE}
+        if builds and (self.model_manifest is None or self.output_root is None):
+            raise ValueError(
+                "cloud_mask.model_manifest and cloud_mask.output_root are required "
+                "when mode is 'build' or 'ensure'"
+            )
+        if not builds and (self.model_manifest is not None or self.output_root is not None):
+            raise ValueError(
+                "cloud_mask.model_manifest and cloud_mask.output_root apply only to "
+                "'build' and 'ensure' modes"
+            )
+        if self.mode == CloudMaskMode.ENSURE and self.reuse_policy is None:
+            raise ValueError(
+                "cloud_mask.reuse_policy must be selected explicitly when mode is 'ensure'"
+            )
+        if self.mode != CloudMaskMode.ENSURE and self.reuse_policy is not None:
+            raise ValueError("cloud_mask.reuse_policy applies only when mode is 'ensure'")
+        return self
+
+
 class ScenePreparationConfig(FrozenModel):
     bands: tuple[str, ...] | None = None
     max_sensor_zenith: float = Field(default=65.0, ge=0.0, le=90.0)
@@ -466,6 +522,10 @@ class ScenePreparationConfig(FrozenModel):
     low_reflectance_threshold: float = Field(default=0.1, ge=0.0)
     cloud_mask_var: str = "mask_cloud"
     cloud_shadow_mask_var: str = "mask_cloud_shadow"
+    cloud_mask_source_policy: CloudMaskSourcePolicy | None = None
+    cloud_mask_application_stage: CloudMaskApplicationStage = (
+        CloudMaskApplicationStage.PRE_INVERSION
+    )
     water_mask_var: str | None = None
     ice_mask_var: str | None = None
     playa_mask_var: str | None = None
@@ -620,13 +680,14 @@ class ScienceConfig(FrozenModel):
 
 
 class TaskScienceConfig(FrozenModel):
+    cloud_mask: CloudMaskConfig | None = None
     build_r0: R0BuildScienceConfig | None = None
     invert: InvertScienceConfig | None = None
     albedo: AlbedoScienceConfig | None = None
 
     @model_validator(mode="after")
     def require_selected_science(self) -> "TaskScienceConfig":
-        if not any((self.build_r0, self.invert, self.albedo)):
+        if not any((self.cloud_mask, self.build_r0, self.invert, self.albedo)):
             raise ValueError("resolved task science must contain at least one stage")
         return self
 
@@ -677,6 +738,7 @@ class ExecutionConfig(FrozenModel):
     resources: ResourceOverrides = Field(default_factory=ResourceOverrides)
     profiles: dict[str, ExecutionProfileConfig] = Field(default_factory=dict)
     tile_profiles: dict[str, str] = Field(default_factory=dict)
+    stage_profiles: dict[Stage, str] = Field(default_factory=dict)
     coordinator_profile: str | None = None
     max_auto_retry_count: int = Field(default=3, ge=0)
     staging: StagingConfig = Field(default_factory=StagingConfig)
@@ -714,6 +776,25 @@ class ExecutionConfig(FrozenModel):
             normalized[normalized_tile] = normalized_profile
         return normalized
 
+    @field_validator("stage_profiles", mode="before")
+    @classmethod
+    def validate_stage_profiles(cls, value: Any) -> Any:
+        if value is None:
+            return {}
+        normalized: dict[str, str] = {}
+        for stage, profile in dict(value).items():
+            stage_name = str(stage.value if isinstance(stage, Stage) else stage).strip().lower()
+            profile_name = str(profile).strip().lower()
+            if stage_name not in STAGE_ORDER:
+                raise ValueError(f"execution.stage_profiles contains invalid stage {stage!r}")
+            if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]*", profile_name):
+                raise ValueError(
+                    "execution.stage_profiles profile names must contain only "
+                    "lowercase letters, numbers, '.', '_', or '-'"
+                )
+            normalized[stage_name] = profile_name
+        return normalized
+
     @field_validator("coordinator_profile")
     @classmethod
     def validate_coordinator_profile(cls, value: str | None) -> str | None:
@@ -729,24 +810,31 @@ class ExecutionConfig(FrozenModel):
 
     @model_validator(mode="after")
     def validate_routing(self) -> "ExecutionConfig":
-        routed = bool(self.profiles or self.tile_profiles or self.coordinator_profile)
+        routed = bool(
+            self.profiles
+            or self.tile_profiles
+            or self.stage_profiles
+            or self.coordinator_profile
+        )
         if not routed:
             return self
-        if not self.profiles or not self.tile_profiles:
+        if not self.profiles or not (self.tile_profiles or self.stage_profiles):
             raise ValueError(
-                "explicit tile routing requires both execution.profiles and "
-                "execution.tile_profiles"
+                "explicit routing requires execution.profiles and at least one of "
+                "execution.tile_profiles or execution.stage_profiles"
             )
         if self.coordinator_profile is None:
             raise ValueError(
                 "explicit tile routing requires execution.coordinator_profile"
             )
         known_profiles = set(self.profiles)
-        referenced_profiles = set(self.tile_profiles.values())
+        referenced_profiles = set(self.tile_profiles.values()) | set(
+            self.stage_profiles.values()
+        )
         unknown = sorted(referenced_profiles - known_profiles)
         if unknown:
             raise ValueError(
-                f"execution.tile_profiles references undefined profiles {unknown}"
+                f"execution routing references undefined profiles {unknown}"
             )
         if self.coordinator_profile not in known_profiles:
             raise ValueError(
@@ -775,6 +863,7 @@ class ExecutionConfig(FrozenModel):
         else:
             data.pop("profiles", None)
             data.pop("tile_profiles", None)
+            data.pop("stage_profiles", None)
             data.pop("coordinator_profile", None)
         return data
 
@@ -790,6 +879,7 @@ class RequestConfig(FrozenModel):
     selection: SelectionConfig
     steps: tuple[Stage, ...]
     inputs: InputsConfig
+    cloud_mask: CloudMaskConfig | None = None
     r0: R0Config | None = None
     science: ScienceConfig = Field(default_factory=ScienceConfig)
     output: OutputConfig
@@ -806,7 +896,8 @@ class RequestConfig(FrozenModel):
             raise ValueError("steps contains duplicate stages")
         if normalized != tuple(sorted(normalized, key=STAGE_ORDER.__getitem__)):
             raise ValueError(
-                "steps must follow build_r0 -> invert -> albedo -> interpolate order"
+                "steps must follow cloud_mask -> build_r0 -> invert -> albedo -> "
+                "interpolate order"
             )
         return normalized
 
@@ -873,6 +964,29 @@ class RequestConfig(FrozenModel):
             raise ValueError(
                 "Interpolation not yet implemented; the stage is reserved in schema "
                 "version 1, but Phase F must define temporal windows and dependencies"
+            )
+        if Stage.CLOUD_MASK in steps:
+            if self.run.sensor != "viirs":
+                raise ValueError("cloud-mask generation currently supports only VIIRS")
+            if self.cloud_mask is None or self.cloud_mask.mode not in {
+                CloudMaskMode.BUILD,
+                CloudMaskMode.ENSURE,
+            }:
+                raise ValueError(
+                    "steps includes 'cloud_mask', so cloud_mask.mode must be 'build' "
+                    "or 'ensure'"
+                )
+            if InputRole.REFLECTANCE not in roles:
+                raise ValueError(
+                    "steps includes 'cloud_mask', but inputs has no 'reflectance' "
+                    "files or roots"
+                )
+        elif self.cloud_mask is not None and self.cloud_mask.mode in {
+            CloudMaskMode.BUILD,
+            CloudMaskMode.ENSURE,
+        }:
+            raise ValueError(
+                "cloud_mask.mode builds masks, but steps does not include 'cloud_mask'"
             )
         if Stage.BUILD_R0 in steps:
             if self.r0 is None or self.r0.mode != R0Mode.BUILD:
@@ -945,11 +1059,14 @@ class RequestConfig(FrozenModel):
                 )
         if (
             self.output.existing_file_handling == ExistingFileHandling.UPDATE_ATOMICALLY
-            and not (Stage.ALBEDO in steps and Stage.INVERT not in steps)
+            and not (
+                (Stage.ALBEDO in steps and Stage.INVERT not in steps)
+                or Stage.CLOUD_MASK in steps
+            )
         ):
             raise ValueError(
                 "output.existing_file_handling='update_atomically' is initially supported "
-                "only for standalone albedo enrichment of an existing raw product"
+                "only for standalone albedo enrichment or cloud-mask generation"
             )
         if self.execution.tile_profiles:
             selected_tiles = set(self.selection.tiles)
@@ -1013,7 +1130,7 @@ class ResolvedInput(FrozenModel):
 
 class ExpectedOutput(FrozenModel):
     path: Path
-    content: Literal["r0", "raw", "interpolate"]
+    content: Literal["cloud_mask", "r0", "raw", "interpolate"]
     existing_file_handling: ExistingFileHandling
     existing_output_policy: ExistingOutputPolicy = ExistingOutputPolicy.ERROR
     product_contents: ProductContents | None = None

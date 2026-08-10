@@ -694,6 +694,29 @@
           "required": false,
           "default": "mask_cloud_shadow"
         },
+        "cloud_mask_source_policy": {
+          "type": [
+            "enum",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "allowed": [
+            "external_only",
+            "qa_only",
+            "qa_or_external",
+            "none"
+          ]
+        },
+        "cloud_mask_application_stage": {
+          "type": "enum",
+          "required": false,
+          "default": "pre_inversion",
+          "allowed": [
+            "pre_inversion",
+            "post_inversion"
+          ]
+        },
         "water_mask_var": {
           "type": [
             "string",
