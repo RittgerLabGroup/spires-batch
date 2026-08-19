@@ -278,6 +278,10 @@ def validate_submission_readiness(
             if (
                 output.existing_file_handling
                 == ExistingFileHandling.UPDATE_ATOMICALLY
+                and any(
+                    _resolved(item.execution_path) == path
+                    for item in task.inputs
+                )
                 and not path.is_file()
             ):
                 issues.append(

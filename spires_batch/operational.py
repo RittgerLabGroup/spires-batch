@@ -250,15 +250,16 @@ def _coordinator_script(
     account: str | None,
     qos: str | None,
     environment_name: str,
+    memory: str,
 ) -> str:
     directives = [
         "#!/bin/bash",
         f"#SBATCH --clusters={cluster}",
         "#SBATCH --job-name=spires-e5-advance",
         f"#SBATCH --partition={partition}",
-        "#SBATCH --time=00:10:00",
+        "#SBATCH --time=00:20:00",
         "#SBATCH --cpus-per-task=1",
-        "#SBATCH --mem=1G",
+        f"#SBATCH --mem={memory}",
         f"#SBATCH --output={wave_directory}/coordinator-%j.out",
         f"#SBATCH --error={wave_directory}/coordinator-%j.err",
     ]
@@ -335,6 +336,7 @@ def _submit_coordinator(
             account=coordinator_profile.account,
             qos=coordinator_profile.qos,
             environment_name=coordinator_profile.environment_name,
+            memory=coordinator_profile.memory,
         ),
         executable=True,
     )

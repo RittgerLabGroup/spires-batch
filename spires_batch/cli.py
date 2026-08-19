@@ -310,6 +310,8 @@ def _parser() -> argparse.ArgumentParser:
 def _print_preflight(plan) -> None:
     result = plan.preflight
     for issue in result.issues:
+        if issue.code == "metadata_readable":
+            continue
         location = f" [{issue.path}]" if issue.path is not None else ""
         print(
             f"{issue.severity.value.upper():7} "

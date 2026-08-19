@@ -23,6 +23,7 @@
     "dates": []
   },
   "steps": [
+    "cloud_mask",
     "invert",
     "albedo"
   ],
@@ -48,16 +49,8 @@
       {
         "adapter": "curc",
         "role": "reflectance",
-        "path": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/reflectance",
+        "path": "/pl/active/rittger_ops/vj109ga.002/input",
         "pattern": "**/V*09GA.A*.h??v??.*.h5",
-        "required": true
-      },
-      {
-        "adapter": "curc",
-        "role": "mask",
-        "name": "cloud_mask",
-        "path": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/ancillary/cloud",
-        "pattern": "h??v??/*/*_cloud_mask.tif",
         "required": true
       }
     ],
@@ -69,6 +62,13 @@
         "required": true
       }
     ]
+  },
+  "cloud_mask": {
+    "mode": "ensure",
+    "model_manifest": "/projects/ropa5718/SPIReS-Organization/viirs-cloudmask-batch/examples/selected_operational_model.json",
+    "output_root": "/scratch/alpine/ropa5718/spipy/input/viirs/noaa20/ancillary/cloud",
+    "reuse_policy": "compatible_provenance",
+    "device": "cpu"
   },
   "r0": {
     "mode": "existing",
@@ -239,7 +239,7 @@
     "invert": {
       "preparation": {
         "cloud_mask_source_policy": "external_only",
-        "cloud_mask_application_stage": "pre_inversion",
+        "cloud_mask_application_stage": "post_inversion",
         "bands": [
           "I1",
           "I2",
@@ -274,7 +274,7 @@
     }
   },
   "output": {
-    "root": "/scratch/alpine/ropa5718/spipy/output/batch-test",
+    "root": "/scratch/alpine/ropa5718/spipy/output/noaa20-wy2023-2026",
     "product_contents": "full",
     "existing_file_handling": "write_new_file",
     "existing_output_policy": "reuse_valid"
@@ -288,8 +288,20 @@
           "qos": "blanca-snow",
           "time_limit": "04:00:00",
           "cpus_per_task": 1,
-          "memory": "16G",
+          "memory": "6G",
           "environment_name": "spipy14",
+          "extra_directives": []
+        }
+      },
+      "blanca-rittger": {
+        "max_concurrent_tasks": 36,
+        "resources": {
+          "account": "blanca-rittger",
+          "qos": "blanca-rittger",
+          "time_limit": "04:00:00",
+          "cpus_per_task": 1,
+          "memory": "16G",
+          "environment_name": "viirs-cloudmask-batch",
           "extra_directives": []
         }
       }
@@ -301,10 +313,14 @@
       "h09v05": "blanca-snow",
       "h10v04": "blanca-snow"
     },
+    "stage_profiles": {
+      "cloud_mask": "blanca-rittger"
+    },
     "coordinator_profile": "blanca-snow",
     "max_auto_retry_count": 3,
     "staging": {
-      "enabled": false,
+      "enabled": true,
+      "root": "/scratch/alpine/ropa5718/spires-batch/input-cache",
       "verification": "stat",
       "reuse_valid": true
     }
