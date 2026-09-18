@@ -31,7 +31,7 @@
       {
         "role": "lut",
         "name": "inversion_lut",
-        "path": "/projects/ropa5718/SPIReS-Organization/spires-interpolation/doc/phase3/fsca_observation/lut_provenance/modis_terra_reference_20260914/modis_terra_disort_spline3_s1e-05.nc"
+        "path": "/pl/active/palomaki-sar/spires-interpolation-research/artifacts/reference_assets/lut_provenance/modis_terra_reference_20260914/modis_terra_disort_spline3_s1e-05.nc"
       },
       {
         "role": "lut",

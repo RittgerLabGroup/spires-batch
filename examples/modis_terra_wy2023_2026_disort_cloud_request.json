@@ -47,7 +47,7 @@
   },
   "cloud_mask": {
     "mode": "ensure",
-    "model_manifest": "/projects/ropa5718/SPIReS-Organization/spires-interpolation/doc/phase3/fsca_observation/lut_provenance/modis_terra_reference_20260914/legacy_modis_cloud_model/manifest.json",
+    "model_manifest": "/pl/active/palomaki-sar/spires-interpolation-research/artifacts/reference_assets/lut_provenance/modis_terra_reference_20260914/legacy_modis_cloud_model/manifest.json",
     "output_root": "/scratch/alpine/ropa5718/spipy/input/modis/terra/ancillary/cloud",
     "reuse_policy": "compatible_provenance",
     "device": "cpu"
