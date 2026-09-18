@@ -227,6 +227,18 @@ def validate_scientific_outputs(task: Task) -> tuple[bool, str]:
                         False,
                         f"persisted output is missing completed operation(s) {missing}",
                     )
+                options = task.science.albedo
+                if options is not None and options.canopy_correction_policy != "legacy":
+                    import xarray as xr
+
+                    with xr.open_dataset(output.path, group="results") as results:
+                        policy = results["canopy_adjusted_fsnow"].attrs.get(
+                            "canopy_correction_policy"
+                        )
+                        if policy != options.canopy_correction_policy:
+                            return False, "persisted canopy correction policy does not match task"
+                        if "snow_detected" not in results:
+                            return False, "persisted sensor-specific product lacks snow detection"
             elif output.content == "r0":
                 import xarray as xr
                 from spires_r0 import validate_r0_dataset
@@ -582,6 +594,9 @@ def _postprocess(task: Task, data):
         )
     lut_inputs = _named_inputs(task, InputRole.LUT)
     kwargs = options.model_dump()
+    expected_sensor = {"modis_s2_062": "modis", "viirs_s2_083": "viirs"}.get(options.canopy_correction_policy)
+    if expected_sensor is not None and task.sensor != expected_sensor:
+        raise ValueError(f"{options.canopy_correction_policy} requires sensor {expected_sensor}")
     kwargs["albedo_lookup"] = (
         None
         if "albedo_lookup" not in lut_inputs
@@ -623,6 +638,10 @@ def _task_provenance(plan: ResolvedPlan, task: Task) -> dict[str, Any]:
 def _reuse_existing(task: Task) -> tuple[bool, str]:
     existing = [output for output in task.outputs if output.path.exists()]
     if not existing:
+        return False, ""
+    if all(output.existing_output_policy == ExistingOutputPolicy.REPLACE for output in existing):
+        if task.stages not in ((Stage.INVERT,), (Stage.INVERT, Stage.ALBEDO)):
+            raise ValueError("replace output policy requires a daily inversion task")
         return False, ""
     updating = any(
         output.existing_file_handling == ExistingFileHandling.UPDATE_ATOMICALLY
@@ -729,7 +748,7 @@ def _write_daily_product(plan: ResolvedPlan, task: Task, data) -> None:
             provenance=_task_provenance(plan, task),
             package_versions=_runtime_versions(),
             validation="sample",
-            overwrite=False,
+            overwrite=output.existing_output_policy == ExistingOutputPolicy.REPLACE,
         )
     finally:
         _close_data(data)

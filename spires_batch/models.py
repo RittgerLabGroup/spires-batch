@@ -84,6 +84,7 @@ class ExistingFileHandling(str, Enum):
 class ExistingOutputPolicy(str, Enum):
     ERROR = "error"
     REUSE_VALID = "reuse_valid"
+    REPLACE = "replace"
 
 
 class ProductContents(str, Enum):
@@ -649,6 +650,7 @@ class InvertScienceConfig(FrozenModel):
 
 class AlbedoScienceConfig(FrozenModel):
     apply_canopy_correction: bool = False
+    canopy_correction_policy: Literal["legacy", "modis_s2_062", "viirs_s2_083"] = "legacy"
     apply_ice_adjustment: bool = False
     calculate_albedo: bool = True
     calculate_delta_vis: bool = False
@@ -658,6 +660,8 @@ class AlbedoScienceConfig(FrozenModel):
 
     @model_validator(mode="after")
     def require_operation(self) -> "AlbedoScienceConfig":
+        if self.canopy_correction_policy != "legacy" and not self.apply_canopy_correction:
+            raise ValueError("sensor-specific canopy policy requires apply_canopy_correction")
         if not any(
             (
                 self.apply_canopy_correction,
@@ -904,6 +908,10 @@ class RequestConfig(FrozenModel):
     @model_validator(mode="after")
     def validate_stage_relationships(self) -> "RequestConfig":
         steps = set(self.steps)
+        if self.output.existing_output_policy == ExistingOutputPolicy.REPLACE and (
+            Stage.INVERT not in steps or Stage.BUILD_R0 in steps
+        ):
+            raise ValueError("replace output policy is supported only for daily inversion, without R0 construction")
         roles = {item.role for item in self.inputs.files}
         roles.update(root.role for root in self.inputs.roots)
         named_inputs = {
@@ -1031,7 +1039,12 @@ class RequestConfig(FrozenModel):
             )
         if Stage.ALBEDO in steps:
             albedo = self.science.albedo
+            expected_sensor = {"modis_s2_062": "modis", "viirs_s2_083": "viirs"}.get(albedo.canopy_correction_policy)
+            if expected_sensor is not None and self.run.sensor != expected_sensor:
+                raise ValueError(f"{albedo.canopy_correction_policy} requires sensor {expected_sensor}")
             required_context: list[tuple[InputRole, str]] = []
+            if expected_sensor is not None:
+                required_context.extend(((InputRole.ANCILLARY, "slope"), (InputRole.ANCILLARY, "aspect")))
             if albedo.apply_canopy_correction:
                 required_context.append((InputRole.ANCILLARY, "canopy_fraction"))
             if albedo.apply_ice_adjustment:

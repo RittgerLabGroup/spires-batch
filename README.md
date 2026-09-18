@@ -330,6 +330,14 @@ product:
 - `results_subset` retains the self-describing grid, packed QA, and results
   while omitting inputs that can be reopened from their configured sources.
 
+For an explicitly authorized daily inversion rerun, set
+`output.existing_output_policy="replace"`. This recomputes the daily product
+and atomically replaces the previous file only after validating the temporary
+product. It does not enable R0 replacement and does not bypass output reservations.
+Set `science.albedo.canopy_correction_policy` to `modis_s2_062` for MODIS or
+`viirs_s2_083` for VIIRS with `apply_canopy_correction=true`. Cross-sensor
+policy assignments are rejected. Both require terrain slope and aspect.
+
 The selected value is copied into every resolved raw-output task. It does not
 change whether the product is `inversion_raw` or `postprocessed_raw`; fused
 `invert + albedo` tasks can write the latter directly, while standalone albedo
