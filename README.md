@@ -707,3 +707,20 @@ spires-batch reservations prune \
 Failed or interrupted reservations are never removed because of age alone.
 Releasing one requires the exact run ID, task ID, reason, and explicit
 `--apply`.
+
+## Reused R0 grid preflight
+
+With metadata preflight enabled, every distinct reused NetCDF/Zarr R0 product is
+checked for a valid scalar CRS/GeoTransform and matching pixel-center coordinate
+vectors. Representative mode still checks all R0 water years, rather than one
+file per tile. These checks read coordinate vectors and metadata, not the full
+reflectance arrays. Invalid grids fail with `invalid_r0_grid` before submission;
+repair a proven metadata-only error or rebuild an actually misaligned product.
+Explicitly disabling metadata preflight also disables this check.
+
+Live submission holds new arrays until all reservation ownership records and the
+immutable scheduler submission have been written, then releases those temporary
+holds automatically. This also applies to automatic retry waves. Explicit
+`--hold`/`-H` resource directives remain under operator control. If registration
+or release fails, the submission events identify any held arrays requiring
+recovery; workers never need to race incomplete ownership registration.

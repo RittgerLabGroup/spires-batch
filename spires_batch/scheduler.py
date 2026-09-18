@@ -431,6 +431,7 @@ def submit_scheduler_submission(
 
     profiles = _profile_by_name(plan)
     submitted: list[SchedulerSubmissionGroup] = []
+    registration_holds: list[SchedulerSubmissionGroup] = []
     try:
         submitted_by_group: dict[str, SchedulerSubmissionGroup] = {}
         for group in record.groups:
@@ -440,6 +441,14 @@ def submit_scheduler_submission(
                 for group_id in group.dependency_group_ids
             )
             command_parts = ["sbatch", "--parsable"]
+            explicit_hold = any(
+                value.strip() in {"--hold", "-H"}
+                for value in profile.extra_directives
+            )
+            if not explicit_hold:
+                # A fast-starting worker must not race slow filesystem writes
+                # that attach its scheduler identity to the output reservation.
+                command_parts.append("--hold")
             if dependency_job_ids:
                 command_parts.append(
                     "--dependency=afterok:" + ":".join(dependency_job_ids)
@@ -469,6 +478,8 @@ def submit_scheduler_submission(
                 dependency_job_ids=dependency_job_ids,
             )
             submitted.append(submitted_group)
+            if not explicit_hold:
+                registration_holds.append(submitted_group)
             submitted_by_group[group.group_id] = submitted_group
             append_submission_event(
                 record.output_directory / SUBMISSION_EVENTS_NAME,
@@ -533,6 +544,26 @@ def submit_scheduler_submission(
                 },
             ),
         )
+        for group in registration_holds:
+            command = ("scontrol", "--clusters", group.cluster, "release", group.job_id)
+            result = subprocess.run(command, capture_output=True, text=True, check=False)
+            if result.returncode != 0:
+                raise SchedulerSubmissionError(
+                    f"could not release registration hold for {group.job_id}: "
+                    f"{_response_text(result)}; ownership is recorded, release the hold to resume"
+                )
+            append_submission_event(
+                record.output_directory / SUBMISSION_EVENTS_NAME,
+                SubmissionEvent(
+                    timestamp=datetime.now(timezone.utc),
+                    event_type="scheduler_registration_hold_released",
+                    submission_id=record.submission_id,
+                    run_id=record.run_id,
+                    plan_digest=record.plan_digest,
+                    message=f"released {group.cluster}/{group.job_id} after all ownership records were written",
+                    details={"job_id": group.job_id, "command": _command_text(command)},
+                ),
+            )
     except Exception as exc:
         append_submission_event(
             record.output_directory / SUBMISSION_EVENTS_NAME,

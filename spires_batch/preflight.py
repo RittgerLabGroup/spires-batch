@@ -458,6 +458,40 @@ def _metadata_issues(
     return issues
 
 
+def _r0_grid_issues(
+    inputs: tuple[ResolvedInput, ...], mode: MetadataCheck
+) -> list[PreflightIssue]:
+    """Inspect every distinct georeferenced R0 grid, without reading spectra.
+
+    Sampling one file per tile misses different water-year backgrounds. Even
+    representative metadata preflight checks all reused R0 coordinate vectors.
+    """
+    if mode == MetadataCheck.NONE:
+        return []
+    import xarray as xr
+    from spires_contract import validate_persisted_grid
+
+    issues = []
+    paths = sorted({item.source_path for item in inputs if item.role == InputRole.R0})
+    for path in paths:
+        if path.suffix.lower() not in {".nc", ".cdf", ".netcdf", ".zarr"}:
+            continue
+        try:
+            opened = xr.open_zarr(path) if path.suffix.lower() == ".zarr" else xr.open_dataset(path)
+            with opened as dataset:
+                if "spatial_ref" in dataset or "spires_r0_product_type" in dataset.attrs:
+                    validate_persisted_grid(dataset)
+        except Exception as exc:
+            issues.append(PreflightIssue(
+                layer=CheckLayer.METADATA,
+                severity=CheckSeverity.ERROR,
+                code="invalid_r0_grid",
+                message=f"R0 grid metadata is invalid; repair or rebuild before submission: {exc}",
+                path=path,
+            ))
+    return issues
+
+
 def _static_context_file_issues(
     item: ResolvedInput,
     summary: dict[str, Any],
@@ -633,6 +667,7 @@ def run_preflight(
         issues.extend(
             _metadata_issues(discovery.inputs, request.preflight.metadata_check)
         )
+        issues.extend(_r0_grid_issues(discovery.inputs, request.preflight.metadata_check))
     else:
         issues.append(
             PreflightIssue(
