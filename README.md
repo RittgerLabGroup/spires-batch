@@ -358,6 +358,11 @@ Both dispatch to the same summer-composite workflow and typed science options;
 the sensor-specific public R0 API supplies the reflectance reader and canonical
 band definitions.
 
+For MODIS R0 builds, set `science.build_r0.chunks` to `null` (or omit it)
+to load all summer scenes together in memory. Budget several hundred GiB of
+RAM per full-tile task. Explicit chunk dimensions select disk-backed Zarr
+staging instead. `science.build_r0.show_progress: true` enables scene progress.
+
 ## Discovery and scratch staging
 
 Mutable site roots belong in each request. No `/pl` or `/scratch` path is

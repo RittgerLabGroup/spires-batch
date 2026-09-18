@@ -209,6 +209,24 @@ def _cloud_mask_output_path(
     return root / tile / str(water_year(acquisition_date)) / basename
 
 
+def _cloud_classification_output_path(
+    request: RequestConfig,
+    *,
+    tile: str,
+    acquisition_date: date,
+    base_dir: Path,
+) -> Path:
+    config = request.cloud_mask
+    if config is None or config.output_root is None:
+        raise PlanningError("cloud classification path requires cloud_mask.output_root")
+    root = _absolute(config.output_root, base_dir)
+    basename = (
+        f"{request.run.platform}_{tile}_"
+        f"{acquisition_date.strftime('%Y%m%d')}_cloud_classification.tif"
+    )
+    return root / tile / str(water_year(acquisition_date)) / basename
+
+
 def _task_id(payload: dict[str, Any]) -> str:
     digest = sha256_digest(payload).split(":", 1)[1][:16]
     stages = "-".join(payload["stages"])
@@ -277,7 +295,18 @@ def _make_task(
                 raise PlanningError("cloud-mask task requires resolved cloud-mask options")
             science_values[stage.value] = cloud_mask_options
         else:
-            science_values[stage.value] = getattr(request.science, stage.value)
+            options = getattr(request.science, stage.value)
+            if (
+                request.run.sensor == "viirs"
+                and stage in (Stage.INVERT, Stage.BUILD_R0)
+                and options.preparation.observation_selection is None
+            ):
+                options = options.model_copy(update={
+                    "preparation": options.preparation.model_copy(update={
+                        "observation_selection": "iobs_res_v1",
+                    }),
+                })
+            science_values[stage.value] = options
     science = TaskScienceConfig(**science_values)
     payload["science"] = science.model_dump(mode="json", exclude_none=True)
     return Task(
@@ -469,28 +498,62 @@ def build_tasks(
         for reflectance in reflectance_inputs:
             if reflectance.tile is None or reflectance.date is None:
                 continue
+            cloud_inputs: tuple[ResolvedInput, ...] = (reflectance,)
+            if request.run.sensor == "modis":
+                dem_inputs = tuple(
+                    item
+                    for item in _matching_context(
+                        discovery.inputs,
+                        tile=reflectance.tile,
+                        acquisition_date=reflectance.date,
+                    )
+                    if item.role == InputRole.ANCILLARY and item.name == "dem"
+                )
+                if len(dem_inputs) != 1:
+                    raise PlanningError(
+                        "MODIS cloud-mask tasks require exactly one DEM for "
+                        f"tile={reflectance.tile}; found {len(dem_inputs)}"
+                    )
+                cloud_inputs = (reflectance, dem_inputs[0])
             output_path = _cloud_mask_output_path(
                 request,
                 tile=reflectance.tile,
                 acquisition_date=reflectance.date,
                 base_dir=base,
             )
+            classification_path = _cloud_classification_output_path(
+                request,
+                tile=reflectance.tile,
+                acquisition_date=reflectance.date,
+                base_dir=base,
+            )
+            output_policy = (
+                ExistingOutputPolicy.REUSE_VALID
+                if request.cloud_mask.mode == CloudMaskMode.ENSURE
+                else ExistingOutputPolicy.ERROR
+            )
+            cloud_outputs = [
+                ExpectedOutput(
+                    path=output_path,
+                    content="cloud_mask",
+                    existing_file_handling=ExistingFileHandling.UPDATE_ATOMICALLY,
+                    existing_output_policy=output_policy,
+                )
+            ]
+            if request.run.sensor == "modis":
+                cloud_outputs.append(
+                    ExpectedOutput(
+                        path=classification_path,
+                        content="cloud_classification",
+                        existing_file_handling=ExistingFileHandling.UPDATE_ATOMICALLY,
+                        existing_output_policy=output_policy,
+                    )
+                )
             task = _make_task(
                 stages=(Stage.CLOUD_MASK,),
                 request=request,
-                inputs=(reflectance,),
-                outputs=(
-                    ExpectedOutput(
-                        path=output_path,
-                        content="cloud_mask",
-                        existing_file_handling=ExistingFileHandling.UPDATE_ATOMICALLY,
-                        existing_output_policy=(
-                            ExistingOutputPolicy.REUSE_VALID
-                            if request.cloud_mask.mode == CloudMaskMode.ENSURE
-                            else ExistingOutputPolicy.ERROR
-                        ),
-                    ),
-                ),
+                inputs=cloud_inputs,
+                outputs=tuple(cloud_outputs),
                 tile=reflectance.tile,
                 acquisition_date=reflectance.date,
                 item_water_year=reflectance.water_year,

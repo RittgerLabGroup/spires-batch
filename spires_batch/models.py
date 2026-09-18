@@ -479,6 +479,7 @@ class R0Config(FrozenModel):
 
 
 class CloudMaskConfig(FrozenModel):
+    observation_selection: Literal['first', 'iobs_res_v1'] = 'iobs_res_v1'
     """Operational cloud-mask production and reuse policy."""
 
     mode: CloudMaskMode
@@ -511,6 +512,7 @@ class CloudMaskConfig(FrozenModel):
 
 class ScenePreparationConfig(FrozenModel):
     bands: tuple[str, ...] | None = None
+    observation_selection: Literal['first', 'iobs_res_v1'] | None = None
     max_sensor_zenith: float = Field(default=65.0, ge=0.0, le=90.0)
     max_solar_zenith: float = Field(default=85.0, ge=0.0, le=90.0)
     min_obs_1km: int = Field(default=1, ge=1)
@@ -623,6 +625,7 @@ class R0BuildScienceConfig(FrozenModel):
     ndvi_tie_epsilon: float = Field(default=0.02, ge=0.0)
     min_blue_reflectance: float = Field(default=0.10, ge=0.0)
     show_progress: bool = False
+    # MODIS: None loads the full summer stack in memory; explicit chunks use Zarr.
     chunks: dict[str, int] | None = None
 
     @field_validator("chunks")
@@ -966,8 +969,8 @@ class RequestConfig(FrozenModel):
                 "version 1, but Phase F must define temporal windows and dependencies"
             )
         if Stage.CLOUD_MASK in steps:
-            if self.run.sensor != "viirs":
-                raise ValueError("cloud-mask generation currently supports only VIIRS")
+            if self.run.sensor not in {"viirs", "modis"}:
+                raise ValueError("cloud-mask generation supports VIIRS and MODIS")
             if self.cloud_mask is None or self.cloud_mask.mode not in {
                 CloudMaskMode.BUILD,
                 CloudMaskMode.ENSURE,
@@ -1130,7 +1133,9 @@ class ResolvedInput(FrozenModel):
 
 class ExpectedOutput(FrozenModel):
     path: Path
-    content: Literal["cloud_mask", "r0", "raw", "interpolate"]
+    content: Literal[
+        "cloud_mask", "cloud_classification", "r0", "raw", "interpolate"
+    ]
     existing_file_handling: ExistingFileHandling
     existing_output_policy: ExistingOutputPolicy = ExistingOutputPolicy.ERROR
     product_contents: ProductContents | None = None

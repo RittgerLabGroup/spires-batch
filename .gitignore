@@ -12,3 +12,6 @@ dist/
 # Generated batch plans, submission artifacts, task events, and Slurm logs.
 # New runs default to scratch, but keep this ignored for older/local runs.
 /spires-batch-runs/
+
+# Generated Terra run state and logs; active jobs reference this directory.
+/artifacts/modis_terra_wy2023_2026_disort_20260914/

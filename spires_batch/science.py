@@ -8,6 +8,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+import tempfile
 from typing import Any, Callable
 
 from spires_batch.models import (
@@ -50,6 +51,7 @@ _MASK_SOURCE_KWARGS = {
 }
 _SCIENTIFIC_DISTRIBUTIONS = (
     "spires-batch",
+    "modis-cloudmask",
     "viirs-cloudmask-batch",
     "spires-contract",
     "spires-io",
@@ -147,13 +149,33 @@ def validate_scientific_outputs(task: Task) -> tuple[bool, str]:
                 options = task.science.cloud_mask
                 if options is None or options.model_manifest is None:
                     return False, "cloud-mask output lacks resolved model options"
+                reflectance = _one_input(task, InputRole.REFLECTANCE)
+                if task.sensor == "modis":
+                    from modis_cloudmask import load_manifest, validate_outputs
+
+                    classifications = [
+                        item for item in task.outputs
+                        if item.content == "cloud_classification"
+                    ]
+                    if len(classifications) != 1:
+                        return False, "MODIS cloud task lacks one three-class output"
+                    manifest = load_manifest(options.model_manifest)
+                    validate_outputs(
+                        output.path,
+                        classifications[0].path,
+                        manifest=manifest,
+                        source_path=reflectance.execution_path,
+                        dem_path=_one_input(
+                            task, InputRole.ANCILLARY, name="dem"
+                        ).execution_path,
+                    )
+                    continue
                 from viirs_cloudmask_batch import (
                     load_model_manifest,
                     validate_cloud_mask,
                 )
 
                 manifest = load_model_manifest(options.model_manifest)
-                reflectance = _one_input(task, InputRole.REFLECTANCE)
                 if options.reuse_policy == CloudMaskReusePolicy.VALID_RASTER:
                     import rasterio
 
@@ -164,6 +186,7 @@ def validate_scientific_outputs(task: Task) -> tuple[bool, str]:
                     validate_cloud_mask(
                         output.path,
                         manifest=manifest if generated_provenance else None,
+                        observation_selection=options.observation_selection,
                         source_path=(
                             reflectance.execution_path
                             if generated_provenance
@@ -176,7 +199,11 @@ def validate_scientific_outputs(task: Task) -> tuple[bool, str]:
                         manifest=manifest,
                         source_path=reflectance.execution_path,
                         allow_legacy_provenance=True,
+                        observation_selection=options.observation_selection,
                     )
+            elif output.content == "cloud_classification":
+                if task.sensor != "modis":
+                    return False, "three-class cloud output is supported only for MODIS"
             elif output.content == "raw":
                 import spires_io
 
@@ -203,12 +230,39 @@ def validate_scientific_outputs(task: Task) -> tuple[bool, str]:
                         False,
                         f"persisted output is missing completed operation(s) {missing}",
                     )
+                if task.sensor == "viirs" and Stage.INVERT in task.stages:
+                    desired = (
+                        task.science.invert.preparation.observation_selection
+                        or "iobs_res_v1"
+                    )
+                    provenance = inspection.metadata.provenance
+                    actual = (
+                        provenance.get("science", {}).get("invert", {})
+                        .get("preparation", {}).get("observation_selection")
+                        or "first"
+                    )
+                    if actual != desired:
+                        return False, (
+                            f"raw observation selection {actual!r} "
+                            f"does not match {desired!r}"
+                        )
             elif output.content == "r0":
                 import xarray as xr
                 from spires_r0 import validate_r0_dataset
 
                 with xr.open_dataset(output.path) as dataset:
                     validate_r0_dataset(dataset)
+                    if task.sensor == "viirs":
+                        desired = (
+                            task.science.build_r0.preparation.observation_selection
+                            or "iobs_res_v1"
+                        )
+                        actual = dataset.attrs.get("observation_selection", "first")
+                        if actual != desired:
+                            return False, (
+                                f"R0 observation selection {actual!r} "
+                                f"does not match {desired!r}"
+                            )
             else:
                 return False, f"unsupported output content {output.content!r}"
     except Exception as exc:
@@ -445,6 +499,8 @@ def _prepare_inversion_data(task: Task):
     ancillary_inputs = _named_inputs(task, InputRole.ANCILLARY)
 
     prepare_kwargs = options.preparation.model_dump(exclude_none=True)
+    if task.sensor == "viirs":
+        prepare_kwargs.setdefault("observation_selection", "iobs_res_v1")
     if "bands" not in prepare_kwargs:
         prepare_kwargs["bands"] = _background_selected_bands(
             spires_io,
@@ -572,6 +628,9 @@ def _postprocess(task: Task, data):
 
 
 def _task_provenance(plan: ResolvedPlan, task: Task) -> dict[str, Any]:
+    science = task.science.model_dump(mode="json", exclude_none=True)
+    if task.sensor == "viirs" and Stage.INVERT in task.stages:
+        science["invert"]["preparation"].setdefault("observation_selection", "iobs_res_v1")
     return {
         "batch_run_id": plan.run_id,
         "batch_manifest_family_id": plan.manifest_family_id,
@@ -592,7 +651,7 @@ def _task_provenance(plan: ResolvedPlan, task: Task) -> dict[str, Any]:
             }
             for item in task.inputs
         ],
-        "science": task.science.model_dump(mode="json", exclude_none=True),
+        "science": science,
     }
 
 
@@ -635,12 +694,39 @@ def _cloud_mask(task: Task) -> None:
             "cloud-mask task has no resolved model manifest",
             failure_code="missing_cloud_mask_options",
         )
-    if len(task.outputs) != 1 or task.outputs[0].content != "cloud_mask":
+    binary_outputs = [output for output in task.outputs if output.content == "cloud_mask"]
+    classification_outputs = [
+        output for output in task.outputs if output.content == "cloud_classification"
+    ]
+    expected_count = 2 if task.sensor == "modis" else 1
+    if len(task.outputs) != expected_count or len(binary_outputs) != 1:
         raise TaskExecutionError(
-            "cloud-mask tasks require exactly one cloud_mask output",
+            "cloud-mask task outputs do not match the sensor contract",
             failure_code="output_cardinality",
         )
     reflectance = _one_input(task, InputRole.REFLECTANCE)
+    if task.sensor == "modis":
+        if len(classification_outputs) != 1:
+            raise TaskExecutionError(
+                "MODIS cloud-mask tasks require one three-class output",
+                failure_code="output_cardinality",
+            )
+        try:
+            from modis_cloudmask import predict_scene
+        except ImportError as exc:
+            raise TaskExecutionError(
+                "modis-cloudmask is required for MODIS cloud-mask execution",
+                failure_code="missing_scientific_dependency",
+            ) from exc
+        predict_scene(
+            reflectance.execution_path,
+            binary_outputs[0].path,
+            classification_outputs[0].path,
+            options.model_manifest,
+            _one_input(task, InputRole.ANCILLARY, name="dem").execution_path,
+            overwrite=True,
+        )
+        return
     try:
         from viirs_cloudmask_batch import predict_scene_to_tiff
     except ImportError as exc:
@@ -650,10 +736,11 @@ def _cloud_mask(task: Task) -> None:
         ) from exc
     predict_scene_to_tiff(
         reflectance.execution_path,
-        task.outputs[0].path,
+        binary_outputs[0].path,
         options.model_manifest,
         overwrite=True,
         device=options.device,
+        observation_selection=options.observation_selection,
     )
 
 
@@ -744,17 +831,37 @@ def _build_r0(task: Task) -> None:
         R0Recipe.MODIS_SUMMER_COMPOSITE: spires_r0.build_modis_r0_from_sources,
     }[task.r0_recipe]
     output = task.outputs[0]
-    result = builder(
-        sources,
-        r0_path=output.path,
-        overwrite=False,
-        show_progress=options.show_progress,
-        max_sensor_zenith=options.max_sensor_zenith,
-        ndvi_tie_epsilon=options.ndvi_tie_epsilon,
-        min_blue_reflectance=options.min_blue_reflectance,
-        chunks=options.chunks,
+    builder_kwargs = {
+        "r0_path": output.path,
+        "overwrite": False,
+        "show_progress": options.show_progress,
+        "max_sensor_zenith": options.max_sensor_zenith,
+        "ndvi_tie_epsilon": options.ndvi_tie_epsilon,
+        "min_blue_reflectance": options.min_blue_reflectance,
+        "chunks": options.chunks,
         **prepare_kwargs,
-    )
+    }
+    if task.sensor == "modis" and options.chunks is not None:
+        # Explicit chunks select disk-backed staging. With chunks=None, use
+        # the builder's in-memory summer stack and budget Slurm RAM accordingly.
+        # The directory is an implementation detail and is removed after the
+        # atomic R0 NetCDF has been written and validated.
+        output.path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix=f".{output.path.stem}.",
+            suffix=".zarr-staging",
+            dir=output.path.parent,
+        ) as staging_directory:
+            builder_kwargs["zarr_path"] = Path(staging_directory) / "timeseries.zarr"
+            builder_kwargs["chunks"] = options.chunks or {
+                "time": 1,
+                "y": 400,
+                "x": 400,
+                "band": -1,
+            }
+            result = builder(sources, **builder_kwargs)
+    else:
+        result = builder(sources, **builder_kwargs)
     close = getattr(result, "close", None)
     if close is not None:
         close()

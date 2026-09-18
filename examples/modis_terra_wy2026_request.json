@@ -1,0 +1,305 @@
+{
+  "artifact_type": "spires_batch_request",
+  "schema_version": 1,
+  "run": {
+    "name": "modis-terra-westernUS-wy2026",
+    "sensor": "modis",
+    "platform": "terra"
+  },
+  "selection": {
+    "tiles": [
+      "h08v04",
+      "h08v05",
+      "h09v04",
+      "h09v05",
+      "h10v04"
+    ],
+    "water_years": [],
+    "dates": []
+  },
+  "steps": [
+    "cloud_mask",
+    "build_r0",
+    "invert",
+    "albedo"
+  ],
+  "inputs": {
+    "files": [
+      {
+        "role": "lut",
+        "name": "inversion_lut",
+        "path": "/scratch/alpine/ropa5718/lut/lut_modis_b1to7_3um_dust_mat_conversion.nc"
+      },
+      {
+        "role": "lut",
+        "name": "albedo_lookup",
+        "path": "/scratch/alpine/ropa5718/lut/20260721_disort_albedo.nc"
+      },
+      {
+        "role": "lut",
+        "name": "forcing_lookup",
+        "path": "/scratch/alpine/ropa5718/lut/Darkening_RadiativeForcing_SanJuanDust_BlackCarbon.nc"
+      }
+    ],
+    "roots": [
+      {
+        "adapter": "curc",
+        "role": "reflectance",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/reflectance",
+        "pattern": "h??v??/2025/MOD09GA.A202527[4-9].h??v??.061.*.hdf",
+        "required": true
+      },
+      {
+        "adapter": "curc",
+        "role": "reflectance",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/reflectance",
+        "pattern": "h??v??/2025/MOD09GA.A20252[89][0-9].h??v??.061.*.hdf",
+        "required": true
+      },
+      {
+        "adapter": "curc",
+        "role": "reflectance",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/reflectance",
+        "pattern": "h??v??/2025/MOD09GA.A20253[0-5][0-9].h??v??.061.*.hdf",
+        "required": true
+      },
+      {
+        "adapter": "curc",
+        "role": "reflectance",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/reflectance",
+        "pattern": "h??v??/2025/MOD09GA.A202536[0-5].h??v??.061.*.hdf",
+        "required": true
+      },
+      {
+        "adapter": "curc",
+        "role": "reflectance",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/reflectance",
+        "pattern": "h??v??/2026/MOD09GA.A202600[1-9].h??v??.061.*.hdf",
+        "required": true
+      },
+      {
+        "adapter": "curc",
+        "role": "reflectance",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/reflectance",
+        "pattern": "h??v??/2026/MOD09GA.A20260[1-9][0-9].h??v??.061.*.hdf",
+        "required": true
+      },
+      {
+        "adapter": "curc",
+        "role": "reflectance",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/reflectance",
+        "pattern": "h??v??/2026/MOD09GA.A20261[0-9][0-9].h??v??.061.*.hdf",
+        "required": true
+      },
+      {
+        "adapter": "curc",
+        "role": "reflectance",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/reflectance",
+        "pattern": "h??v??/2026/MOD09GA.A202620[0-9].h??v??.061.*.hdf",
+        "required": true
+      },
+      {
+        "adapter": "curc",
+        "role": "reflectance",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/reflectance",
+        "pattern": "h??v??/2026/MOD09GA.A202621[0-3].h??v??.061.*.hdf",
+        "required": true
+      },
+      {
+        "adapter": "curc",
+        "role": "r0_source",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/reflectance",
+        "pattern": "h??v??/2025/MOD09GA.A202515[2-9].h??v??.061.*.hdf",
+        "required": true
+      },
+      {
+        "adapter": "curc",
+        "role": "r0_source",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/reflectance",
+        "pattern": "h??v??/2025/MOD09GA.A20251[6-9][0-9].h??v??.061.*.hdf",
+        "required": true
+      },
+      {
+        "adapter": "curc",
+        "role": "r0_source",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/reflectance",
+        "pattern": "h??v??/2025/MOD09GA.A20252[0-6][0-9].h??v??.061.*.hdf",
+        "required": true
+      },
+      {
+        "adapter": "curc",
+        "role": "r0_source",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/reflectance",
+        "pattern": "h??v??/2025/MOD09GA.A202527[0-3].h??v??.061.*.hdf",
+        "required": true
+      }
+    ],
+    "static_context_roots": [
+      {
+        "adapter": "tiled_static_context",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/ancillary/static",
+        "pattern": "h??v??/*.tif",
+        "required": true
+      }
+    ]
+  },
+  "r0": {
+    "mode": "build",
+    "recipe": "modis_summer_composite",
+    "artifacts": [
+      {
+        "id": "terra-r0-h08v04-wy2026",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/ancillary/r0/h08v04/2025/terra_r0_h08v04_20250601_20250930.nc",
+        "tile": "h08v04",
+        "water_year": 2026,
+        "start_date": "2025-06-01",
+        "end_date": "2025-09-30"
+      },
+      {
+        "id": "terra-r0-h08v05-wy2026",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/ancillary/r0/h08v05/2025/terra_r0_h08v05_20250601_20250930.nc",
+        "tile": "h08v05",
+        "water_year": 2026,
+        "start_date": "2025-06-01",
+        "end_date": "2025-09-30"
+      },
+      {
+        "id": "terra-r0-h09v04-wy2026",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/ancillary/r0/h09v04/2025/terra_r0_h09v04_20250601_20250930.nc",
+        "tile": "h09v04",
+        "water_year": 2026,
+        "start_date": "2025-06-01",
+        "end_date": "2025-09-30"
+      },
+      {
+        "id": "terra-r0-h09v05-wy2026",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/ancillary/r0/h09v05/2025/terra_r0_h09v05_20250601_20250930.nc",
+        "tile": "h09v05",
+        "water_year": 2026,
+        "start_date": "2025-06-01",
+        "end_date": "2025-09-30"
+      },
+      {
+        "id": "terra-r0-h10v04-wy2026",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/ancillary/r0/h10v04/2025/terra_r0_h10v04_20250601_20250930.nc",
+        "tile": "h10v04",
+        "water_year": 2026,
+        "start_date": "2025-06-01",
+        "end_date": "2025-09-30"
+      }
+    ]
+  },
+  "cloud_mask": {
+    "mode": "ensure",
+    "model_manifest": "/projects/ropa5718/modis-cloud-mask/models/legacy_v2025_0_1/manifest.json",
+    "output_root": "/scratch/alpine/ropa5718/spipy/input/modis/terra/ancillary/cloud",
+    "reuse_policy": "compatible_provenance",
+    "device": "cpu"
+  },
+  "science": {
+    "build_r0": {
+      "max_sensor_zenith": 30.0,
+      "ndvi_tie_epsilon": 0.02,
+      "min_blue_reflectance": 0.1,
+      "show_progress": false,
+      "chunks": {
+        "time": 1,
+        "y": 400,
+        "x": 400,
+        "band": 7
+      }
+    },
+    "invert": {
+      "preparation": {
+        "cloud_mask_source_policy": "external_only",
+        "cloud_mask_application_stage": "post_inversion",
+        "bands": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7"
+        ],
+        "max_sensor_zenith": 65.0,
+        "max_solar_zenith": 85.0,
+        "mask_water_using_reflectance_qf": false,
+        "mask_water_using_external_file": true,
+        "mask_low_reflectance_for_inversion": true,
+        "low_reflectance_threshold": 0.1
+      },
+      "clustering": {
+        "enabled": false
+      },
+      "algorithm": 6,
+      "max_eval": 200,
+      "initial_grain_radius_um": 250.0,
+      "apply_valid_inversion_mask": true,
+      "n_workers": 1
+    },
+    "albedo": {
+      "apply_canopy_correction": true,
+      "apply_ice_adjustment": true,
+      "calculate_albedo": true,
+      "calculate_delta_vis": true,
+      "calculate_radiative_forcing": true
+    }
+  },
+  "output": {
+    "root": "/scratch/alpine/ropa5718/spipy/output/modis-terra-wy2026",
+    "product_contents": "full",
+    "existing_file_handling": "write_new_file",
+    "existing_output_policy": "reuse_valid"
+  },
+  "execution": {
+    "profiles": {
+      "blanca-snow": {
+        "max_concurrent_tasks": 60,
+        "resources": {
+          "account": "blanca-snow",
+          "qos": "blanca-snow",
+          "time_limit": "04:00:00",
+          "cpus_per_task": 1,
+          "memory": "12G",
+          "environment_name": "spipy14",
+          "extra_directives": []
+        }
+      },
+      "modis-cloud": {
+        "max_concurrent_tasks": 20,
+        "resources": {
+          "cluster": "blanca",
+          "partition": "blanca-snow",
+          "account": "blanca-snow",
+          "qos": "blanca-snow",
+          "time_limit": "00:30:00",
+          "cpus_per_task": 2,
+          "memory": "4G",
+          "environment_name": "modis-cloudmask",
+          "extra_directives": []
+        }
+      }
+    },
+    "tile_profiles": {
+      "h08v04": "blanca-snow",
+      "h08v05": "blanca-snow",
+      "h09v04": "blanca-snow",
+      "h09v05": "blanca-snow",
+      "h10v04": "blanca-snow"
+    },
+    "stage_profiles": {
+      "cloud_mask": "modis-cloud"
+    },
+    "coordinator_profile": "blanca-snow",
+    "max_auto_retry_count": 3,
+    "staging": {
+      "enabled": false,
+      "verification": "stat",
+      "reuse_valid": true
+    }
+  },
+  "preflight": {
+    "metadata_check": "sample"
+  }
+}

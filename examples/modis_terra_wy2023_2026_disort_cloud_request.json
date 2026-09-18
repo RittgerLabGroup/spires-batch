@@ -1,0 +1,165 @@
+{
+  "artifact_type": "spires_batch_request",
+  "schema_version": 1,
+  "run": {
+    "name": "modis-terra-wy2023-2026-disort-ref20260914-cloud",
+    "sensor": "modis",
+    "platform": "terra"
+  },
+  "selection": {
+    "tiles": [
+      "h08v04",
+      "h08v05",
+      "h09v04",
+      "h09v05",
+      "h10v04"
+    ],
+    "water_years": [
+      2023,
+      2024,
+      2025,
+      2026
+    ],
+    "dates": []
+  },
+  "steps": [
+    "cloud_mask"
+  ],
+  "inputs": {
+    "files": [],
+    "roots": [
+      {
+        "adapter": "curc",
+        "role": "reflectance",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/reflectance",
+        "pattern": "h??v??/*/MOD09GA.A*.061.*.hdf",
+        "required": true
+      }
+    ],
+    "static_context_roots": [
+      {
+        "adapter": "tiled_static_context",
+        "path": "/scratch/alpine/ropa5718/spipy/input/modis/terra/ancillary/static",
+        "pattern": "h??v??/*.tif",
+        "required": true
+      }
+    ]
+  },
+  "cloud_mask": {
+    "mode": "ensure",
+    "model_manifest": "/projects/ropa5718/SPIReS-Organization/spires-interpolation/doc/phase3/fsca_observation/lut_provenance/modis_terra_reference_20260914/legacy_modis_cloud_model/manifest.json",
+    "output_root": "/scratch/alpine/ropa5718/spipy/input/modis/terra/ancillary/cloud",
+    "reuse_policy": "compatible_provenance",
+    "device": "cpu"
+  },
+  "science": {
+    "invert": {
+      "preparation": {
+        "cloud_mask_source_policy": "external_only",
+        "cloud_mask_application_stage": "post_inversion",
+        "bands": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7"
+        ],
+        "max_sensor_zenith": 65.0,
+        "max_solar_zenith": 85.0,
+        "mask_water_using_reflectance_qf": false,
+        "mask_water_using_external_file": true,
+        "mask_low_reflectance_for_inversion": true,
+        "low_reflectance_threshold": 0.1
+      },
+      "clustering": {
+        "enabled": false
+      },
+      "algorithm": 6,
+      "max_eval": 200,
+      "initial_grain_radius_um": 250.0,
+      "apply_valid_inversion_mask": true,
+      "n_workers": 8
+    },
+    "albedo": {
+      "apply_canopy_correction": true,
+      "apply_ice_adjustment": true,
+      "calculate_albedo": true,
+      "calculate_delta_vis": true,
+      "calculate_radiative_forcing": true
+    },
+    "build_r0": {
+      "max_sensor_zenith": 30.0,
+      "ndvi_tie_epsilon": 0.02,
+      "min_blue_reflectance": 0.1,
+      "show_progress": false,
+      "chunks": {
+        "time": 1,
+        "y": 400,
+        "x": 400,
+        "band": 7
+      }
+    }
+  },
+  "output": {
+    "root": "/scratch/alpine/ropa5718/spipy/output/modis-terra-wy2023-2026-disort-ref20260914",
+    "product_contents": "full",
+    "existing_file_handling": "write_new_file",
+    "existing_output_policy": "reuse_valid"
+  },
+  "execution": {
+    "profiles": {
+      "cloud-rittger": {
+        "max_concurrent_tasks": 14,
+        "resources": {
+          "cluster": "blanca",
+          "partition": "blanca-rittger",
+          "account": "blanca-rittger",
+          "qos": "blanca-rittger",
+          "time_limit": "04:00:00",
+          "cpus_per_task": 4,
+          "memory": "8G",
+          "environment_name": "modis-cloudmask",
+          "extra_directives": [
+            "--nodelist=bnode0416"
+          ]
+        }
+      },
+      "coordinator": {
+        "max_concurrent_tasks": 1,
+        "resources": {
+          "cluster": "blanca",
+          "partition": "blanca-snow",
+          "account": "blanca-snow",
+          "qos": "blanca-snow",
+          "time_limit": "04:00:00",
+          "cpus_per_task": 1,
+          "memory": "4G",
+          "environment_name": "spipy14",
+          "extra_directives": []
+        }
+      }
+    },
+    "tile_profiles": {
+      "h08v04": "cloud-rittger",
+      "h08v05": "cloud-rittger",
+      "h09v04": "cloud-rittger",
+      "h09v05": "cloud-rittger",
+      "h10v04": "cloud-rittger"
+    },
+    "stage_profiles": {
+      "cloud_mask": "cloud-rittger"
+    },
+    "coordinator_profile": "coordinator",
+    "max_auto_retry_count": 3,
+    "staging": {
+      "enabled": false,
+      "verification": "stat",
+      "reuse_valid": true
+    }
+  },
+  "preflight": {
+    "metadata_check": "sample"
+  }
+}
