@@ -479,7 +479,6 @@ class R0Config(FrozenModel):
 
 
 class CloudMaskConfig(FrozenModel):
-    observation_selection: Literal['first', 'iobs_res_v1'] = 'iobs_res_v1'
     """Operational cloud-mask production and reuse policy."""
 
     mode: CloudMaskMode
@@ -512,7 +511,6 @@ class CloudMaskConfig(FrozenModel):
 
 class ScenePreparationConfig(FrozenModel):
     bands: tuple[str, ...] | None = None
-    observation_selection: Literal['first', 'iobs_res_v1'] | None = None
     max_sensor_zenith: float = Field(default=65.0, ge=0.0, le=90.0)
     max_solar_zenith: float = Field(default=85.0, ge=0.0, le=90.0)
     min_obs_1km: int = Field(default=1, ge=1)
@@ -625,7 +623,6 @@ class R0BuildScienceConfig(FrozenModel):
     ndvi_tie_epsilon: float = Field(default=0.02, ge=0.0)
     min_blue_reflectance: float = Field(default=0.10, ge=0.0)
     show_progress: bool = False
-    # MODIS: None loads the full summer stack in memory; explicit chunks use Zarr.
     chunks: dict[str, int] | None = None
 
     @field_validator("chunks")

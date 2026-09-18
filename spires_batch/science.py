@@ -8,7 +8,6 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-import tempfile
 from typing import Any, Callable
 
 from spires_batch.models import (
@@ -186,7 +185,6 @@ def validate_scientific_outputs(task: Task) -> tuple[bool, str]:
                     validate_cloud_mask(
                         output.path,
                         manifest=manifest if generated_provenance else None,
-                        observation_selection=options.observation_selection,
                         source_path=(
                             reflectance.execution_path
                             if generated_provenance
@@ -199,7 +197,6 @@ def validate_scientific_outputs(task: Task) -> tuple[bool, str]:
                         manifest=manifest,
                         source_path=reflectance.execution_path,
                         allow_legacy_provenance=True,
-                        observation_selection=options.observation_selection,
                     )
             elif output.content == "cloud_classification":
                 if task.sensor != "modis":
@@ -230,39 +227,12 @@ def validate_scientific_outputs(task: Task) -> tuple[bool, str]:
                         False,
                         f"persisted output is missing completed operation(s) {missing}",
                     )
-                if task.sensor == "viirs" and Stage.INVERT in task.stages:
-                    desired = (
-                        task.science.invert.preparation.observation_selection
-                        or "iobs_res_v1"
-                    )
-                    provenance = inspection.metadata.provenance
-                    actual = (
-                        provenance.get("science", {}).get("invert", {})
-                        .get("preparation", {}).get("observation_selection")
-                        or "first"
-                    )
-                    if actual != desired:
-                        return False, (
-                            f"raw observation selection {actual!r} "
-                            f"does not match {desired!r}"
-                        )
             elif output.content == "r0":
                 import xarray as xr
                 from spires_r0 import validate_r0_dataset
 
                 with xr.open_dataset(output.path) as dataset:
                     validate_r0_dataset(dataset)
-                    if task.sensor == "viirs":
-                        desired = (
-                            task.science.build_r0.preparation.observation_selection
-                            or "iobs_res_v1"
-                        )
-                        actual = dataset.attrs.get("observation_selection", "first")
-                        if actual != desired:
-                            return False, (
-                                f"R0 observation selection {actual!r} "
-                                f"does not match {desired!r}"
-                            )
             else:
                 return False, f"unsupported output content {output.content!r}"
     except Exception as exc:
@@ -499,8 +469,6 @@ def _prepare_inversion_data(task: Task):
     ancillary_inputs = _named_inputs(task, InputRole.ANCILLARY)
 
     prepare_kwargs = options.preparation.model_dump(exclude_none=True)
-    if task.sensor == "viirs":
-        prepare_kwargs.setdefault("observation_selection", "iobs_res_v1")
     if "bands" not in prepare_kwargs:
         prepare_kwargs["bands"] = _background_selected_bands(
             spires_io,
@@ -628,9 +596,6 @@ def _postprocess(task: Task, data):
 
 
 def _task_provenance(plan: ResolvedPlan, task: Task) -> dict[str, Any]:
-    science = task.science.model_dump(mode="json", exclude_none=True)
-    if task.sensor == "viirs" and Stage.INVERT in task.stages:
-        science["invert"]["preparation"].setdefault("observation_selection", "iobs_res_v1")
     return {
         "batch_run_id": plan.run_id,
         "batch_manifest_family_id": plan.manifest_family_id,
@@ -651,7 +616,7 @@ def _task_provenance(plan: ResolvedPlan, task: Task) -> dict[str, Any]:
             }
             for item in task.inputs
         ],
-        "science": science,
+        "science": task.science.model_dump(mode="json", exclude_none=True),
     }
 
 
@@ -740,7 +705,6 @@ def _cloud_mask(task: Task) -> None:
         options.model_manifest,
         overwrite=True,
         device=options.device,
-        observation_selection=options.observation_selection,
     )
 
 
@@ -831,37 +795,17 @@ def _build_r0(task: Task) -> None:
         R0Recipe.MODIS_SUMMER_COMPOSITE: spires_r0.build_modis_r0_from_sources,
     }[task.r0_recipe]
     output = task.outputs[0]
-    builder_kwargs = {
-        "r0_path": output.path,
-        "overwrite": False,
-        "show_progress": options.show_progress,
-        "max_sensor_zenith": options.max_sensor_zenith,
-        "ndvi_tie_epsilon": options.ndvi_tie_epsilon,
-        "min_blue_reflectance": options.min_blue_reflectance,
-        "chunks": options.chunks,
+    result = builder(
+        sources,
+        r0_path=output.path,
+        overwrite=False,
+        show_progress=options.show_progress,
+        max_sensor_zenith=options.max_sensor_zenith,
+        ndvi_tie_epsilon=options.ndvi_tie_epsilon,
+        min_blue_reflectance=options.min_blue_reflectance,
+        chunks=options.chunks,
         **prepare_kwargs,
-    }
-    if task.sensor == "modis" and options.chunks is not None:
-        # Explicit chunks select disk-backed staging. With chunks=None, use
-        # the builder's in-memory summer stack and budget Slurm RAM accordingly.
-        # The directory is an implementation detail and is removed after the
-        # atomic R0 NetCDF has been written and validated.
-        output.path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(
-            prefix=f".{output.path.stem}.",
-            suffix=".zarr-staging",
-            dir=output.path.parent,
-        ) as staging_directory:
-            builder_kwargs["zarr_path"] = Path(staging_directory) / "timeseries.zarr"
-            builder_kwargs["chunks"] = options.chunks or {
-                "time": 1,
-                "y": 400,
-                "x": 400,
-                "band": -1,
-            }
-            result = builder(sources, **builder_kwargs)
-    else:
-        result = builder(sources, **builder_kwargs)
+    )
     close = getattr(result, "close", None)
     if close is not None:
         close()

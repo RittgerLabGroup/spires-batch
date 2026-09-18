@@ -295,18 +295,7 @@ def _make_task(
                 raise PlanningError("cloud-mask task requires resolved cloud-mask options")
             science_values[stage.value] = cloud_mask_options
         else:
-            options = getattr(request.science, stage.value)
-            if (
-                request.run.sensor == "viirs"
-                and stage in (Stage.INVERT, Stage.BUILD_R0)
-                and options.preparation.observation_selection is None
-            ):
-                options = options.model_copy(update={
-                    "preparation": options.preparation.model_copy(update={
-                        "observation_selection": "iobs_res_v1",
-                    }),
-                })
-            science_values[stage.value] = options
+            science_values[stage.value] = getattr(request.science, stage.value)
     science = TaskScienceConfig(**science_values)
     payload["science"] = science.model_dump(mode="json", exclude_none=True)
     return Task(
