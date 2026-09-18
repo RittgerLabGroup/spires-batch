@@ -658,6 +658,14 @@ class AlbedoScienceConfig(FrozenModel):
     average_vertical_crown_radius: float = Field(default=4.644, gt=0.0)
     average_horizontal_crown_radius: float = Field(default=1.72, gt=0.0)
 
+    @model_serializer(mode="wrap")
+    def preserve_legacy_serialization(self, handler: Any) -> dict[str, Any]:
+        """Keep existing schema-v1 request and manifest digests unchanged."""
+        data = handler(self)
+        if self.canopy_correction_policy == "legacy":
+            data.pop("canopy_correction_policy", None)
+        return data
+
     @model_validator(mode="after")
     def require_operation(self) -> "AlbedoScienceConfig":
         if self.canopy_correction_policy != "legacy" and not self.apply_canopy_correction:
