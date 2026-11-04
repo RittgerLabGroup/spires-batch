@@ -733,3 +733,9 @@ publication. See [the request and execution guide](docs/interpolation.md). This
 path consumes prepared observations and explicit scientific assets; it leaves the
 existing inversion planner unchanged. NRT checkpoint interfaces are provided by
 interpolation; scheduled incremental operation remains a separate controller.
+
+## Standard/NRT replacement cycles
+
+`spires-batch nrt` acquires standard/NRT inputs, prepares retained or fresh retrievals,
+replays replaced observations from historical checkpoints, and commits all tile
+products/state through one generation. See [the NRT control contract](docs/nrt.md).

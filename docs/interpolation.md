@@ -37,6 +37,7 @@ Each tile declares:
   screening_flags, solar_zenith and solar_azimuth. Different fields can point to
   different files; the worker opens each file once per read group.
 - `terrain`: dem, slope, aspect, canopy_fraction and native projected x/y.
+  Trailing parameter axes use `band`; integer flags can use `bitwise_and`.
   One-dimensional axes use `axis: "x"` or `axis: "y"`.
 - `bright_soil`: water-year -> field, with optional `index` for a stacked source.
 - `agriculture` and `coastal`: Boolean fields.
@@ -75,9 +76,8 @@ Outputs and checkpoint bundles commit through one atomic current.json manifest.
 A final issue with no eligible dates is omitted rather than emitted prematurely.
 
 The checkpoint bundle includes bounded snow state, direct property history and
-variable-specific ages. It supports the next incremental controller; this command
-currently implements historical processing. Late arrival/replacement and scheduled
-NRT deployment are not enabled implicitly. Historical maps computed with standard
+variable-specific ages. It supports the [NRT revision controller](nrt.md); this command
+implements historical processing. Scheduled NRT deployment is not enabled implicitly. Historical maps computed with standard
 inputs do not establish as-issued NRT performance.
 
 Planning derives a separate `state_identity` from the scientific implementation,
@@ -97,3 +97,14 @@ four stages, first/final NetCDF export, checkpoint publication and exact retries
 Numerical migration checks compare the production policy/native kernels against
 frozen research code. Full-grid memory/throughput pilots are required before bulk
 submission. No historical or cloud production jobs were submitted by migration.
+
+Scheduler resources can be overridden per stage with `scheduler.stages`, keyed by
+`screen`, `spatial`, `properties`, or `export`. Each override accepts `cpus`,
+`memory`, `time`, and `concurrency`; the top-level settings remain defaults.
+The spatial native kernel uses that stage's CPU count. This lets full-domain
+spatial jobs use several cores without allocating idle cores to serial stripes.
+
+Seeded revision plans validate and pin the observations actually replayed from
+`start` onward, together with their checkpoint and all scientific context assets.
+They retain the full lineage in the request without reopening the entire original
+observation archive on every NRT cycle.

@@ -29,7 +29,7 @@ def file_record(path,checksum=False):
 def implementations():
     import spires_interpolation
     root=Path(spires_interpolation.__file__).parent
-    files=list(root.glob('*.py'))+list((root/'native').glob('*.cpp'))+[Path(__file__)]
+    files=list(root.glob('*.py'))+list((root/'native').glob('*.cpp'))+list(Path(__file__).parent.glob('*.py'))
     return {str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(files)}
 
 
@@ -42,13 +42,26 @@ def mapped_fields(value):
         for child in value:yield from mapped_fields(child)
 
 
-def plan(config,destination):
+def active_fields(request):
+    """A checkpoint owns its earlier observations; reopen only replay inputs."""
+    for fields in request['tiles'].values():
+        yield from mapped_fields({k:v for k,v in fields.items() if k!='daily'})
+        first=request['start'] if 'seed' in request else request['history_start']
+        for day,record in fields['daily'].items():
+            if first<=day<=request['available_through']:yield from mapped_fields(record)
+
+
+def stage_resources(scheduler,stage):
+    return {**scheduler,**scheduler.get('stages',{}).get(stage,{})}
+
+
+def plan(config,destination,*,header_cache=None):
     import numpy as np
     import h5py
     from spires_interpolation.historical import DAILY_FIELDS
     config=Path(config).resolve();request=json.loads(config.read_text())
     required={'schema_version','history_start','start','stop','available_through','shape','tiles','output','common_library','spatial_library','albedo_lut','scheduler','asset_provenance'}
-    optional={'stripe_rows','source_stream'}
+    optional={'stripe_rows','source_stream','seed'}
     if required-set(request) or set(request)-required-optional or request['schema_version']!=1:
         raise ValueError('Invalid interpolation request fields/schema')
     if request.get('source_stream','standard') not in ('standard','nrt','mixed'):
@@ -57,9 +70,10 @@ def plan(config,destination):
     history,start,stop,available=dates
     if any(np.isnat(d) for d in dates) or not history<=start<stop<=available+1:
         raise ValueError('Invalid history/target/availability interval')
-    if str(start)[5:]!='10-01':
+    if str(start)[5:]!='10-01' and 'seed' not in request:
         raise ValueError('Historical requests begin October 1; incremental runs use checkpoints')
-    if stop>np.datetime64(f'{int(str(start)[:4])+1}-10-01'):
+    target_wy=int(str(start)[:4])+(int(str(start)[5:7])>=10)
+    if stop>np.datetime64(f'{target_wy}-10-01'):
         raise ValueError('Use one target water year per climatology context')
     if len(request['shape'])!=2 or min(request['shape'])<1 or request.get('stripe_rows',20)<1:
         raise ValueError('Invalid grid or stripe size')
@@ -70,15 +84,20 @@ def plan(config,destination):
     for key in ('output','common_library','spatial_library','albedo_lut'):
         p=Path(request[key]).expanduser();request[key]=str((config.parent/p).resolve() if not p.is_absolute() else p.resolve())
     scheduler=request['scheduler']
-    if set(scheduler)!={'partition','account','policy','cpus','memory','time','concurrency'}:
+    if set(scheduler)-{'stages'}!={'partition','account','policy','cpus','memory','time','concurrency'}:
         raise ValueError('Scheduler requires partition/account/policy/cpus/memory/time/concurrency')
     policy=Path(scheduler['policy']);policy=(config.parent/policy).resolve() if not policy.is_absolute() else policy
     scheduler['policy']=str(policy);scheduler['snapshot']=json.loads(policy.read_text())
     if not isinstance(scheduler['snapshot'].get('exclude_nodes'),list):raise ValueError('Scheduler policy lacks exclude_nodes')
     for key in ('partition','account'):
         if not re.fullmatch(r'[A-Za-z0-9_.-]+',scheduler[key]):raise ValueError('Invalid scheduler name')
-    if not re.fullmatch(r'[0-9]+[KMGT]?',scheduler['memory']) or not re.fullmatch(r'[0-9:-]+',scheduler['time']):raise ValueError('Invalid memory or walltime')
-    if any(not isinstance(scheduler[k],int) or scheduler[k]<1 for k in ('cpus','concurrency')):raise ValueError('Invalid worker allocation')
+    if set(scheduler.get('stages',{}))-{'screen','spatial','properties','export'}:raise ValueError('Unknown scheduler stage')
+    for override in scheduler.get('stages',{}).values():
+        if set(override)-{'cpus','memory','time','concurrency'}:raise ValueError('Invalid stage resource override')
+    for stage in ('screen','spatial','properties','export'):
+        resources=stage_resources(scheduler,stage)
+        if not re.fullmatch(r'[0-9]+[KMGT]?',resources['memory']) or not re.fullmatch(r'[0-9:-]+',resources['time']):raise ValueError('Invalid memory or walltime')
+        if any(not isinstance(resources[k],int) or resources[k]<1 for k in ('cpus','concurrency')):raise ValueError('Invalid worker allocation')
     if any(not re.fullmatch(r'[A-Za-z0-9_.-]+',node) for node in scheduler['snapshot']['exclude_nodes']):raise ValueError('Invalid excluded node')
     for tile,t in request['tiles'].items():
         if set(t)!={'daily','terrain','bright_soil','agriculture','coastal','frequency'} or len(t['frequency'])!=12:
@@ -90,33 +109,55 @@ def plan(config,destination):
             if t['daily'][key] is not None and set(t['daily'][key])!=set(DAILY_FIELDS):raise ValueError(f'Incomplete prepared fields: {tile}/{key}')
             wy=int(key[:4])+(int(key[5:7])>=10)
             if str(wy) not in t['bright_soil']:raise ValueError(f'Missing annual bright-soil mask: {tile}/{wy}')
-    paths={r['path'] for r in mapped_fields(request)}
+    paths={r['path'] for r in active_fields(request)}
     inputs={p:file_record(p) for p in sorted(paths)}
     for p in (request['common_library'],request['spatial_library'],request['albedo_lut'],str(policy)):
         inputs[p]=file_record(p,True)
+    if 'seed' in request:
+        if set(request['seed'])!=set(request['tiles']):raise ValueError('Restart requires every donor-domain tile')
+        for tile,path in request['seed'].items():
+            path=Path(path);path=(config.parent/path).resolve() if not path.is_absolute() else path.resolve()
+            request['seed'][tile]=str(path);inputs[str(path)]=file_record(path)
     # State compatibility is independent of output dates and paths. Observation
     # replacements still require an earlier checkpoint and explicit lineage.
     code=implementations()
+    state_code={('/'.join(Path(p).parts[-3:]) if Path(p).parent.name=='native' else '/'.join(Path(p).parts[-2:])):value for p,value in code.items()}
     context={tile:{k:v for k,v in fields.items() if k!='daily'} for tile,fields in request['tiles'].items()}
     context_paths={r['path'] for r in mapped_fields(context)}
     request['state_identity']=digest(dict(
-        policy='noaa20-frequency20-cap25-rare01-coastal-v1', shape=request['shape'],
+        policy='noaa20-frequency20-cap25-rare01-coastal-v1', shape=request['shape'],stripe_rows=request.get('stripe_rows',20),
         source_selection='NOAA20-first-I-matched-M-geometry-v1', context=context,
         assets={p:inputs[p] for p in sorted(context_paths)},
         native={k:inputs[request[k]]['sha256'] for k in ('common_library','spatial_library')},
-        albedo_lut=inputs[request['albedo_lut']]['sha256'], implementations=code))
+        albedo_lut=inputs[request['albedo_lut']]['sha256'], implementations=state_code,
+        observation_policy=request['asset_provenance'].get('observation_policy',{})))
     # Open each source once for all dataset header checks; no pixel arrays loaded.
     grouped={}
-    for rec in mapped_fields(request):grouped.setdefault(rec['path'],[]).append(rec)
+    for rec in active_fields(request):grouped.setdefault(rec['path'],[]).append(rec)
+    headers={} if header_cache is None else header_cache
     for path,records in grouped.items():
-        with h5py.File(path,'r') as h:
-            for rec in records:
-                ds=h[rec['dataset']]
-                expected=(request['shape'][1 if rec['axis']=='x' else 0],) if 'axis' in rec else tuple(request['shape'])
-                shape=ds.shape[1:] if 'index' in rec else ds.shape
-                if shape!=expected:raise ValueError(f'Grid mismatch: {path}:{rec["dataset"]}')
-                if 'index' in rec and not 0<=rec['index']<ds.shape[0]:raise ValueError('Context index outside source')
+        key=(path,inputs[path]['bytes'],inputs[path]['mtime_ns'])
+        shapes=headers.setdefault(key,{})
+        names={rec['dataset'] for rec in records}-shapes.keys()
+        if names:
+            with h5py.File(path,'r') as h:shapes.update({name:h[name].shape for name in names})
+        for rec in records:
+            full=shapes[rec['dataset']]
+            expected=(request['shape'][1 if rec['axis']=='x' else 0],) if 'axis' in rec else tuple(request['shape'])
+            shape=full[1:] if 'index' in rec else full
+            if 'band' in rec:
+                if not isinstance(rec['band'],int) or not 0<=rec['band']<shape[-1]:raise ValueError('Invalid trailing band')
+                shape=shape[:-1]
+            if shape!=expected:raise ValueError(f'Grid mismatch: {path}:{rec["dataset"]}')
+            if 'index' in rec and not 0<=rec['index']<full[0]:raise ValueError('Context index outside source')
     n=math.ceil(request['shape'][0]/request.get('stripe_rows',20))
+    if 'seed' in request:
+        for path in request['seed'].values():
+            with h5py.File(path) as h:
+                if not h.attrs.get('complete') or h.attrs.get('state_identity')!=request['state_identity'] or len(h)!=n:
+                    raise ValueError('Restart science context or stripe layout mismatch')
+                for group in h.values():
+                    if 'age_history' not in group:raise ValueError('Checkpoint predates rewindable age state; rebuild historical state')
     tasks={'screen':[dict(tile=t,stripe=s) for t in request['tiles'] for s in range(n)],
            'spatial':[dict(day=str(d)) for d in np.arange(start,stop)],
            'properties':[dict(tile=t,stripe=s) for t in request['tiles'] for s in range(n)],
@@ -147,7 +188,7 @@ def execute(path,stage,index):
     p=load_plan(path);r=p['request'];task=p['tasks'][stage][index]
     from spires_interpolation.historical import screen_stripe,spatial_day,complete_stripe
     if stage=='screen':return screen_stripe(r,identity=p['identity'],**task)
-    if stage=='spatial':return spatial_day(r,identity=p['identity'],threads=r['scheduler']['cpus'],**task)
+    if stage=='spatial':return spatial_day(r,identity=p['identity'],threads=stage_resources(r['scheduler'],stage)['cpus'],**task)
     if stage=='properties':return complete_stripe(r,identity=p['identity'],**task)
     if stage=='export':return export_tile(p,task['tile'])
     raise ValueError('Unknown stage')
@@ -194,6 +235,7 @@ def export_tile(plan,tile):
                 g=h.create_group(f'{i:03d}')
                 with h5py.File(screen_path(r,tile,i),'r') as source:
                     source.copy('checkpoint',g);source.copy('last_observed_fsca',g)
+                    source.copy('age_history',g)
                     g.attrs['fsca_processed_day']=source.attrs['processed_day']
                 with h5py.File(path,'r') as source:
                     source.copy('observation_age_checkpoint',g)
@@ -221,6 +263,7 @@ def render(plan_path,directory):
     source_roots=os.pathsep.join((str(Path(__file__).resolve().parents[1]),str(Path(spires_interpolation.__file__).resolve().parents[1])))
     scripts=[]
     for stage in p['stage_order']:
+        s=stage_resources(p['request']['scheduler'],stage)
         for begin in range(0,len(p['tasks'][stage]),400):
             end=min(begin+400,len(p['tasks'][stage]))-1
             path=directory/f'{stage}-{begin:04d}.sbatch'
