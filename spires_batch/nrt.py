@@ -220,7 +220,10 @@ def _plan_update(root,candidates,through,directory,*,collection='002',annual_bri
             # Prefix checks are archival I/O only on exceptional older restarts.
             old_prefix=expand(old_ledger,stop=str(begin-1))['inventory']
             new_prefix=expand(ledger,stop=str(begin-1))['inventory'];new_prefix.update(inventory)
-            if any(source_identity(v)!=source_identity(new_prefix.get(k)) for k,v in old_prefix.items() if k.split('/')[1]<str(begin)):continue
+            superseded=[k.split('/')[1] for k,v in old_prefix.items() if k.split('/')[1]<str(begin) and source_identity(v)!=source_identity(new_prefix.get(k))]
+            if superseded:
+                begin=min(begin,np.datetime64(min(superseded))-7)
+                if begin<beginning or not usable(candidate_meta,begin):continue
             choices.append((str(begin),old['created_utc'],seed))
         if choices:
             begin,_,r['seed']=max(choices,key=lambda x:x[:2]);r['start']=begin

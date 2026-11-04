@@ -72,9 +72,12 @@ def rebuild(root,directory,*,checkpoint=None):
                 r['start']=str(np.datetime64(ends.pop()+1,'D'))
                 if r['start']>r['available_through']:raise ValueError('No dates after selected recovery checkpoint')
                 from .nrt import source_identity
+                from .nrt_storage import can_restart
                 prior=expand(old,stop=str(np.datetime64(r['start'])-1))
-                if any(source_identity(v)!=source_identity(complete['inventory'].get(k)) for k,v in prior['inventory'].items() if k.split('/')[1]<r['start']):
-                    raise ValueError('Recovery prefix differs from selected source history')
+                changed=[k.split('/')[1] for k,v in prior['inventory'].items() if k.split('/')[1]<r['start'] and source_identity(v)!=source_identity(complete['inventory'].get(k))]
+                if changed:r['start']=str(min(np.datetime64(r['start']),np.datetime64(min(changed))-7))
+                if r['start']<ledger['template']['start'] or not all(can_restart(checkpoint_coverage(path),r['start'],r['available_through'],ledger['history_start']) for path in r['seed'].values()):
+                    raise ValueError('Recovery cannot rewind before superseded inputs with complete donor context; use full rebuild')
             request=directory/'request.json'
             if request.exists() and json.loads(request.read_text())!=r:raise FileExistsError('Different rebuild request already exists')
             atomic_json(request,r);scientific=plan(request,directory/'plan.json')

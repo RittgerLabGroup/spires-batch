@@ -169,8 +169,12 @@ spires-batch nrt run /work/recovery/update.json
 ```
 
 The selected checkpoint must have compatible science, adequate donor history,
-and an unchanged source prefix. Replay starts immediately after that checkpoint
-and runs through current availability. Ordinary late-replacement planning can
+and an unchanged source prefix at the restart date. Replay normally starts
+immediately after that checkpoint. If its last observations were subsequently
+replaced by standard data, the controller first rewinds within its retained tail
+to before those changes, including the seven-day final-issue context. It rejects
+that checkpoint if the rewind lacks complete donor history. Replay runs through
+current availability. Ordinary late-replacement planning can
 also select such an earlier checkpoint automatically. If no retained checkpoint
 is suitable, it explicitly falls back to full historical replay.
 
