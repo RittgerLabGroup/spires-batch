@@ -55,7 +55,7 @@ def prepare_date(config,inventory,day,directory):
     return receipts
 
 
-def cycle(config,through,directory,*,run=False):
+def _cycle(config,through,directory,*,run=False):
     """Prepare one versioned daily update; optionally execute in this allocation."""
     if not os.environ.get('SLURM_JOB_ID'):
         raise RuntimeError('The full native-grid cycle belongs in a compute allocation')
@@ -89,7 +89,9 @@ def cycle(config,through,directory,*,run=False):
             if year not in config['tiles'][tile]:
                 raise ValueError(f'Missing explicit retrieval assets for {tile}/WY{year}; retain prior-year recipes for revisions')
     acquired=acquire(root,through,directory/'acquisition',collection=config.get('collection','002'),fetch=True)
-    inventory,changed=choose_sources(ledger['inventory'],acquired['candidates'],tiles=tiles,collection=config.get('collection','002'),through=through,history_start=ledger['history_start'])
+    from .nrt_storage import expand
+    ledger=expand(ledger,days={rec['date'] for rec in acquired['candidates']})
+    inventory,changed=choose_sources(ledger['inventory'],acquired['candidates'],tiles=tiles,collection=config.get('collection','002'),through=through,history_start=ledger['history_start'],calendar_start=(date.fromisoformat(ledger['available_through'])+timedelta(days=1)).isoformat())
     candidates=[]
     for day in sorted({key.split('/')[1] for key in changed}):
         candidates.extend(prepare_date(config,inventory,day,directory/'prepared'/day))
@@ -100,3 +102,23 @@ def cycle(config,through,directory,*,run=False):
     for stage in p['stage_order']:
         for i in range(len(p['tasks'][stage])):execute(update['plan'],stage,i)
     return finish(directory/'revision/update.json')
+
+
+def cycle(config,through,directory,*,run=False):
+    if not os.environ.get('SLURM_JOB_ID'):
+        raise RuntimeError('The full native-grid cycle belongs in a compute allocation')
+    from .nrt_storage import storage_lock,register_workspace,workspace_state,archive_workspace_metadata,Store
+    config_path=Path(config).resolve();root=json.loads(config_path.read_text())['stream_root']
+    with storage_lock(root):
+        register_workspace(root,directory,'running')
+        try:
+            # Retain the exact dated retrieval recipes and model configuration.
+            from .nrt_storage import archive_configuration
+            archive_configuration(root,config_path)
+            result=_cycle(config_path,through,directory,run=run)
+            if run or result.get('status')=='unchanged':
+                archive_workspace_metadata(root,directory);workspace_state(root,directory,'complete')
+            else:workspace_state(root,directory,'planned')
+            return result
+        except Exception:
+            workspace_state(root,directory,'failed');raise

@@ -104,7 +104,7 @@ def plan(config,destination,*,header_cache=None):
     from spires_interpolation.historical import DAILY_FIELDS
     config=Path(config).resolve();request=json.loads(config.read_text())
     required={'schema_version','history_start','start','stop','available_through','shape','tiles','output','common_library','spatial_library','albedo_lut','scheduler','asset_provenance'}
-    optional={'stripe_rows','source_stream','seed','seed_plan'}
+    optional={'stripe_rows','source_stream','seed','seed_plan','stream_root'}
     if required-set(request) or set(request)-required-optional or request['schema_version']!=1:
         raise ValueError('Invalid interpolation request fields/schema')
     if request.get('source_stream','standard') not in ('standard','nrt','mixed'):
@@ -143,7 +143,7 @@ def plan(config,destination,*,header_cache=None):
         if set(t)!={'daily','terrain','bright_soil','agriculture','coastal','frequency'} or len(t['frequency'])!=12:
             raise ValueError(f'Incomplete tile context: {tile}')
         if set(t['terrain'])!={'x','y','dem','slope','aspect','canopy_fraction'}:raise ValueError('Incomplete terrain')
-        for day in np.arange(history,available+1):
+        for day in np.arange(start if 'seed' in request else history,available+1):
             key=str(day)
             if key not in t['daily']:raise ValueError(f'Missing explicit daily record (use null for missing): {tile}/{key}')
             if t['daily'][key] is not None and set(t['daily'][key])!=set(DAILY_FIELDS):raise ValueError(f'Incomplete prepared fields: {tile}/{key}')
@@ -151,6 +151,9 @@ def plan(config,destination,*,header_cache=None):
             if str(wy) not in t['bright_soil']:raise ValueError(f'Missing annual bright-soil mask: {tile}/{wy}')
     paths={r['path'] for r in active_fields(request)}
     inputs={p:file_record(p) for p in sorted(paths)}
+    for field in active_fields(request):
+        if 'archive_file' in field and any(inputs[field['path']][k]!=field['archive_file'][k] for k in ('bytes','mtime_ns')):
+            raise ValueError('Prepared input differs from its archived identity')
     for p in (request['common_library'],request['spatial_library'],request['albedo_lut'],str(policy)):
         inputs[p]=file_record(p,True)
     if 'seed' in request:
@@ -233,13 +236,25 @@ def load_plan(path,*,compatible_state=False):
         if scientific_implementations(p['implementations'])!=scientific_implementations(code):
             raise ValueError('Historical scientific implementation differs from deployed workers')
     elif p['implementations']!=code:raise ValueError('Implementation changed since planning')
+    required=None
+    if compatible_state:
+        r=p['request'];required={v['path'] for fields in r['tiles'].values() for k,value in fields.items() if k!='daily' for v in mapped_fields(value)}
+        required.update(r[k] for k in ('common_library','spatial_library','albedo_lut'))
     for rec in p['inputs'].values():
+        if required is not None and rec['path'] not in required:continue
         got=file_record(rec['path'],False)
         if any(got[k]!=rec[k] for k in ('bytes','mtime_ns')):raise ValueError(f'Input changed: {rec["path"]}')
     return p
 
 
 def execute(path,stage,index):
+    from contextlib import nullcontext
+    from .nrt_storage import storage_lock
+    raw=json.loads(Path(path).read_text());root=raw['request'].get('stream_root')
+    with storage_lock(root) if root else nullcontext():return _execute(path,stage,index)
+
+
+def _execute(path,stage,index):
     p=load_plan(path);r=p['request'];task=p['tasks'][stage][index]
     from spires_interpolation.historical import screen_stripe,spatial_day,complete_stripe
     if stage=='screen':return screen_stripe(r,identity=p['identity'],**task)
@@ -297,6 +312,10 @@ def export_tile(plan,tile):
                     source.copy('property_history_checkpoint',g)
             h.attrs.update(complete=True,identity=identity,state_identity=r['state_identity'],
                            state_context=json.dumps(r['state_context'],sort_keys=True))
+        from .nrt_storage import checkpoint_coverage
+        coverage=checkpoint_coverage(folder/'checkpoints.h5')
+        with h5py.File(folder/'checkpoints.h5','r+') as h:
+            h.attrs['restart_coverage']=json.dumps(coverage)
         artifacts['checkpoints']=folder/'checkpoints.h5'
         return artifacts
     def validate(paths):

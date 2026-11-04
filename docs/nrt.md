@@ -33,10 +33,12 @@ spires-batch nrt status --root /products/noaa20-nrt
 
 The stream publishes one domain-wide current.json pointer containing a ledger and
 all tile checkpoints. Consumers resolve that pointer once. The ledger's `products`
-map locates each tile/date/issue in immutable NetCDF files and records its time
-index and file identity. Keep referenced historical and revision product files.
-A per-tile worker export is staging for the domain commit; it is not the public
-NRT commit point. No earlier generations are deleted automatically.
+map locates recent tile/date/issue records in durable immutable NetCDF files and
+records their time indexes and identities. Older records are indexed in the
+ledger's monthly `catalog`; `nrt catalog` resolves both current and as-issued
+archives. A per-tile worker export is staging for the domain commit, not the public
+NRT commit point. [Storage and retention](nrt-storage.md) manage recovery checkpoints
+and workspace cleanup separately from the permanent scientific product archive.
 
 ## Acquisition, preparation and execution
 
@@ -142,8 +144,9 @@ state do not expire. Variable-specific valid-observation histories and their
 pre-tail ages permit a correct rewind; using only the last onset flag or latest
 age would retain information from the superseded input.
 
-A compatible current checkpoint is used first. An older committed generation can
-supply the restart when its retained windows and source prefix are compatible.
+A compatible current checkpoint is used first, using coverage metadata rather
+than loading its raster arrays during planning. An older hot or archived generation
+can supply an earlier restart when its retained windows and source prefix are compatible.
 Otherwise the plan explicitly falls back to the full scientific history. Changed
 input dates are never silently clipped to a seven-day repair window. The selected
 policy's within-water-year observation-age diagnostic, zero barriers, direct-only
@@ -157,8 +160,9 @@ Each update carries its expected parent generation. All tile products and new
 states must validate before the domain pointer advances; a concurrent stale
 update fails. Exact retries reuse the current committed update, and a no-change
 poll does not create another generation. A failed preparation, worker or export
-leaves the previous public ledger intact. Keep cycle workspaces referenced by the
-ledger; cleanup requires a separate reachability policy.
+leaves the previous public ledger intact. Published payloads are archived before
+the pointer advances, so successful workspaces can later be removed by the explicit
+[reference-aware retention policy](nrt-storage.md). Planned/running workspaces remain pinned.
 
 ## Validation scope
 

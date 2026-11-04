@@ -80,7 +80,7 @@ def prepare_retained(request,output):
     if 'spectral' in request:inputs[request['spectral']['lut']]=file_record(request['spectral']['lut'],True)
     from .nrt import source_record,source_identity
     actual=source_record(request['source']['path'])
-    if source_identity(actual)!=source_identity(request['source']):raise ValueError('Retained retrieval has a different source vintage')
+    if any(actual[k]!=request['source'].get(k) for k in actual):raise ValueError('Retained retrieval has a different source vintage')
     if actual['date']!=request['date'] or actual['tile']!=tile:raise ValueError('Retained request date/tile differs from native source')
     identity=digest(dict(request=request,inputs=inputs,implementations=implementations()))
     axes=read_record(request['axes'],(slice(0,shape[0]),slice(0,shape[1])))

@@ -85,7 +85,7 @@ def download(entry,directory):
     return rec
 
 
-def acquire(root,through,directory,*,collection='002',fetch=False):
+def _acquire(root,through,directory,*,collection='002',fetch=False):
     _,_,ledger=current(root)
     days=acquisition_dates(ledger['inventory'],through)
     # Include an arbitrarily long interruption since the last successful cycle.
@@ -117,6 +117,11 @@ def acquire(root,through,directory,*,collection='002',fetch=False):
             result['candidates'].append(rec)
     (directory/'acquisition.json').write_text(json.dumps(result,indent=2)+'\n')
     return result
+
+
+def acquire(root,through,directory,*,collection='002',fetch=False):
+    from .nrt_storage import storage_lock
+    with storage_lock(root):return _acquire(root,through,directory,collection=collection,fetch=fetch)
 
 
 def main(argv=None):

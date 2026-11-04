@@ -61,7 +61,7 @@ def retrieve(request,output):
     from spires_interpolation.observations import prepare_day,positive_swir_score
     r=json.loads(Path(request).read_text()) if isinstance(request,(str,Path)) else request
     actual=source_record(r['source']['path'])
-    if source_identity(actual)!=source_identity(r['source']):raise ValueError('Source changed before retrieval')
+    if any(actual[k]!=r['source'].get(k) for k in actual):raise ValueError('Source changed before retrieval')
     if r['background_available_through']>=actual['date']:raise ValueError('R0 must precede the observation')
     bands=['I1','I2','I3','M2','M4','M8','M11']
     options=dict(r['preparation'])
