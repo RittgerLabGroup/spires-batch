@@ -78,6 +78,7 @@ def _parser() -> argparse.ArgumentParser:
         description="Plan and operate SPIReS batch workflows",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers.add_parser('interpolation', help='Plan and run selected historical interpolation (see interpolation --help).')
 
     schema = subparsers.add_parser(
         "schema",
@@ -810,6 +811,10 @@ def _command_submission(args: argparse.Namespace) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments and arguments[0] == 'interpolation':
+        from .interpolation import main as interpolation_main
+        return interpolation_main(arguments[1:])
     parser = _parser()
     args = parser.parse_args(argv)
     commands = {

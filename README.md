@@ -724,3 +724,12 @@ holds automatically. This also applies to automatic retry waves. Explicit
 `--hold`/`-H` resource directives remain under operator control. If registration
 or release fails, the submission events identify any held arrays requiring
 recovery; workers never need to race incomplete ownership registration.
+
+## Historical interpolation
+
+The `interpolation` command connects the selected RittgerLabGroup interpolation
+package to immutable historical plans, Slurm dependencies and joint data/state
+publication. See [the request and execution guide](docs/interpolation.md). This
+path consumes prepared observations and explicit scientific assets; it leaves the
+existing inversion planner unchanged. NRT checkpoint interfaces are provided by
+interpolation; scheduled incremental operation remains a separate controller.

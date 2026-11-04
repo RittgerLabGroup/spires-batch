@@ -25,6 +25,7 @@ from spires_batch.models import (
 
 _REFLECTANCE_PATTERN = re.compile(
     r"^(?P<product>VNP09GA|VJ109GA|VJ209GA|MOD09GA|MYD09GA)"
+    r"(?P<nrt>_NRT)?"
     r"\.A(?P<year>\d{4})(?P<doy>\d{3})\."
     r"(?P<tile>h\d{2}v\d{2})\.",
     re.IGNORECASE,
@@ -470,6 +471,8 @@ def parse_path_identity(path: str | Path) -> dict[str, Any]:
         acquisition_date = date(year, 1, 1) + timedelta(days=doy - 1)
         return {
             "product": match.group("product").lower(),
+            **({"source_product": match.group("product").upper()+"_NRT", "source_stream": "nrt"}
+               if match.group("nrt") else {}),
             "tile": match.group("tile").lower(),
             "date": acquisition_date,
             "water_year": water_year(acquisition_date),
