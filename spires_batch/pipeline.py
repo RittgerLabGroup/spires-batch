@@ -10,7 +10,7 @@ from pathlib import Path
 import subprocess
 import hashlib
 
-from .nrt import current,choose_sources,day_context,plan_update,finish
+from .nrt import current,choose_sources,day_context,plan_update,finish,extend_annual_context
 from .interpolation import digest,load_plan,execute,implementations
 
 
@@ -59,7 +59,12 @@ def cycle(config,through,directory,*,run=False):
     """Prepare one versioned daily update; optionally execute in this allocation."""
     if not os.environ.get('SLURM_JOB_ID'):
         raise RuntimeError('The full native-grid cycle belongs in a compute allocation')
-    config=json.loads(Path(config).read_text());root=config['stream_root'];directory=Path(directory).resolve()
+    config_path=Path(config).resolve();config=json.loads(config_path.read_text())
+    root=config['stream_root'];directory=Path(directory).resolve()
+    annual=config.get('annual_bright_soil',{})
+    for years in annual.values():
+        for field in years.values():
+            path=Path(field['path']);field['path']=str((config_path.parent/path).resolve() if not path.is_absolute() else path)
     from .acquisition import acquire
     _,_,ledger=current(root);tiles=sorted(config['tiles'])
     policy=config.get('observation_policy')
@@ -69,14 +74,27 @@ def cycle(config,through,directory,*,run=False):
         raise ValueError('Cloud model differs from the registered observation policy')
     if tiles!=sorted(ledger['template']['tiles']):raise ValueError('Cycle tile domain differs from historical state')
     if through<ledger['available_through']:raise ValueError('Availability may not move backwards')
-    target_year=int(ledger['template']['start'][:4])+1
-    if through>=f'{target_year}-10-01':raise ValueError('Register and bootstrap the next water-year context before crossing October 1')
+    # Water years select annual inputs, not separate interpolation streams.
+    # Preserve the old mappings so a September replacement still uses its R0.
+    template=extend_annual_context(ledger['template'],annual)
+    from datetime import date,timedelta
+    day=date.fromisoformat(ledger['available_through'])+timedelta(days=1)
+    end=date.fromisoformat(through);years=set()
+    while day<=end:
+        years.add(str(day.year+(day.month>=10)));day+=timedelta(days=1)
+    for tile in tiles:
+        for year in sorted(years):
+            if year not in template['tiles'][tile]['bright_soil']:
+                raise ValueError(f'Missing annual bright-soil mask: {tile}/WY{year}; register annual_bright_soil without rebuilding history')
+            if year not in config['tiles'][tile]:
+                raise ValueError(f'Missing explicit retrieval assets for {tile}/WY{year}; retain prior-year recipes for revisions')
     acquired=acquire(root,through,directory/'acquisition',collection=config.get('collection','002'),fetch=True)
     inventory,changed=choose_sources(ledger['inventory'],acquired['candidates'],tiles=tiles,collection=config.get('collection','002'),through=through,history_start=ledger['history_start'])
     candidates=[]
     for day in sorted({key.split('/')[1] for key in changed}):
         candidates.extend(prepare_date(config,inventory,day,directory/'prepared'/day))
-    update=plan_update(root,candidates,through,directory/'revision',collection=config.get('collection','002'))
+    update=plan_update(root,candidates,through,directory/'revision',collection=config.get('collection','002'),
+                       annual_bright_soil=annual,seed_plan=config.get('seed_plan'))
     if update.get('status')=='unchanged' or not run:return update
     p=load_plan(update['plan'])
     for stage in p['stage_order']:

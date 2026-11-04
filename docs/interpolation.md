@@ -26,9 +26,11 @@ uses verified completed stripe/date outputs. The scientific workers lock outputs
 `examples/historical_interpolation.json` illustrates a one-day request. Expand its
 explicit daily mapping to every calendar day from history_start through
 available_through, using null for an actually missing scene. Never omit dates.
-Start is inclusive, stop exclusive, availability inclusive. Historical targets
-start October 1; first/final issues follow the same 0/7-day policy as research.
-Each request targets at most one water year, with a fixed climatology context.
+Start is inclusive, stop exclusive, availability inclusive. Initial historical
+targets start October 1; checkpoint-backed updates can start on any date and
+continue across October 1. First/final issues follow the same 0/7-day policy as
+research. A request uses a fixed climatology context and selects annual masks by
+observation date.
 
 Each tile declares:
 
@@ -42,7 +44,9 @@ Each tile declares:
 - `bright_soil`: water-year -> field, with optional `index` for a stacked source.
 - `agriculture` and `coastal`: Boolean fields.
 - `frequency`: 12 monthly fields, optionally indexed in one file. These are the
-  target-WY-excluded frequencies, fixed throughout the entire onset prefix.
+  target-WY-excluded frequencies for historical evaluation, fixed throughout the
+  entire onset prefix. An operational stream retains its registered climatology
+  across October 1; changing that science context is a separate revision.
 
 The daily observation boundary is produced by
 `spires_interpolation.observations.prepare_day` from retained inversion values,
@@ -80,11 +84,21 @@ variable-specific ages. It supports the [NRT revision controller](nrt.md); this 
 implements historical processing. Scheduled NRT deployment is not enabled implicitly. Historical maps computed with standard
 inputs do not establish as-issued NRT performance.
 
-Planning derives a separate `state_identity` from the scientific implementation,
-grid, static context and native/LUT identities. It does not depend on target dates,
-output roots or the standard/NRT stream label. The publication's plan identity
-still records its exact source inventory. Reuse requires both matching state
-context and verified observation lineage; changed past observations require replay.
+Planning records a separate `state_context` for the numerical implementation,
+grid, static context and native/LUT identities, plus append-only annual mask
+bindings. It does not depend on target dates, output roots, controller code or the
+standard/NRT stream label. New annual masks extend the context without invalidating
+state; existing bindings and file identities must still match. Each prepared
+observation retains the retrieval and R0 used for its own date. The publication's
+plan identity still pins all deployed code and its exact source inventory.
+Reuse requires both compatible state context and verified observation lineage;
+changed past observations require replay. A seed inherits its existing
+`state_identity`, including when reading a legacy checkpoint.
+
+Older rewindable bundles without `state_context` can be used with `seed_plan`
+pointing to their original historical plan. The planner verifies that plan's
+digest, numerical code, assets and checkpoint identity. This adds provenance
+metadata to the next published bundle without rebuilding the old state.
 
 For review, install the coordinated feature branches of spires-interpolation and
 spires-batch (or set PYTHONPATH to both checkouts). The optional dependency pointing

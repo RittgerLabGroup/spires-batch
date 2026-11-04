@@ -15,12 +15,16 @@ through current availability. This also corrects already-issued final products
 whose seven-day look-ahead included the replaced observation. Prior immutable
 generations preserve the products as originally issued.
 
-## Historical bootstrap
+## Register existing history once
 
-Run the historical interpolation stages, including export, with the current
-rewindable checkpoint format. Supply an inventory JSON mapping `tile/YYYY-MM-DD`
+Use completed historical output, including export, with the rewindable checkpoint
+format. Supply an inventory JSON mapping `tile/YYYY-MM-DD`
 to `source_record(path)` records, or null for an explicitly missing observation.
 The inventory must match the prepared observations used by the historical plan.
+The command name `bootstrap` refers only to this one-time stream registration:
+it adopts existing products and checkpoints without recomputing or resampling
+them. It is not repeated at a water-year boundary. Plans from an older controller
+are accepted when their numerical implementation and scientific assets match.
 
 ```bash
 spires-batch nrt bootstrap historical-plan.json inventory.json --root /products/noaa20-nrt
@@ -82,7 +86,9 @@ For a complete acquisition/preparation/interpolation cycle, `nrt cycle CONFIG
 --through DATE --output DIRECTORY --execute` runs in a compute allocation. Omit
 `--execute` to stop after preparing the immutable revision plan. Configuration
 provides `stream_root`, `science_python`, `cloud_python`, `cloud_model`, collection,
-`observation_policy`, and `tiles[tile][water_year]` retrieval requests. The science
+`observation_policy`, and `tiles[tile][water_year]` retrieval requests. Optional
+`annual_bright_soil[tile][water_year]` entries register additional annual masks.
+The science
 and cloud interpreters must have the coordinated production package versions.
 Cloud inference runs in its dedicated environment. This command does not install
 cron entries or submit Slurm jobs implicitly. Its enclosing allocation must obey
@@ -93,8 +99,40 @@ The observation policy must equal the historical plan's
 Models, annual masks, climatology, backgrounds and grid context are versioned
 scientific inputs. Missing annual assets or incompatible contexts fail explicitly;
 this implementation does not invent a WY2027 mask/R0 or silently reuse a different
-climatology. A stream currently covers one target water year. Register and
-bootstrap the next target-year context before crossing October 1.
+climatology.
+
+## Continuous history across October 1
+
+A stream continues across water years. For example, October 2026 uses the retained
+August/September 2026 history, including values generated with the older R0.
+There is no annual state reset, history regeneration, resampling or second stream
+registration. New observations use the retrieval recipe for their own water year;
+retain prior-year recipes so a September NRT-to-standard replacement still uses
+the September R0. Such a replacement replays forward across October 1, and October
+observations can finalize the last seven September products in the same update.
+
+Register the new retrieval recipes under `tiles[tile]["2027"]` and the new masks
+in the cycle configuration, for every tile in the domain:
+
+```json
+{
+  "annual_bright_soil": {
+    "h09v04": {"2027": {"path": "/assets/h09v04/bright-WY2027.h5", "dataset": "bright"}}
+  }
+}
+```
+
+These entries supplement the ledger's existing masks; replacing an existing
+binding or changing its file is rejected. Standalone `nrt plan` accepts the same
+tile/year mapping via `--annual-bright-soil FILE`. Cycle mask paths are relative
+to the cycle configuration; standalone mappings use the current working directory.
+Missing annual assets fail explicitly. The registered monthly climatology stays
+fixed across the transition.
+
+Legacy streams created before separate context metadata was recorded can supply
+their checkpoint-producing plan using `--seed-plan PLAN` (or `seed_plan` in the
+cycle configuration). This validates existing numerical state and provenance;
+it does not rerun history. New registrations record this reference automatically.
 
 ## Replay and publication guarantees
 
@@ -107,11 +145,13 @@ age would retain information from the superseded input.
 A compatible current checkpoint is used first. An older committed generation can
 supply the restart when its retained windows and source prefix are compatible.
 Otherwise the plan explicitly falls back to the full scientific history. Changed
-input dates are never silently clipped to a seven-day repair window. Water-year
-age resets, zero barriers, direct-only temporal donors and scientific first/final
-cutoffs are unchanged. The state identity includes scientific code content using
-package-relative names, so identical installations can share state. Execution
-plans still pin exact deployed source locations and input metadata.
+input dates are never silently clipped to a seven-day repair window. The selected
+policy's within-water-year observation-age diagnostic, zero barriers, direct-only
+temporal donors and scientific first/final cutoffs are unchanged; the diagnostic's
+October reset does not erase interpolation donors or snow state. State context
+includes numerical code content using package-relative names, so identical
+scientific installations can share state despite controller updates. Execution
+plans still pin all deployed code, source locations and input metadata.
 
 Each update carries its expected parent generation. All tile products and new
 states must validate before the domain pointer advances; a concurrent stale
@@ -128,13 +168,13 @@ NRT rechecks, missing/new calendar days, exact retry and no-op behavior. Real na
 input preparation and selected retrievals are checked against frozen run012 data.
 Full-grid reader/cloud/spatial pilots measure actual allocations separately from
 these correctness checks. A scheduled live service still needs registered current
-water-year assets and an operational bootstrap; historical validation is not an
+annual assets and a one-time registration of existing history; historical validation is not an
 as-issued NRT accuracy assessment.
 
 Repeated acquisition cycles reuse unchanged committed native files, including
 when the new cycle has a different workspace. Standard replacements and newer
 processing timestamps get new downloads. The controller validates its registered
-policy and water-year boundary before acquisition. Size a single-allocation
+policy and new annual asset coverage before acquisition. Size a single-allocation
 `cycle --execute` for the maximum requested resources across stages; stage-specific
 Slurm rendering is available for the interpolation plan.
 

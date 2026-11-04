@@ -33,6 +33,49 @@ def implementations():
     return {str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(files)}
 
 
+def scientific_implementations(code):
+    """State compatibility follows numerical workers, not controller revisions."""
+    result={}
+    for path,value in code.items():
+        p=Path(path)
+        if p.parent.name=='spires_interpolation':result['spires_interpolation/'+p.name]=value
+        elif p.parent.name=='native' and p.parent.parent.name=='spires_interpolation':
+            result['spires_interpolation/native/'+p.name]=value
+    if not result:raise ValueError('Plan lacks scientific implementation provenance')
+    return result
+
+
+def state_context(request,inputs,code):
+    """Separate fixed science from append-only, observation-year ancillary assets.
+
+    R0 belongs to each prepared observation's provenance, not the restart context.
+    Adding the next annual mask must not invalidate already screened history.
+    """
+    context={tile:{k:v for k,v in fields.items() if k not in ('daily','bright_soil')}
+             for tile,fields in request['tiles'].items()}
+    paths={r['path'] for r in mapped_fields(context)}
+    fixed=dict(policy='noaa20-frequency20-cap25-rare01-coastal-v1',
+        history_start=request['history_start'],shape=request['shape'],stripe_rows=request.get('stripe_rows',20),
+        source_selection='NOAA20-first-I-matched-M-geometry-v1',context=context,
+        assets={p:inputs[p] for p in sorted(paths)},
+        native={k:inputs[request[k]]['sha256'] for k in ('common_library','spatial_library')},
+        albedo_lut=inputs[request['albedo_lut']]['sha256'],implementations=scientific_implementations(code),
+        observation_policy=request['asset_provenance'].get('observation_policy',{}))
+    annual={tile:{year:dict(field=field,file=inputs[field['path']])
+                  for year,field in fields['bright_soil'].items()} for tile,fields in request['tiles'].items()}
+    return dict(schema_version=1,fixed=fixed,annual_bright_soil=annual)
+
+
+def compatible_context(previous,current):
+    """Require unchanged science and existing masks; allow new annual entries."""
+    if previous['schema_version']!=current['schema_version'] or previous['fixed']!=current['fixed']:
+        raise ValueError('Restart scientific implementation or fixed context changed')
+    for tile,years in previous['annual_bright_soil'].items():
+        for year,record in years.items():
+            if current['annual_bright_soil'].get(tile,{}).get(year)!=record:
+                raise ValueError(f'Existing annual bright-soil context changed: {tile}/WY{year}')
+
+
 def mapped_fields(value):
     if isinstance(value,dict):
         if 'path' in value and 'dataset' in value:yield value
@@ -61,7 +104,7 @@ def plan(config,destination,*,header_cache=None):
     from spires_interpolation.historical import DAILY_FIELDS
     config=Path(config).resolve();request=json.loads(config.read_text())
     required={'schema_version','history_start','start','stop','available_through','shape','tiles','output','common_library','spatial_library','albedo_lut','scheduler','asset_provenance'}
-    optional={'stripe_rows','source_stream','seed'}
+    optional={'stripe_rows','source_stream','seed','seed_plan'}
     if required-set(request) or set(request)-required-optional or request['schema_version']!=1:
         raise ValueError('Invalid interpolation request fields/schema')
     if request.get('source_stream','standard') not in ('standard','nrt','mixed'):
@@ -72,9 +115,6 @@ def plan(config,destination,*,header_cache=None):
         raise ValueError('Invalid history/target/availability interval')
     if str(start)[5:]!='10-01' and 'seed' not in request:
         raise ValueError('Historical requests begin October 1; incremental runs use checkpoints')
-    target_wy=int(str(start)[:4])+(int(str(start)[5:7])>=10)
-    if stop>np.datetime64(f'{target_wy}-10-01'):
-        raise ValueError('Use one target water year per climatology context')
     if len(request['shape'])!=2 or min(request['shape'])<1 or request.get('stripe_rows',20)<1:
         raise ValueError('Invalid grid or stripe size')
     if not request['tiles']:raise ValueError('No tiles configured')
@@ -118,19 +158,11 @@ def plan(config,destination,*,header_cache=None):
         for tile,path in request['seed'].items():
             path=Path(path);path=(config.parent/path).resolve() if not path.is_absolute() else path.resolve()
             request['seed'][tile]=str(path);inputs[str(path)]=file_record(path)
-    # State compatibility is independent of output dates and paths. Observation
-    # replacements still require an earlier checkpoint and explicit lineage.
+    # Annual additions extend the chronological stream. Neither the output year
+    # nor the R0 of newer observations changes already computed history.
     code=implementations()
-    state_code={('/'.join(Path(p).parts[-3:]) if Path(p).parent.name=='native' else '/'.join(Path(p).parts[-2:])):value for p,value in code.items()}
-    context={tile:{k:v for k,v in fields.items() if k!='daily'} for tile,fields in request['tiles'].items()}
-    context_paths={r['path'] for r in mapped_fields(context)}
-    request['state_identity']=digest(dict(
-        policy='noaa20-frequency20-cap25-rare01-coastal-v1', shape=request['shape'],stripe_rows=request.get('stripe_rows',20),
-        source_selection='NOAA20-first-I-matched-M-geometry-v1', context=context,
-        assets={p:inputs[p] for p in sorted(context_paths)},
-        native={k:inputs[request[k]]['sha256'] for k in ('common_library','spatial_library')},
-        albedo_lut=inputs[request['albedo_lut']]['sha256'], implementations=state_code,
-        observation_policy=request['asset_provenance'].get('observation_policy',{})))
+    request['state_context']=state_context(request,inputs,code)
+    request['state_identity']=digest(request['state_context']['fixed'])
     # Open each source once for all dataset header checks; no pixel arrays loaded.
     grouped={}
     for rec in active_fields(request):grouped.setdefault(rec['path'],[]).append(rec)
@@ -152,12 +184,31 @@ def plan(config,destination,*,header_cache=None):
             if 'index' in rec and not 0<=rec['index']<full[0]:raise ValueError('Context index outside source')
     n=math.ceil(request['shape'][0]/request.get('stripe_rows',20))
     if 'seed' in request:
+        inherited=set();legacy=None
         for path in request['seed'].values():
             with h5py.File(path) as h:
-                if not h.attrs.get('complete') or h.attrs.get('state_identity')!=request['state_identity'] or len(h)!=n:
-                    raise ValueError('Restart science context or stripe layout mismatch')
+                if not h.attrs.get('complete') or not h.attrs.get('state_identity') or len(h)!=n:
+                    raise ValueError('Incomplete restart or stripe layout mismatch')
+                inherited.add(h.attrs['state_identity'])
+                if 'state_context' in h.attrs:
+                    previous=json.loads(h.attrs['state_context'])
+                else:
+                    # Older bundles contain the same numerical state but lack
+                    # the separate context record. Verify their original plan;
+                    # do not regenerate or relabel their checkpoint arrays.
+                    if 'seed_plan' not in request:raise ValueError('Legacy checkpoint requires its original seed_plan for provenance validation')
+                    if legacy is None:
+                        source=Path(request['seed_plan']);source=(config.parent/source).resolve() if not source.is_absolute() else source
+                        request['seed_plan']=str(source);inputs[str(source)]=file_record(source,True)
+                        legacy=load_plan(source,compatible_state=True)
+                    if h.attrs.get('identity')!=legacy['identity'] or h.attrs['state_identity']!=legacy['request']['state_identity']:
+                        raise ValueError('Legacy checkpoint does not belong to seed_plan')
+                    previous=state_context(legacy['request'],legacy['inputs'],legacy['implementations'])
+                compatible_context(previous,request['state_context'])
                 for group in h.values():
                     if 'age_history' not in group:raise ValueError('Checkpoint predates rewindable age state; rebuild historical state')
+        if len(inherited)!=1:raise ValueError('Restart tiles have different state identities')
+        request['state_identity']=inherited.pop()
     tasks={'screen':[dict(tile=t,stripe=s) for t in request['tiles'] for s in range(n)],
            'spatial':[dict(day=str(d)) for d in np.arange(start,stop)],
            'properties':[dict(tile=t,stripe=s) for t in request['tiles'] for s in range(n)],
@@ -173,11 +224,15 @@ def plan(config,destination,*,header_cache=None):
     return record
 
 
-def load_plan(path):
+def load_plan(path,*,compatible_state=False):
     p=json.loads(Path(path).read_text());identity=p.pop('identity')
     if digest(p)!=identity:raise ValueError('Plan digest mismatch')
     p['identity']=identity
-    if p['implementations']!=implementations():raise ValueError('Implementation changed since planning')
+    code=implementations()
+    if compatible_state:
+        if scientific_implementations(p['implementations'])!=scientific_implementations(code):
+            raise ValueError('Historical scientific implementation differs from deployed workers')
+    elif p['implementations']!=code:raise ValueError('Implementation changed since planning')
     for rec in p['inputs'].values():
         got=file_record(rec['path'],False)
         if any(got[k]!=rec[k] for k in ('bytes','mtime_ns')):raise ValueError(f'Input changed: {rec["path"]}')
@@ -240,7 +295,8 @@ def export_tile(plan,tile):
                 with h5py.File(path,'r') as source:
                     source.copy('observation_age_checkpoint',g)
                     source.copy('property_history_checkpoint',g)
-            h.attrs.update(complete=True,identity=identity,state_identity=r['state_identity'])
+            h.attrs.update(complete=True,identity=identity,state_identity=r['state_identity'],
+                           state_context=json.dumps(r['state_context'],sort_keys=True))
         artifacts['checkpoints']=folder/'checkpoints.h5'
         return artifacts
     def validate(paths):

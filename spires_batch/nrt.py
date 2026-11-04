@@ -12,7 +12,8 @@ from pathlib import Path
 import re
 import shutil
 
-from .interpolation import digest, file_record, plan as make_plan, load_plan, execute
+from .interpolation import (digest, file_record, plan as make_plan, load_plan, execute,
+                            state_context, compatible_context)
 
 NAME = re.compile(r'^(VJ109GA(?:_NRT)?)\.A(\d{4})(\d{3})\.(h\d{2}v\d{2})\.(\d{3})\.(\d+)\.h5$')
 
@@ -94,9 +95,9 @@ def current(root):
 
 
 def bootstrap(historical_plan, inventory, root):
-    """Adopt completed history with its exact science context and source inventory."""
+    """Register existing history once, without recomputation or an annual reset."""
     from spires_interpolation.publication import current_generation,artifact_paths
-    p=load_plan(historical_plan);r=p['request']
+    p=load_plan(historical_plan,compatible_state=True);r=p['request']
     tiles=sorted(r['tiles']);expected={t+'/'+d for t in tiles for d in r['tiles'][t]['daily'] if r['history_start']<=d<=r['available_through']}
     if set(inventory)!=expected:raise ValueError('Historical inventory must explicitly cover every tile/date')
     for key,rec in inventory.items():
@@ -118,22 +119,52 @@ def bootstrap(historical_plan, inventory, root):
                     import numpy as np
                     for i,day in enumerate(ds['time'][:]):
                         products[f'{tile}/{np.datetime64(int(day),"D")}/{issue}']=dict(file=file_record(paths[issue]),index=i)
-    template=copy.deepcopy(r);template.pop('state_identity');template.pop('seed',None)
+    template=copy.deepcopy(r);template.pop('state_identity');template.pop('state_context',None);template.pop('seed',None)
+    template['seed_plan']=str(Path(historical_plan).resolve())
     template['scheduler'].pop('snapshot',None)
     ledger=dict(schema_version=1,available_through=r['available_through'],history_start=r['history_start'],
-        state_identity=r['state_identity'],template=template,inventory=inventory,products=products,
+        state_identity=r['state_identity'],state_context=state_context(r,p['inputs'],p['implementations']),
+        template=template,inventory=inventory,products=products,
         unresolved_nrt=sorted(k for k,v in inventory.items() if v is not None and v['source_stream']=='nrt'))
     return commit(root,ledger,checkpoints,expected_parent=None,identity=dict(bootstrap=p['identity'],inventory=digest(inventory)))
 
 
-def plan_update(root,candidates,through,directory,*,collection='002'):
+def extend_annual_context(template,additions):
+    """Add explicitly registered annual masks, retaining all original bindings."""
+    result=copy.deepcopy(template)
+    for tile,years in (additions or {}).items():
+        if tile not in result['tiles']:raise ValueError(f'Annual mask outside tile domain: {tile}')
+        previous=result['tiles'][tile]['bright_soil']
+        for year,field in years.items():
+            if not re.fullmatch(r'\d{4}',year):raise ValueError('Annual mask keys must be four-digit water years')
+            field=copy.deepcopy(field);field['path']=str(Path(field['path']).resolve())
+            if year in previous and previous[year]!=field:
+                raise ValueError(f'Cannot replace a registered annual mask: {tile}/WY{year}')
+            previous[year]=field
+    return result
+
+
+def ledger_context(ledger,seed_plan=None):
+    if 'state_context' in ledger:return ledger['state_context']
+    source=seed_plan or ledger['template'].get('seed_plan')
+    if source is None:raise ValueError('Legacy stream requires its original seed_plan to validate existing state; no history recomputation is needed')
+    p=load_plan(source,compatible_state=True)
+    if p['request']['state_identity']!=ledger['state_identity']:
+        raise ValueError('seed_plan does not describe this stream state')
+    return state_context(p['request'],p['inputs'],p['implementations'])
+
+
+def plan_update(root,candidates,through,directory,*,collection='002',annual_bright_soil=None,seed_plan=None):
     """Freeze a revision plan after upstream preparation of changed date domains.
 
     Prepared observations on each changed date must identify the complete selected
     same-day source context. This prevents mixing new cloud halos with stale donors.
     """
     import numpy as np
-    generation,paths,ledger=current(root);r=copy.deepcopy(ledger['template']);tiles=sorted(r['tiles'])
+    generation,paths,ledger=current(root)
+    r=extend_annual_context(ledger['template'],annual_bright_soil);tiles=sorted(r['tiles'])
+    if seed_plan is not None:r['seed_plan']=str(Path(seed_plan).resolve())
+    previous_context=ledger_context(ledger,seed_plan)
     through=str(np.datetime64(through,'D'))
     if through<ledger['available_through']:raise ValueError('Availability may not move backwards')
     inventory,changed=choose_sources(ledger['inventory'],candidates,tiles=tiles,collection=collection,through=through,history_start=ledger['history_start'])
@@ -169,7 +200,7 @@ def plan_update(root,candidates,through,directory,*,collection='002'):
             for t,path in candidate.items():
                 with h5py.File(path) as h:
                     for g in h.values():
-                        rewind_snow(SnowCheckpoint.load(g['checkpoint'],identity=ledger['state_identity']),first-1,history_start=ledger['history_start'])
+                        rewind_snow(SnowCheckpoint.load(g['checkpoint'],identity=h.attrs['state_identity']),first-1,history_start=ledger['history_start'])
                         AgeHistory.load(g['age_history'],first-1)
                         d=g['property_history_checkpoint/dates'][:].astype('datetime64[D]')
                         needed=max(np.datetime64(ledger['history_start']),min(first-21,np.datetime64(through)-65))
@@ -183,7 +214,8 @@ def plan_update(root,candidates,through,directory,*,collection='002'):
             from spires_interpolation.publication import artifact_paths
             old_paths=artifact_paths(root,old)
             old_ledger=json.loads(old_paths['ledger'].read_text())
-            if old_ledger['state_identity']!=ledger['state_identity']:continue
+            try:compatible_context(ledger_context(old_ledger,seed_plan),previous_context)
+            except ValueError:continue
             # Its source prefix must equal the selected prefix through the anchor.
             if any(source_identity(v)!=source_identity(inventory.get(k)) for k,v in old_ledger['inventory'].items() if k.split('/')[1]<str(first)):continue
             seed={t:str(old_paths['checkpoint_'+t]) for t in tiles}
@@ -191,17 +223,18 @@ def plan_update(root,candidates,through,directory,*,collection='002'):
         if candidates:r['seed']=max(candidates,key=lambda x:x[0])[1]
         else:
             # Safe explicit fallback: full scientific prefix; also revises all
-            # products in this target year. No changed observations are ignored.
+            # products from the stream's original target start. No changed
+            # observations are ignored, including across water-year boundaries.
             r.pop('seed');r['start']=ledger['template']['start']
     request=directory/'request.json'
     if request.exists() and json.loads(request.read_text())!=r:raise FileExistsError('Revision directory already contains a different request')
     if not request.exists():
         with request.open('x') as stream:stream.write(json.dumps(r,indent=2)+'\n')
     scientific=make_plan(request,directory/'plan.json')
-    if scientific['request']['state_identity']!=ledger['state_identity']:raise ValueError('Science context changed; rebootstrap from matching historical processing')
+    compatible_context(previous_context,scientific['request']['state_context'])
     update=dict(schema_version=1,root=str(Path(root).resolve()),expected_parent=generation['generation'],plan=str(directory/'plan.json'),
         inventory=inventory,changed=changed,changed_dates=changed_days,replay_start=r['start'],through=through,
-        replay_mode='checkpoint' if 'seed' in r else 'full_history',state_identity=ledger['state_identity'])
+        replay_mode='checkpoint' if 'seed' in r else 'full_history',state_identity=scientific['request']['state_identity'])
     update['identity']=digest(update)
     path=directory/'update.json'
     if path.exists() and json.loads(path.read_text())!=update:raise FileExistsError('Revision directory already contains a different update')
@@ -250,9 +283,11 @@ def finish(update_path):
                 for index,day in enumerate(ds['time'][:]):
                     ledger['products'][f'{tile}/{np.datetime64(int(day),"D")}/{issue}']=dict(file=file_record(paths[issue]),index=index)
     ledger.update(inventory=u['inventory'],available_through=u['through'],last_changed=u['changed'],last_replay_start=u['replay_start'],
+                  state_identity=r['state_identity'],state_context=r['state_context'],
                   unresolved_nrt=sorted(k for k,v in u['inventory'].items() if v is not None and v['source_stream']=='nrt'))
     # Retain the full prepared-input map for later replacements and missing days.
     ledger['template']['tiles']=r['tiles']
+    if 'seed_plan' in r:ledger['template']['seed_plan']=r['seed_plan']
     return commit(u['root'],ledger,checkpoints,expected_parent=u['expected_parent'],identity=dict(update=identity))
 
 
@@ -260,6 +295,8 @@ def main(argv=None):
     p=argparse.ArgumentParser(prog='spires-batch nrt');sub=p.add_subparsers(dest='command',required=True)
     b=sub.add_parser('bootstrap');b.add_argument('plan');b.add_argument('inventory');b.add_argument('--root',required=True)
     q=sub.add_parser('plan');q.add_argument('candidates');q.add_argument('--root',required=True);q.add_argument('--through',required=True);q.add_argument('--output',required=True)
+    q.add_argument('--annual-bright-soil',help='JSON tile -> water year -> field additions; existing masks are retained')
+    q.add_argument('--seed-plan',help='Original plan provenance for a legacy stream; does not rebuild history')
     f=sub.add_parser('finish');f.add_argument('update')
     r=sub.add_parser('run');r.add_argument('update')
     a=sub.add_parser('acquire');a.add_argument('--root',required=True);a.add_argument('--through',required=True);a.add_argument('--output',required=True);a.add_argument('--download',action='store_true')
@@ -283,7 +320,8 @@ def main(argv=None):
         result=prepare_retained(a.request,a.output)
         Path(a.receipt).write_text(json.dumps(result,indent=2)+'\n')
     elif a.command=='bootstrap':result=bootstrap(a.plan,json.loads(Path(a.inventory).read_text()),a.root)
-    elif a.command=='plan':result=plan_update(a.root,json.loads(Path(a.candidates).read_text()),a.through,a.output)
+    elif a.command=='plan':result=plan_update(a.root,json.loads(Path(a.candidates).read_text()),a.through,a.output,
+        annual_bright_soil=json.loads(Path(a.annual_bright_soil).read_text()) if a.annual_bright_soil else None,seed_plan=a.seed_plan)
     elif a.command in ('finish','run'):
         if a.command=='run':
             u=json.loads(Path(a.update).read_text());plan=load_plan(u['plan'])
