@@ -41,7 +41,14 @@ class Job(BaseModel):
 
     @model_validator(mode="after")
     def validate_kind(self):
-        if self.kind not in {"daily", "prepare", "interpolation", "acquire", "nrt"}:
+        if self.kind not in {
+            "initialize",
+            "daily",
+            "prepare",
+            "interpolation",
+            "acquire",
+            "nrt",
+        }:
             raise ValueError(f"Unknown job kind: {self.kind}")
         return self
 
@@ -200,7 +207,15 @@ def plan(config_path, destination):
             request = resolve_paths(json.loads(path.read_text()), path.parent)
         else:
             request = resolve_paths(copy.deepcopy(job.request), source.parent)
-        if job.kind == "daily":
+        if job.kind == "initialize":
+            from .initialization import Initialization
+
+            request.update(sensor=config.sensor, platform=config.platform)
+            for key in ("tiles", "water_years"):
+                if key in config.selection:
+                    request.setdefault(key, config.selection[key])
+            request = Initialization.model_validate(request).model_dump(mode="json")
+        elif job.kind == "daily":
             from .models import RequestConfig
 
             request.setdefault("run", {}).update(
@@ -320,7 +335,11 @@ def execute_job(plan_path, name):
             raise ValueError("Existing job request differs")
         atomic_json(request, job["request"])
         kind = job["kind"]
-        if kind == "daily":
+        if kind == "initialize":
+            from .initialization import initialize
+
+            initialize(job["request"])
+        elif kind == "daily":
             from .cli import main
 
             resolved = directory / "daily-plan.json"
@@ -328,6 +347,8 @@ def execute_job(plan_path, name):
                 ["plan", str(request), "--output", str(resolved)]
             ):
                 raise RuntimeError("Daily planning failed")
+            if main(["stage", str(resolved), "--execute"]):
+                raise RuntimeError("Daily input staging failed")
             if main(
                 ["execute", str(resolved), "--events-dir", str(directory / "events")]
             ):
@@ -455,7 +476,7 @@ def render(plan_path, destination):
     return directory
 
 
-def main(argv=None):
+def _main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("schema", help="Print the universal workflow JSON schema")
@@ -481,6 +502,16 @@ def main(argv=None):
     else:
         execute_job(arguments.plan, arguments.name)
     return 0
+
+
+def main(argv=None):
+    from .nrt_storage import FullReplayRequired
+
+    try:
+        return _main(argv)
+    except FullReplayRequired as error:
+        print(str(error), file=sys.stderr)
+        return 3
 
 
 if __name__ == "__main__":

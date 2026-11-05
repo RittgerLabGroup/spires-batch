@@ -179,7 +179,36 @@ to before those changes, including the seven-day final-issue context. It rejects
 that checkpoint if the rewind lacks complete donor history. Replay runs through
 current availability. Ordinary late-replacement planning can
 also select such an earlier checkpoint automatically. If no retained checkpoint
-is suitable, it explicitly falls back to full historical replay.
+is suitable, unattended planning stops instead of falling back to full history.
+
+## Unattended full-replay stop
+
+An ordinary NRT revision never automatically changes to full-history replay.
+If no compatible retained checkpoint covers the replay interval, it exits with
+status **3** before making the scientific full-history plan or copying full-history
+payloads. This applies to standalone planning, full cycles and universal workflow
+jobs. Older automatic full-history update plans are also rejected by `nrt run`.
+Normal bounded checkpoint replay and explicitly requested historical WY jobs
+remain available. The existing manual `nrt rebuild` operation remains explicit;
+it is not invoked automatically and no approval/resume CLI is introduced.
+
+The message includes the reason, date range, unique prepared-history file count,
+known logical bytes, estimated uncached bytes, largest file, and durable report
+path. The JSON report includes every unique file and any unknown sizes. It is
+written to both the revision workspace (`full-replay-required.json`) and
+`archive_root/stops/`. Reports read monthly catalog metadata and file stats only,
+not historical raster arrays. Estimates cover prepared observation files, not a
+promise of exact wire traffic or static-asset costs. Already cached files are
+identified by the existing cache layout and stat identity; unknown sizes are
+never represented as an exact zero-cost estimate.
+
+Cron and Slurm jobs receive a nonzero exit and a clear stderr explanation; they
+do not wait for input or submit recovery work. No successful workflow receipt is
+written, and the last published generation remains unchanged. The normal cycle
+may already have acquired/prepared changed observations before it reaches this
+guard; the stop prevents the subsequent full-history operation. There is no
+background full-history rsync or strict transfer-byte ceiling. Review the report
+and decide on recovery manually if this exceptional situation occurs.
 
 Both rebuild commands prepare reviewable plans; they do not submit jobs or change
 cron. Run them in appropriately sized allocations. Execution preserves the atomic

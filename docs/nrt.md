@@ -146,7 +146,8 @@ age would retain information from the superseded input.
 A compatible current checkpoint is used first, using coverage metadata rather
 than loading its raster arrays during planning. An older hot or archived generation
 can supply an earlier restart when its retained windows and source prefix are compatible.
-Otherwise the plan explicitly falls back to the full scientific history. Changed
+Otherwise planning stops with exit status 3 and a durable full-replay size report;
+it never automatically transfers or replays the full scientific history. Changed
 input dates are never silently clipped to a seven-day repair window. The selected
 policy's within-water-year observation-age diagnostic, zero barriers, direct-only
 temporal donors and scientific first/final cutoffs are unchanged; the diagnostic's

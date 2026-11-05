@@ -84,6 +84,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     subparsers.add_parser('interpolation', help='Plan and run selected historical interpolation (see interpolation --help).')
     subparsers.add_parser('nrt', help='Acquire, plan and publish standard/NRT revisions (see nrt --help).')
+    subparsers.add_parser("tile-init", help="Create tile storage and register existing assets (see tile-init --help).")
 
     schema = subparsers.add_parser(
         "schema",
@@ -817,6 +818,10 @@ def _command_submission(args: argparse.Namespace) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments and arguments[0] == "tile-init":
+        from .initialization import main as initialization_main
+
+        return initialization_main(arguments[1:])
     if arguments and arguments[0] == "workflow":
         from .workflow import main as workflow_main
 

@@ -19,6 +19,7 @@ class StagingAction:
     size_bytes: int
     verification: StagingVerification
     reusable: bool
+    mtime_ns: int | None = None
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,11 @@ def _valid_staged_file(action: StagingAction) -> bool:
     destination = action.destination_path
     if not destination.is_file() or destination.stat().st_size != action.size_bytes:
         return False
+    if (
+        action.mtime_ns is not None
+        and destination.stat().st_mtime_ns != action.mtime_ns
+    ):
+        return False
     if action.verification == StagingVerification.SHA256:
         return file_sha256(action.source_path) == file_sha256(destination)
     return True
@@ -67,8 +73,22 @@ def execute_staging(
     dry_run: bool = False,
 ) -> tuple[StagingResult, ...]:
     """Copy required inputs atomically and validate every staged artifact."""
+    return execute_actions(plan_staging(plan), dry_run=dry_run)
+
+
+def execute_actions(
+    actions: tuple[StagingAction, ...], *, dry_run: bool = False
+) -> tuple[StagingResult, ...]:
+    """Stage an explicit file list, never recursively copying a directory."""
     results: list[StagingResult] = []
-    for action in plan_staging(plan):
+    for action in actions:
+        before = action.source_path.stat()
+        if before.st_size != action.size_bytes or (
+            action.mtime_ns is not None and before.st_mtime_ns != action.mtime_ns
+        ):
+            raise ValueError(
+                f"Source changed after staging was planned: {action.source_path}"
+            )
         if action.reusable and _valid_staged_file(action):
             results.append(
                 StagingResult(action, "reused", "existing staged input is valid")
@@ -98,12 +118,19 @@ def execute_staging(
                 size_bytes=action.size_bytes,
                 verification=action.verification,
                 reusable=action.reusable,
+                mtime_ns=action.mtime_ns,
             )
             if not _valid_staged_file(staged_action):
                 raise IOError(
                     f"staged copy failed {action.verification.value} verification: "
                     f"{action.source_path} -> {temporary}"
                 )
+            after = action.source_path.stat()
+            if (before.st_size, before.st_mtime_ns) != (
+                after.st_size,
+                after.st_mtime_ns,
+            ):
+                raise ValueError(f"Source changed during staging: {action.source_path}")
             os.replace(temporary, destination)
             temporary = None
             if not _valid_staged_file(action):

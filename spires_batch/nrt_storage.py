@@ -379,6 +379,80 @@ def expand(ledger, *, start=None, stop=None, days=None):
     return result
 
 
+class FullReplayRequired(RuntimeError):
+    """An unattended update cannot continue without replaying its full history."""
+
+
+def stop_full_replay(root, ledger, through, directory, *, reason):
+    """Report history sizes from catalogs/stat calls, then stop before payload IO."""
+    history = expand(ledger, start=ledger["history_start"], stop=through)
+    store = Store(root)
+    files = {}
+    for tile in history["template"]["tiles"].values():
+        for day, observation in tile["daily"].items():
+            if not ledger["history_start"] <= day <= through:
+                continue
+            for field in mapped_fields(observation):
+                archived = field.get("archive_file", {})
+                source = Path(archived.get("path", field["path"])).resolve()
+                key = str(source)
+                if key in files:
+                    continue
+                try:
+                    size = source.stat().st_size
+                except OSError:
+                    size = archived.get("bytes")
+                cached = False
+                archive_objects = store.archive / "objects"
+                if source.is_relative_to(archive_objects):
+                    cache = store.root / "cache" / source.relative_to(archive_objects)
+                    try:
+                        source_stat, cache_stat = source.stat(), cache.stat()
+                        cached = (source_stat.st_size, source_stat.st_mtime_ns) == (
+                            cache_stat.st_size,
+                            cache_stat.st_mtime_ns,
+                        )
+                    except OSError:
+                        pass
+                files[key] = dict(path=key, bytes=size, cached=cached)
+    records = sorted(
+        files.values(), key=lambda record: (-(record["bytes"] or 0), record["path"])
+    )
+    report = dict(
+        schema_version=1,
+        status="full_replay_required",
+        reason=reason,
+        stream_root=str(Path(root).resolve()),
+        tiles=sorted(history["template"]["tiles"]),
+        history_start=ledger["history_start"],
+        through=through,
+        history_input_bytes=sum(record["bytes"] or 0 for record in records),
+        uncached_history_bytes=sum(
+            record["bytes"] or 0 for record in records if not record["cached"]
+        ),
+        unknown_size_files=sum(record["bytes"] is None for record in records),
+        files=records,
+        note="Logical prepared-history file sizes, not a transfer authorization. Uncached bytes are an estimate before staging, excluding static assets. Shared files are counted once; partial-file reads may require the whole file. No full-history payload was copied or replayed by this check. Review recovery manually; no automatic retry or approval interface is provided.",
+    )
+    durable = store.archive / "stops" / (digest(report) + ".json")
+    atomic_json(durable, report)
+    atomic_json(Path(directory) / "full-replay-required.json", report)
+    largest = records[0] if records else None
+    detail = (
+        f" Largest history file: {largest['path']} ({largest['bytes']} bytes)."
+        if largest
+        else ""
+    )
+    raise FullReplayRequired(
+        f"NRT stopped: {reason}. Full replay would cover {ledger['history_start']} through {through}; "
+        f"{len(records)} prepared-history files, {report['history_input_bytes']} known bytes "
+        f"({report['history_input_bytes'] / 1024**3:.2f} GiB), "
+        f"{report['uncached_history_bytes']} estimated uncached bytes, "
+        f"{report['unknown_size_files']} unknown-size files.{detail} "
+        f"No full-history transfer or replay was started. Report: {durable}"
+    )
+
+
 def archive_ledger(root, ledger):
     """COW monthly indexes preserve all vintages; only 90-day+unresolved maps stay hot."""
     store = Store(root)

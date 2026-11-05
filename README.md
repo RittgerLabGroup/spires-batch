@@ -15,6 +15,12 @@ never submit work. Start with `examples/workflow_template.json` or
 `examples/workflow_nrt.json`. The older daily request schema remains the leaf
 interface for R0, inversion and postprocessing jobs, not an interpolation API.
 
+For a new tile, start with [tile initialization](docs/initialization.md) and
+`examples/tile_initialization.json`. It creates durable/scratch directories,
+registers externally produced assets, and optionally stages only those files.
+Shared reflectance archives remain outside SPIpy. Unexpected full-history NRT
+replay stops with a durable size report rather than silently proceeding.
+
 The production interpolation recipe is `viirs_snow` (NOAA-20). The refactor removes
 experimental interpolation APIs and requires schema-2 interpolation plans and
 checkpoints. Restart compatibility follows explicit scientific versions, grid,

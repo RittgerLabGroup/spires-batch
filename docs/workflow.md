@@ -49,6 +49,7 @@ already exist. Merely disabling a stage never silently builds it anyway.
 
 | Kind | Request and behavior |
 | --- | --- |
+| `initialize` | [Tile initialization](initialization.md); directory layout, external-asset registration and optional explicit asset staging |
 | `daily` | Daily request schema 1; selects `build_r0`, `invert`, `albedo`, etc. through its existing `steps` and typed options |
 | `prepare` | Retained-observation preparation request plus an explicit `output` HDF5 path |
 | `interpolation` | [Interpolation schema 2](interpolation.md); all four scientific stages and publication |
@@ -88,6 +89,12 @@ products. Do not direct unrelated concurrent workflows at the same daily output
 paths; use the existing reservation-backed submission interface for shared-output
 campaigns. Interpolation/NRT retain their own output locks and atomic generation
 checks, including rejection of stale parent generations.
+
+Daily jobs execute their configured input staging after planning and before
+computation. Unexpected full-history NRT recovery exits with status 3, writes a
+durable explanation and does not produce a completion receipt. Dependent jobs
+therefore remain blocked; no interactive prompt, approval workflow or automatic
+full replay is attempted.
 
 ## Templates and scientific compatibility
 

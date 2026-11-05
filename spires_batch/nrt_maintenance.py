@@ -176,6 +176,7 @@ def rebuild(root, directory, *, checkpoint=None):
                 replay_start=r["start"],
                 through=r["available_through"],
                 replay_mode="checkpoint" if checkpoint else "full_history",
+                explicit_rebuild=True,
                 state_identity=scientific["request"]["state_identity"],
             )
             update["identity"] = digest(update)
@@ -195,6 +196,18 @@ def run(update_path):
     with storage_lock(root):
         register_workspace(root, directory, "running")
         try:
+            if u.get("replay_mode") == "full_history" and not u.get("explicit_rebuild"):
+                from .nrt import current
+                from .nrt_storage import stop_full_replay
+
+                _, _, ledger = current(root)
+                stop_full_replay(
+                    root,
+                    ledger,
+                    u["through"],
+                    directory,
+                    reason="An older unattended full-history update cannot be resumed automatically",
+                )
             p = json.loads(Path(u["plan"]).read_text())
             for stage in p["stage_order"]:
                 for i in range(len(p["tasks"][stage])):

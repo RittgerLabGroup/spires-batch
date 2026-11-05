@@ -443,8 +443,15 @@ def _plan_update(
             begin, _, r["seed"] = max(choices, key=lambda x: x[:2])
             r["start"] = begin
         else:
-            r.pop("seed")
-            r["start"] = ledger["template"]["start"]
+            from .nrt_storage import stop_full_replay
+
+            stop_full_replay(
+                root,
+                dict(ledger, template=r),
+                through,
+                directory,
+                reason="No retained compatible checkpoint covers the required replay",
+            )
     replay_from = r["start"] if "seed" in r else ledger["history_start"]
     restored = expand(ledger, start=replay_from, stop=through)
     for tile in tiles:
@@ -645,7 +652,7 @@ def finish(update_path):
         return result
 
 
-def main(argv=None):
+def _main(argv=None):
     p = argparse.ArgumentParser(prog="spires-batch nrt")
     sub = p.add_subparsers(dest="command", required=True)
     b = sub.add_parser("bootstrap")
@@ -808,6 +815,17 @@ def main(argv=None):
         summary["inventory_count"] = len(result["inventory"])
     print(json.dumps(summary, indent=2))
     return 0
+
+
+def main(argv=None):
+    from .nrt_storage import FullReplayRequired
+    import sys
+
+    try:
+        return _main(argv)
+    except FullReplayRequired as error:
+        print(str(error), file=sys.stderr)
+        return 3
 
 
 if __name__ == "__main__":
