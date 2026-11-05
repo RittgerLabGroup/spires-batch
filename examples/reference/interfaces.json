@@ -1,0 +1,776 @@
+{
+  "workflow_scheduler": {
+    "source": "spires_batch.workflow.plan/render",
+    "fields": {
+      "policy": {
+        "type": "path",
+        "required": true,
+        "description": "JSON node policy; contains exclude_nodes. Required even if no nodes are excluded."
+      },
+      "python": {
+        "type": "path",
+        "required": false,
+        "description": "Science interpreter used by rendered workflow jobs.",
+        "default": "planning interpreter"
+      },
+      "partition": {
+        "type": "string",
+        "required": false,
+        "description": "Slurm partition.",
+        "default": "blanca-snow"
+      },
+      "account": {
+        "type": "string",
+        "required": false,
+        "description": "Authorized Slurm account.",
+        "default": "blanca-snow"
+      },
+      "cpus": {
+        "type": "integer",
+        "required": false,
+        "description": "CPUs per named job; >=1.",
+        "default": 1
+      },
+      "memory": {
+        "type": "string",
+        "required": false,
+        "description": "Positive Slurm memory size; universal Resources rejects 0.",
+        "default": "8G"
+      },
+      "time": {
+        "type": "string",
+        "required": false,
+        "description": "Slurm walltime.",
+        "default": "04:00:00"
+      }
+    },
+    "notes": [
+      "Universal workflow scheduler has no extra_directives/exclusive field; use the standalone daily renderer for full-node R0.",
+      "One allocation per named job; not a fine-grained task-array wrapper."
+    ]
+  },
+  "scheduler_policy": {
+    "source": "spires_batch.workflow / spires_batch.interpolation",
+    "fields": {
+      "exclude_nodes": {
+        "type": "array[string]",
+        "required": true,
+        "description": "Verified site exclusion list. Do not substitute an empty list for the usual operational exclusions."
+      }
+    },
+    "notes": []
+  },
+  "acquire": {
+    "source": "spires_batch.workflow.execute_job -> acquisition.acquire",
+    "fields": {
+      "stream_root": {
+        "type": "path",
+        "required": true,
+        "description": "Already registered NRT stream."
+      },
+      "through": {
+        "type": "ISO date",
+        "required": true,
+        "description": "Inclusive requested availability."
+      },
+      "collection": {
+        "type": "string",
+        "required": false,
+        "description": "Native filename collection.",
+        "default": "002"
+      }
+    },
+    "notes": [
+      "Workflow acquire downloads; standalone nrt acquire needs --download.",
+      "Not a generic unregistered historical archive downloader."
+    ]
+  },
+  "mapped_field": {
+    "source": "spires_interpolation.raster_io.read_mapped_fields",
+    "fields": {
+      "path": {
+        "type": "path",
+        "required": true,
+        "description": "HDF5/NetCDF source file."
+      },
+      "dataset": {
+        "type": "string",
+        "required": true,
+        "description": "Dataset name or slash-separated HDF5 group path."
+      },
+      "index": {
+        "type": "integer",
+        "required": false,
+        "description": "Optional leading-axis selection, zero based."
+      },
+      "band": {
+        "type": "integer",
+        "required": false,
+        "description": "Optional trailing parameter-axis selection, zero based."
+      },
+      "axis": {
+        "type": "x|y",
+        "required": false,
+        "description": "Read one-dimensional native axis and broadcast over a raster window. Do not combine with other selection transforms."
+      },
+      "bitwise_and": {
+        "type": "integer",
+        "required": false,
+        "description": "Apply an integer bit mask after reading a non-axis field."
+      },
+      "archive_file": {
+        "type": "object",
+        "required": false,
+        "description": "Controller-owned historical file identity (bytes, mtime_ns; may include path). Not a manual override."
+      }
+    },
+    "notes": []
+  },
+  "interpolation": {
+    "source": "spires_batch.interpolation.plan",
+    "fields": {
+      "schema_version": {
+        "type": "integer",
+        "required": true,
+        "description": "Must equal 2.",
+        "allowed_values": [
+          2
+        ]
+      },
+      "algorithm": {
+        "type": "string",
+        "required": false,
+        "description": "Evaluated sensor recipe; not solver ID.",
+        "default": "viirs_snow",
+        "allowed_values": [
+          "viirs_snow"
+        ]
+      },
+      "history_start": {
+        "type": "ISO date",
+        "required": true,
+        "description": "Beginning of consecutive historical input/state sequence."
+      },
+      "start": {
+        "type": "ISO date",
+        "required": true,
+        "description": "Inclusive target start. Initial historical requests begin October 1."
+      },
+      "stop": {
+        "type": "ISO date",
+        "required": true,
+        "description": "Exclusive target stop."
+      },
+      "available_through": {
+        "type": "ISO date",
+        "required": true,
+        "description": "Inclusive input availability; final issues require seven look-ahead days."
+      },
+      "shape": {
+        "type": "array[integer]",
+        "required": true,
+        "description": "Actual native [rows, columns]; do not assume the generic example's shape."
+      },
+      "stripe_rows": {
+        "type": "integer",
+        "required": false,
+        "description": "Positive processing stripe height; part of checkpoint layout.",
+        "default": 20
+      },
+      "source_stream": {
+        "type": "string",
+        "required": false,
+        "description": "Input stream provenance.",
+        "default": "standard",
+        "allowed_values": [
+          "standard",
+          "nrt",
+          "mixed"
+        ]
+      },
+      "tiles": {
+        "type": "map[tile,tile_context]",
+        "required": true,
+        "description": "Complete donor domain; each value follows interpolation_tile."
+      },
+      "output": {
+        "type": "path",
+        "required": true,
+        "description": "Distinct working/output generation root."
+      },
+      "snow_library": {
+        "type": "path",
+        "required": true,
+        "description": "Explicitly built snow-fraction native library."
+      },
+      "spatial_library": {
+        "type": "path",
+        "required": true,
+        "description": "Explicitly built OpenMP spatial library."
+      },
+      "albedo_lut": {
+        "type": "path",
+        "required": true,
+        "description": "Validated albedo LUT; checksum recorded."
+      },
+      "scheduler": {
+        "type": "object",
+        "required": true,
+        "description": "See interpolation_scheduler; all base fields required."
+      },
+      "asset_provenance": {
+        "type": "object",
+        "required": true,
+        "description": "Versioned scientific evidence. Arbitrary descriptive metadata permitted; observation_policy is used for compatibility/NRT handoff."
+      },
+      "seed": {
+        "type": "map[tile,path]",
+        "required": false,
+        "description": "Controller-selected compatible checkpoint for every tile; absent for initial historical run."
+      },
+      "seed_plan": {
+        "type": "path",
+        "required": false,
+        "description": "Controller provenance for inherited historical products, not permission to reuse incompatible state."
+      },
+      "stream_root": {
+        "type": "path",
+        "required": false,
+        "description": "Controller-assigned stream root during incremental operation."
+      }
+    },
+    "notes": [
+      "history_start <= start < stop <= available_through + one day.",
+      "Field paths resolve relative to request JSON; every calendar date must be present, with null only for a verified missing observation.",
+      "Controller-written state_context/state_identity are generated artifacts, not accepted initial request fields."
+    ]
+  },
+  "interpolation_scheduler": {
+    "source": "spires_batch.interpolation.stage_resources/plan",
+    "fields": {
+      "partition": {
+        "type": "string",
+        "required": true,
+        "description": "Blanca partition."
+      },
+      "account": {
+        "type": "string",
+        "required": true,
+        "description": "Authorized account."
+      },
+      "policy": {
+        "type": "path",
+        "required": true,
+        "description": "JSON with exclude_nodes."
+      },
+      "cpus": {
+        "type": "integer",
+        "required": true,
+        "description": "Positive worker CPU count."
+      },
+      "memory": {
+        "type": "string",
+        "required": true,
+        "description": "Worker Slurm memory size."
+      },
+      "time": {
+        "type": "string",
+        "required": true,
+        "description": "Worker walltime."
+      },
+      "concurrency": {
+        "type": "integer",
+        "required": true,
+        "description": "Positive campaign array concurrency."
+      },
+      "stages": {
+        "type": "map[stage,object]",
+        "required": false,
+        "description": "Optional screen/spatial/properties/export overrides. Each permits only cpus, memory, time, concurrency.",
+        "default": {}
+      }
+    },
+    "notes": []
+  },
+  "interpolation_tile": {
+    "source": "spires_batch.interpolation.plan; spires_interpolation.raster_io",
+    "fields": {
+      "daily": {
+        "type": "map[ISO date,object|null]",
+        "required": true,
+        "description": "Exactly all prepared_daily fields per nonmissing date, each mapped_field."
+      },
+      "terrain": {
+        "type": "object",
+        "required": true,
+        "description": "Exactly x, y, dem, slope, aspect, canopy_fraction, each mapped_field. Axes are projected metres; elevations integer metres; geometry degrees."
+      },
+      "bright_soil": {
+        "type": "map[WY,mapped_field]",
+        "required": true,
+        "description": "Annual bright-soil Boolean masks covering every observation WY, including replay prefix."
+      },
+      "agriculture": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Agricultural Boolean mask."
+      },
+      "coastal": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Explicit Boolean coastal mask controlling missing climatology treatment."
+      },
+      "frequency": {
+        "type": "array[mapped_field]",
+        "required": true,
+        "description": "Exactly 12 monthly snow frequencies, January through December."
+      }
+    },
+    "notes": []
+  },
+  "prepared_daily": {
+    "source": "spires_interpolation.raster_io.DAILY_FIELDS",
+    "fields": {
+      "state": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "0 unknown, 1 observed snow-free, 2 snow."
+      },
+      "canopy_adjusted_fsca": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Ground/canopy-adjusted snow fraction, 0–1."
+      },
+      "raw_snow_fraction": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Original inversion snow fraction, 0–1."
+      },
+      "sensor_zenith": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "View zenith in physical degrees."
+      },
+      "screening_conditions": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Packed cloud/SWIR conditions; see algorithm documentation."
+      },
+      "cloud_adjacency": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Observation-matched QA adjacency."
+      },
+      "context": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Incomplete cloud-neighbor context flag."
+      },
+      "grain_radius": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Snow grain radius in micrometres."
+      },
+      "dust": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Dust concentration in ppm."
+      },
+      "screening_flags": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Packed retrieval eligibility bits."
+      },
+      "solar_zenith": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Solar zenith in degrees."
+      },
+      "solar_azimuth": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Solar azimuth in degrees clockwise from north."
+      }
+    },
+    "notes": []
+  },
+  "nrt_cycle": {
+    "source": "spires_batch.pipeline.cycle/prepare_date",
+    "fields": {
+      "stream_root": {
+        "type": "path",
+        "required": true,
+        "description": "Registered real historical stream; do not invent an empty history."
+      },
+      "science_python": {
+        "type": "path",
+        "required": true,
+        "description": "Interpreter with coordinated science packages and matched preparation module."
+      },
+      "cloud_python": {
+        "type": "path",
+        "required": true,
+        "description": "Dedicated cloud inference interpreter."
+      },
+      "cloud_model": {
+        "type": "path",
+        "required": true,
+        "description": "Selected matched-cloud model manifest."
+      },
+      "collection": {
+        "type": "string",
+        "required": false,
+        "description": "Collection for selected native sources.",
+        "default": "002"
+      },
+      "observation_policy": {
+        "type": "object",
+        "required": true,
+        "description": "Must exactly match historical asset_provenance.observation_policy; cloud_model_sha256 must equal the manifest bytes' SHA256. Additional policy fields are scientific identity, not arbitrary runtime overrides."
+      },
+      "tiles": {
+        "type": "map[tile,map[WY,retrieval_recipe]]",
+        "required": true,
+        "description": "Every tile in the registered domain; retain previous WY recipes for replacements."
+      },
+      "annual_bright_soil": {
+        "type": "map[tile,map[WY,mapped_field]]",
+        "required": false,
+        "description": "Append-only new annual mask bindings.",
+        "default": {}
+      },
+      "seed_plan": {
+        "type": "path",
+        "required": false,
+        "description": "Historical provenance for supported legacy registration, not numerical compatibility bypass."
+      },
+      "through": {
+        "type": "ISO date",
+        "required": false,
+        "description": "Required in a universal nrt job. Standalone cycle takes --through instead; a JSON value alone does not select its date."
+      }
+    },
+    "notes": [
+      "Run inside an allocation. Even without --execute, acquisition, matched clouds and retrieval run.",
+      "Use absolute deployed interpreter/model/recipe paths for standalone cycle. Universal workflow resolves recognized path fields relative to its/request JSON.",
+      "No automatic bootstrap, cron installation, schema migration or full-history replay."
+    ]
+  },
+  "retrieval_recipe": {
+    "source": "spires_batch.retrieval.retrieve",
+    "fields": {
+      "lut": {
+        "type": "path",
+        "required": true,
+        "description": "Reflectance LUT in evaluated band order I1/I2/I3/M2/M4/M8/M11."
+      },
+      "background_available_through": {
+        "type": "ISO date",
+        "required": true,
+        "description": "Must precede every processed observation."
+      },
+      "preparation": {
+        "type": "object",
+        "required": true,
+        "description": "Scene preparation options; see retrieval_preparation. Must use post_inversion clouds."
+      },
+      "axes": {
+        "type": "object",
+        "required": true,
+        "description": "x and y mapped_field bindings for the exact native grid."
+      },
+      "ancillary": {
+        "type": "object",
+        "required": true,
+        "description": "Mapped canopy_fraction, slope, aspect, ice_fraction required by retained retrieval."
+      },
+      "background": {
+        "type": "object",
+        "required": true,
+        "description": "baseline mapped_field with trailing band axis; optionally screened plus index as a pair."
+      },
+      "source": {
+        "type": "source_record",
+        "required": false,
+        "description": "Required by direct retrieve; filled from inventory by prepare_date."
+      },
+      "clouds": {
+        "type": "map[tile,object]",
+        "required": false,
+        "description": "Each value contains cloud and context GeoTIFF paths for the same-day domain; coordinator supplies it."
+      },
+      "prepared_context": {
+        "type": "string",
+        "required": false,
+        "description": "day_context digest for the complete same-day source inventory; coordinator supplies it."
+      }
+    },
+    "notes": [
+      "Source, clouds and prepared_context are mandatory when calling retrieve directly.",
+      "Solver 6, max_eval=200 and initial radius=250 micrometres are fixed by this worker; generic daily tuning fields are not accepted alternatives."
+    ]
+  },
+  "retained_prepare": {
+    "source": "spires_batch.inputs.prepare_retained",
+    "fields": {
+      "date": {
+        "type": "ISO date",
+        "required": true,
+        "description": "Must equal native source acquisition date."
+      },
+      "tile": {
+        "type": "string",
+        "required": true,
+        "description": "Must equal source tile."
+      },
+      "shape": {
+        "type": "array[integer]",
+        "required": true,
+        "description": "Actual native rows/columns."
+      },
+      "fields": {
+        "type": "object",
+        "required": true,
+        "description": "Required raw_snow_fraction, canopy_adjusted_fsca, screening_flags, qa_qf1, qa_qf7, sensor_zenith, grain_radius, dust, solar_zenith, solar_azimuth mapped fields; additionally exactly one of swir_flags or swir_score, or spectral reconstruction."
+      },
+      "axes": {
+        "type": "object",
+        "required": true,
+        "description": "x and y mapped_field bindings."
+      },
+      "clouds": {
+        "type": "map[tile,object]",
+        "required": true,
+        "description": "cloud/context paths, including available neighboring tiles."
+      },
+      "source": {
+        "type": "source_record",
+        "required": true,
+        "description": "Exact original native source vintage."
+      },
+      "prepared_context": {
+        "type": "string",
+        "required": true,
+        "description": "Complete same-day source context digest."
+      },
+      "spectral": {
+        "type": "object",
+        "required": false,
+        "description": "Original spectral reconstruction evidence, see spectral_reconstruction."
+      },
+      "output": {
+        "type": "path",
+        "required": false,
+        "description": "Required by universal prepare jobs; standalone nrt prepare uses --output."
+      }
+    },
+    "notes": []
+  },
+  "spectral_reconstruction": {
+    "source": "spires_batch.inputs.reconstruct_swir",
+    "fields": {
+      "bands": {
+        "type": "array[string]",
+        "required": true,
+        "description": "Original fitted band order."
+      },
+      "lut": {
+        "type": "path",
+        "required": true,
+        "description": "Original fitted reflectance LUT."
+      },
+      "shade": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Original fitted shade fraction."
+      },
+      "sse": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Original spectral sum of squared errors; reconstructed fit must agree."
+      },
+      "background": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Original baseline background spectrum."
+      },
+      "screened_background": {
+        "type": "mapped_field",
+        "required": false,
+        "description": "Alternative original background, paired with screen_used."
+      },
+      "screen_used": {
+        "type": "mapped_field",
+        "required": false,
+        "description": "Boolean per-pixel alternative background selection, paired with screened_background."
+      }
+    },
+    "notes": []
+  },
+  "source_record": {
+    "source": "spires_batch.nrt.source_record",
+    "fields": {
+      "path": {
+        "type": "path",
+        "required": true,
+        "description": "Native source path."
+      },
+      "bytes": {
+        "type": "integer",
+        "required": true,
+        "description": "File size from stat; not user-estimated."
+      },
+      "mtime_ns": {
+        "type": "integer",
+        "required": true,
+        "description": "File modification time in nanoseconds."
+      },
+      "product": {
+        "type": "string",
+        "required": true,
+        "description": "VJ109GA or VJ109GA_NRT."
+      },
+      "date": {
+        "type": "ISO date",
+        "required": true,
+        "description": "Derived acquisition date."
+      },
+      "tile": {
+        "type": "string",
+        "required": true,
+        "description": "Derived native tile."
+      },
+      "collection": {
+        "type": "string",
+        "required": true,
+        "description": "Derived filename collection."
+      },
+      "processing": {
+        "type": "string",
+        "required": true,
+        "description": "Derived processing timestamp."
+      },
+      "source_stream": {
+        "type": "string",
+        "required": true,
+        "description": "standard or nrt, derived from product."
+      },
+      "prepared": {
+        "type": "object",
+        "required": false,
+        "description": "Generated prepared_daily bindings on retrieval receipt."
+      },
+      "prepared_context": {
+        "type": "string",
+        "required": false,
+        "description": "Generated matched-domain observation digest."
+      }
+    },
+    "notes": [
+      "Create with source_record rather than hand-editing stat fields. Acquisition/archive controllers may attach additional provenance such as cmr_updated or origin; those are not deployment knobs."
+    ]
+  },
+  "nrt_storage": {
+    "source": "spires_batch.nrt_storage.DEFAULTS/configure",
+    "fields": {
+      "working_days": {
+        "type": "integer",
+        "required": false,
+        "description": "Bounded working inventory retention; must be at least 66 days.",
+        "default": 90
+      },
+      "daily_days": {
+        "type": "integer",
+        "required": false,
+        "description": "Daily recovery generation retention.",
+        "default": 7
+      },
+      "monthly_months": {
+        "type": "integer",
+        "required": false,
+        "description": "Monthly recovery checkpoint retention.",
+        "default": 12
+      },
+      "success_grace_days": {
+        "type": "integer",
+        "required": false,
+        "description": "Grace before completed workspace cleanup.",
+        "default": 7
+      },
+      "failed_grace_days": {
+        "type": "integer",
+        "required": false,
+        "description": "Grace before failed workspace cleanup.",
+        "default": 14
+      },
+      "unresolved_warning_days": {
+        "type": "integer",
+        "required": false,
+        "description": "Age at which unresolved NRT-to-standard dates warn.",
+        "default": 30
+      },
+      "warning_bytes": {
+        "type": "object",
+        "required": false,
+        "description": "Category-to-byte warning thresholds; warnings are not transfer permission or a hard byte cap.",
+        "default": {}
+      },
+      "growth_warning_bytes": {
+        "type": "integer",
+        "required": false,
+        "description": "Inventory growth warning threshold; 0 disables this warning.",
+        "default": 0
+      },
+      "archive_root": {
+        "type": "path",
+        "required": false,
+        "description": "Durable archive; default STREAM_ROOT/archive. Cannot change in place once published. Must not overlap mutable workspaces."
+      }
+    },
+    "notes": []
+  },
+  "historical_download": {
+    "source": "earthdata-downloads/scripts/generate_viirs_download_script.py",
+    "fields": {
+      "product": {
+        "type": "string",
+        "required": true,
+        "description": "Standard VNP09GA, VJ109GA or VJ209GA."
+      },
+      "version": {
+        "type": "string",
+        "required": true,
+        "description": "Three-digit collection such as 002."
+      },
+      "tiles": {
+        "type": "array[string]",
+        "required": true,
+        "description": "Nonempty unique tile IDs."
+      },
+      "start_date": {
+        "type": "ISO date",
+        "required": true,
+        "description": "Inclusive query start."
+      },
+      "end_date": {
+        "type": "ISO date",
+        "required": true,
+        "description": "Inclusive query stop."
+      },
+      "archive_root": {
+        "type": "absolute path",
+        "required": true,
+        "description": "Existing product input directory; files organized by tile/year."
+      },
+      "script_root": {
+        "type": "absolute path",
+        "required": true,
+        "description": "Fresh output directory for coverage report and interactive download scripts."
+      }
+    },
+    "notes": [
+      "Standalone external acquisition utility, not a universal workflow job kind.",
+      "Default command only inspects local presence; --query writes scripts after CMR lookup, never downloads/submits."
+    ]
+  }
+}

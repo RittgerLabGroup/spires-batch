@@ -1,0 +1,58 @@
+{
+  "stream_root": "/pl/active/rittger_ops/spipy/state/noaa20/h08v05-wy2026-acceptance",
+  "science_python": "/projects/ropa5718/software/anaconda/envs/spipy14/bin/python",
+  "cloud_python": "/projects/ropa5718/software/anaconda/envs/viirs-cloudmask-batch/bin/python",
+  "cloud_model": "/pl/active/rittger_ops/spipy/assets/cloud-models/matched/manifest.json",
+  "collection": "002",
+  "observation_policy": {
+    "cloud_model_sha256": "REPLACE_WITH_VERIFIED_MODEL_MANIFEST_SHA256"
+  },
+  "tiles": {
+    "h08v05": {
+      "2026": {
+        "lut": "/pl/active/rittger_ops/spipy/assets/luts/viirs-reflectance.nc",
+        "background_available_through": "2025-09-30",
+        "preparation": {
+          "cloud_mask_application_stage": "post_inversion",
+          "cloud_mask_source_policy": "external_only"
+        },
+        "axes": {
+          "x": {
+            "path": "/scratch/alpine/ropa5718/spipy/work/noaa20/h08v05/WY2026/acceptance-v1/r0/r0.nc",
+            "dataset": "x",
+            "axis": "x"
+          },
+          "y": {
+            "path": "/scratch/alpine/ropa5718/spipy/work/noaa20/h08v05/WY2026/acceptance-v1/r0/r0.nc",
+            "dataset": "y",
+            "axis": "y"
+          }
+        },
+        "ancillary": {
+          "canopy_fraction": {
+            "path": "/pl/active/rittger_ops/spipy/assets/ancillary/h08v05/v1/context.nc",
+            "dataset": "canopy_fraction"
+          },
+          "slope": {
+            "path": "/pl/active/rittger_ops/spipy/assets/ancillary/h08v05/v1/context.nc",
+            "dataset": "slope"
+          },
+          "aspect": {
+            "path": "/pl/active/rittger_ops/spipy/assets/ancillary/h08v05/v1/context.nc",
+            "dataset": "aspect"
+          },
+          "ice_fraction": {
+            "path": "/pl/active/rittger_ops/spipy/assets/ancillary/h08v05/v1/context.nc",
+            "dataset": "ice_fraction"
+          }
+        },
+        "background": {
+          "baseline": {
+            "path": "/scratch/alpine/ropa5718/spipy/work/noaa20/h08v05/WY2026/acceptance-v1/r0/r0.nc",
+            "dataset": "r0_reflectance"
+          }
+        }
+      }
+    }
+  }
+}

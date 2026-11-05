@@ -62,6 +62,11 @@ validation.
 
 ## Installation
 
+New operators should start with the [operations guide](docs/operations/README.md)
+and its real h08v05 WY2026 historical-to-NRT campaign. The
+[complete JSON configuration reference](examples/config_template.json) is
+documentation, not a runnable request.
+
 For the RittgerLabGroup operational stack, start with
 [spipy v1.0.0 staging](docs/spipy-release.md). This is an unreleased candidate:
 its component revisions can change without issuing a release or resetting

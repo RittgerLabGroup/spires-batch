@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "sensor": "viirs",
+  "platform": "noaa20",
+  "domain": "h08v05-wy2026-acceptance",
+  "tiles": [
+    "h08v05"
+  ],
+  "water_years": [
+    2026
+  ],
+  "asset_version": "v1",
+  "storage": {
+    "durable_root": "/pl/active/rittger_ops/spipy",
+    "scratch_root": "/scratch/alpine/ropa5718/spipy",
+    "reflectance_roots": {
+      "VJ109GA.002": "/pl/active/rittger_ops/vj109ga.002",
+      "VNP09GA.002": "/pl/active/rittger_ops/vnp09ga.002"
+    }
+  },
+  "assets": [],
+  "stage_assets": false
+}
