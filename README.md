@@ -62,6 +62,11 @@ validation.
 
 ## Installation
 
+For the RittgerLabGroup operational stack, start with
+[spipy v1.0.0 staging](docs/spipy-release.md). This is an unreleased candidate:
+its component revisions can change without issuing a release or resetting
+individual package versions.
+
 ```bash
 pip install spires-batch
 ```
@@ -73,13 +78,17 @@ merged scientific runtime from a source checkout with:
 pip install '.[science]'
 ```
 
-The `science` extra follows the merged `main` branches until compatible
-scientific package releases are published.
+The `science` and `interpolation` extras pin reviewed RittgerLabGroup commits.
+They do not follow upstream or fork `main` automatically. The draft release
+manifest records the coordinated source snapshot; it is not yet a validated
+third-party environment lock.
 
 ### Coordinated scientific stack
 
-On CURC, sibling editable checkouts remain the preferred development and
-operational environment. From an environment with `mamba` available, run:
+On CURC, sibling editable checkouts support development. They are not a frozen
+deployment: edits take effect immediately. The older bootstrap below checks
+named `main` branches, not release-manifest pins, and does not support detached
+release checkouts. From an environment with `mamba` available, run:
 
 ```bash
 module load miniforge
