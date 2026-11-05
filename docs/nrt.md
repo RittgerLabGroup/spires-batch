@@ -131,10 +131,9 @@ to the cycle configuration; standalone mappings use the current working director
 Missing annual assets fail explicitly. The registered monthly climatology stays
 fixed across the transition.
 
-Legacy streams created before separate context metadata was recorded can supply
-their checkpoint-producing plan using `--seed-plan PLAN` (or `seed_plan` in the
-cycle configuration). This validates existing numerical state and provenance;
-it does not rerun history. New registrations record this reference automatically.
+Streams must be bootstrapped from schema-2 historical plans/checkpoints.
+`seed_plan` records provenance; it does not make obsolete numerical state
+compatible. New registrations record their historical reference automatically.
 
 ## Replay and publication guarantees
 
@@ -152,9 +151,10 @@ input dates are never silently clipped to a seven-day repair window. The selecte
 policy's within-water-year observation-age diagnostic, zero barriers, direct-only
 temporal donors and scientific first/final cutoffs are unchanged; the diagnostic's
 October reset does not erase interpolation donors or snow state. State context
-includes numerical code content using package-relative names, so identical
-scientific installations can share state despite controller updates. Execution
-plans still pin all deployed code, source locations and input metadata.
+includes explicit recipe/component versions, formats, parameters, grids and
+scientific assets, not numerical source hashes. Readability-only code changes
+therefore do not invalidate history. Execution plans retain code provenance,
+source locations and input metadata; each plan itself remains immutable.
 
 Each update carries its expected parent generation. All tile products and new
 states must validate before the domain pointer advances; a concurrent stale
@@ -169,7 +169,7 @@ the pointer advances, so successful workspaces can later be removed by the expli
 Bounded revision checks compare replayed products and all checkpoint arrays to a
 full rerun after a standard replacement. They cover standard preference, overdue
 NRT rechecks, missing/new calendar days, exact retry and no-op behavior. Real native
-input preparation and selected retrievals are checked against frozen run012 data.
+input preparation and selected retrievals are checked against the evaluated reference data.
 Full-grid reader/cloud/spatial pilots measure actual allocations separately from
 these correctness checks. A scheduled live service still needs registered current
 annual assets and a one-time registration of existing history; historical validation is not an

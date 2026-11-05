@@ -28696,13 +28696,7 @@
       "max_sensor_zenith": 30.0,
       "ndvi_tie_epsilon": 0.02,
       "min_blue_reflectance": 0.1,
-      "show_progress": false,
-      "chunks": {
-        "time": 1,
-        "y": 400,
-        "x": 400,
-        "band": 7
-      }
+      "show_progress": false
     }
   },
   "output": {

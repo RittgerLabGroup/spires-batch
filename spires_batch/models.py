@@ -617,21 +617,11 @@ class ClusteringScienceConfig(FrozenModel):
 
 
 class R0BuildScienceConfig(FrozenModel):
-    preparation: ScenePreparationConfig = Field(
-        default_factory=ScenePreparationConfig
-    )
+    preparation: ScenePreparationConfig = Field(default_factory=ScenePreparationConfig)
     max_sensor_zenith: float = Field(default=30.0, ge=0.0, le=90.0)
     ndvi_tie_epsilon: float = Field(default=0.02, ge=0.0)
-    min_blue_reflectance: float = Field(default=0.10, ge=0.0)
+    min_blue_reflectance: float = Field(default=0.1, ge=0.0)
     show_progress: bool = False
-    chunks: dict[str, int] | None = None
-
-    @field_validator("chunks")
-    @classmethod
-    def validate_chunks(cls, value: dict[str, int] | None) -> dict[str, int] | None:
-        if value is not None and any(int(size) < 1 for size in value.values()):
-            raise ValueError("science.build_r0.chunks values must be positive")
-        return value
 
 
 class InvertScienceConfig(FrozenModel):

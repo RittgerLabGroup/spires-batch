@@ -822,7 +822,6 @@ def _build_r0(task: Task) -> None:
         max_sensor_zenith=options.max_sensor_zenith,
         ndvi_tie_epsilon=options.ndvi_tie_epsilon,
         min_blue_reflectance=options.min_blue_reflectance,
-        chunks=options.chunks,
         **prepare_kwargs,
     )
     close = getattr(result, "close", None)

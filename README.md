@@ -5,17 +5,21 @@
 dates. It turns a strict JSON request into an immutable, preflighted task
 manifest that can be inspected serially or rendered as direct Slurm arrays.
 
-Phase A planning and recovery foundations are complete. Phase D connects
-manifest-backed existing-R0 inversion, fused inversion/postprocessing,
-standalone full-product postprocessing, atomic persistence, and scientific
-output validation. R0 construction uses strict sensor-specific summer-composite
-recipes, and standalone postprocessing rejects compact `results_subset` inputs
-during preflight. The Phase E0 controlled serial exit gate passed on
-2026-08-01. Phase E1-E5 now provide audited preparation, reservation,
-test-only validation, live Slurm submission with durable job identities, and
-worker-side ownership enforcement with outcome-derived reservation state.
-Operational runs add strict stage gates, scheduler reconciliation, and capped
-automatic retries through small `afterany` coordinator jobs.
+## Universal workflow configuration
+
+Use the schema-2 [workflow interface](docs/workflow.md) to coordinate named R0,
+retrieval, observation-preparation, interpolation, acquisition and NRT jobs in one
+JSON file. Jobs can contain their full requests inline or reference request files.
+Select jobs explicitly and declare their prerequisites; planning and rendering
+never submit work. Start with `examples/workflow_template.json` or
+`examples/workflow_nrt.json`. The older daily request schema remains the leaf
+interface for R0, inversion and postprocessing jobs, not an interpolation API.
+
+The production interpolation recipe is `viirs_snow` (NOAA-20). The refactor removes
+experimental interpolation APIs and requires schema-2 interpolation plans and
+checkpoints. Restart compatibility follows explicit scientific versions, grid,
+assets and observation lineage—not source-code hash equality. MODIS daily
+retrieval remains supported; MODIS interpolation is not yet enabled.
 
 ## Installed capabilities
 
@@ -366,10 +370,11 @@ Both dispatch to the same summer-composite workflow and typed science options;
 the sensor-specific public R0 API supplies the reflectance reader and canonical
 band definitions.
 
-For MODIS R0 builds, set `science.build_r0.chunks` to `null` (or omit it)
-to load all summer scenes together in memory. Budget several hundred GiB of
-RAM per full-tile task. Explicit chunk dimensions select disk-backed Zarr
-staging instead. `science.build_r0.show_progress: true` enables scene progress.
+R0 builds load all summer scenes for one tile/year into RAM before selection,
+for both VIIRS and MODIS. Allocate sufficient RAM (full-tile jobs can require
+hundreds of GiB). `chunks`, `zarr_path` and `zarr_mode` are rejected; disk-backed
+R0 staging is not supported. `science.build_r0.show_progress: true` enables
+scene progress.
 
 ## Discovery and scratch staging
 

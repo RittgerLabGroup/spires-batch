@@ -9989,8 +9989,7 @@
       "max_sensor_zenith": 30.0,
       "ndvi_tie_epsilon": 0.02,
       "min_blue_reflectance": 0.1,
-      "show_progress": true,
-      "chunks": null
+      "show_progress": true
     }
   },
   "output": {
@@ -10013,8 +10012,7 @@
           "memory": "384G",
           "environment_name": "spipy14",
           "extra_directives": [
-            "--nodelist=blanca-g4-u34",
-            "--export=ALL,PYTHONPATH=/projects/ropa5718/SPIReS-Organization/spires-batch/artifacts/modis_terra_wy2023_2026_disort_20260914/run002_in_memory/code/python,PYTHONUNBUFFERED=1"
+            "--export=ALL,PYTHONUNBUFFERED=1"
           ]
         }
       },
@@ -10029,9 +10027,7 @@
           "cpus_per_task": 1,
           "memory": "4G",
           "environment_name": "spipy14",
-          "extra_directives": [
-            "--export=ALL,PYTHONPATH=/projects/ropa5718/SPIReS-Organization/spires-batch/artifacts/modis_terra_wy2023_2026_disort_20260914/run002_in_memory/code/python"
-          ]
+          "extra_directives": []
         }
       }
     },

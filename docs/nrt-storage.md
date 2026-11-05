@@ -125,20 +125,23 @@ spires-batch nrt abandon --root /products/noaa20-nrt /work/abandoned-cycle
 Confirm that the scheduler will not later execute an abandoned plan. This command
 releases its persistent pin; it does not cancel scheduler jobs or delete files.
 
-## Legacy adoption, archive queries and rebuilds
+## Storage migration, archive queries and rebuilds
 
-Existing schema-1 streams can migrate their metadata and archive existing payloads
-without numerical recomputation:
+Streams using storage schema 1 can migrate their catalogs and archive existing
+payloads without numerical recomputation only when their scientific context and
+checkpoint format already match the schema-2 interpolation contract:
 
 ```bash
 spires-batch nrt migrate --root /products/noaa20-nrt --seed-plan historical-plan.json
 ```
 
-The original plan is needed only when the legacy stream lacks scientific context
-provenance. Historical plans from preserved runtimes retain their exact source
-snapshots. If an old plan's recorded code has already been overwritten, the archive
-records its expected hash as unavailable rather than mislabeling newer code as
-that implementation. Preserve the original frozen runtime for exact reproduction.
+The original plan is a provenance reference, not a compatibility override. A
+stream lacking scientific context metadata or using an obsolete checkpoint
+format must be bootstrapped under the new scientific contract. Historical plans
+from preserved runtimes retain their exact source snapshots. If recorded code
+has already been overwritten, the archive records its expected hash as unavailable
+rather than mislabeling newer code as that implementation. Frozen runtimes are
+historical provenance, not templates for new production jobs.
 
 Use catalog queries to locate older products or inspect an as-issued publication;
 the working ledger alone intentionally no longer enumerates all historical dates:

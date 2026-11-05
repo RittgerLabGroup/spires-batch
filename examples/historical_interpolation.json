@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "history_start": "2025-10-01",
   "start": "2025-10-01",
   "stop": "2025-10-02",
@@ -11,11 +11,10 @@
   "stripe_rows": 20,
   "source_stream": "standard",
   "output": "output",
-  "common_library": "native/common_c.so",
   "spatial_library": "native/spatial.so",
   "albedo_lut": "albedo.nc",
   "asset_provenance": {
-    "policy": "noaa20-frequency20-cap25-rare01-coastal-v1",
+    "policy": "viirs_snow",
     "note": "Replace all paths and record asset versions/checksums before planning."
   },
   "scheduler": {
@@ -35,23 +34,23 @@
             "path": "inputs.h5",
             "dataset": "state"
           },
-          "direct": {
+          "canopy_adjusted_fsca": {
             "path": "inputs.h5",
             "dataset": "direct"
           },
-          "raw": {
+          "raw_snow_fraction": {
             "path": "inputs.h5",
             "dataset": "raw"
           },
-          "zenith": {
+          "sensor_zenith": {
             "path": "inputs.h5",
             "dataset": "zenith"
           },
-          "flags": {
+          "screening_conditions": {
             "path": "inputs.h5",
             "dataset": "flags"
           },
-          "adj": {
+          "cloud_adjacency": {
             "path": "inputs.h5",
             "dataset": "adj"
           },
@@ -186,5 +185,7 @@
         }
       ]
     }
-  }
+  },
+  "snow_library": "native/snow_fraction.so",
+  "algorithm": "viirs_snow"
 }

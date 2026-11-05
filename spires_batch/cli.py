@@ -78,6 +78,10 @@ def _parser() -> argparse.ArgumentParser:
         description="Plan and operate SPIReS batch workflows",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers.add_parser(
+        "workflow",
+        help="Plan and render a universal job graph (see workflow --help).",
+    )
     subparsers.add_parser('interpolation', help='Plan and run selected historical interpolation (see interpolation --help).')
     subparsers.add_parser('nrt', help='Acquire, plan and publish standard/NRT revisions (see nrt --help).')
 
@@ -813,6 +817,10 @@ def _command_submission(args: argparse.Namespace) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments and arguments[0] == "workflow":
+        from .workflow import main as workflow_main
+
+        return workflow_main(arguments[1:])
     if arguments and arguments[0] == 'nrt':
         from .nrt import main as nrt_main
         return nrt_main(arguments[1:])

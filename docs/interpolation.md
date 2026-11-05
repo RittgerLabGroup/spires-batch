@@ -1,8 +1,8 @@
 # Historical interpolation control plane
 
 `spires-batch interpolation` operates the selected NOAA-20 interpolation package
-from RittgerLabGroup. It is separate from existing inversion requests so existing
-manifest digests, scientific APIs and operational submissions remain unchanged.
+from RittgerLabGroup. It is available as an `interpolation` job in the universal
+[workflow configuration](workflow.md), or through the standalone commands below.
 
 ```bash
 spires-batch interpolation plan request.json --output plan.json
@@ -26,16 +26,16 @@ uses verified completed stripe/date outputs. The scientific workers lock outputs
 `examples/historical_interpolation.json` illustrates a one-day request. Expand its
 explicit daily mapping to every calendar day from history_start through
 available_through, using null for an actually missing scene. Never omit dates.
-Start is inclusive, stop exclusive, availability inclusive. Initial historical
+Use `schema_version: 2` and `algorithm: "viirs_snow"`. Start is inclusive, stop exclusive, availability inclusive. Initial historical
 targets start October 1; checkpoint-backed updates can start on any date and
-continue across October 1. First/final issues follow the same 0/7-day policy as
-research. A request uses a fixed climatology context and selects annual masks by
+continue across October 1. First/final issues follow the same 0/7-day policy for the evaluated recipe. A request uses a fixed climatology context and selects annual masks by
 observation date.
 
 Each tile declares:
 
 - `daily`: date -> logical-field mapping or null. A field is `{path,dataset}`.
-  Fields are state, direct, raw, zenith, flags, adj, context, grain_radius, dust,
+  Fields are state, canopy_adjusted_fsca, raw_snow_fraction, sensor_zenith,
+  screening_conditions, cloud_adjacency, context, grain_radius, dust,
   screening_flags, solar_zenith and solar_azimuth. Different fields can point to
   different files; the worker opens each file once per read group.
 - `terrain`: dem, slope, aspect, canopy_fraction and native projected x/y.
@@ -49,7 +49,7 @@ Each tile declares:
   across October 1; changing that science context is a separate revision.
 
 The daily observation boundary is produced by
-`spires_interpolation.observations.prepare_day` from retained inversion values,
+`spires_interpolation.observations.prepare_viirs_observations` from retained inversion values,
 matched QA, corrected neighboring cloud masks and SWIR residual scores. Canopy
 correction must be the selected VIIRS policy. This driver consumes prepared
 observations; it does not launch acquisition, annual R0/mask building, inversion,
@@ -65,7 +65,8 @@ not files to commit in this repository.
 
 Planning checks source dataset/grid headers, freezes size/mtime identities for
 large inputs and checksums the LUT/native libraries/scheduler policy, and records
-implementation hashes. Workers reject modified plans, source metadata or code.
+implementation hashes. Workers reject modified plans or source metadata and incompatible scientific
+recipes. Code hashes are provenance, not restart requirements.
 This is not a full pixel-content scan of every large input. Scientific asset
 provenance and source stream (`standard`, `nrt`, `mixed`) are explicit.
 
@@ -84,25 +85,25 @@ variable-specific ages. It supports the [NRT revision controller](nrt.md); this 
 implements historical processing. Scheduled NRT deployment is not enabled implicitly. Historical maps computed with standard
 inputs do not establish as-issued NRT performance.
 
-Planning records a separate `state_context` for the numerical implementation,
-grid, static context and native/LUT identities, plus append-only annual mask
-bindings. It does not depend on target dates, output roots, controller code or the
-standard/NRT stream label. New annual masks extend the context without invalidating
-state; existing bindings and file identities must still match. Each prepared
-observation retains the retrieval and R0 used for its own date. The publication's
-plan identity still pins all deployed code and its exact source inventory.
-Reuse requires both compatible state context and verified observation lineage;
-changed past observations require replay. A seed inherits its existing
-`state_identity`, including when reading a legacy checkpoint.
+Planning records a separate `state_context` for the recipe, sensor/platform,
+component versions, state/observation formats, fixed parameters, grid, static
+context and LUT identity, plus append-only annual mask bindings. It excludes
+Python source and native binary hashes. New annual masks extend the context;
+existing bindings and file identities must still match. Each observation retains
+its own retrieval/R0 provenance. Reuse requires compatible scientific context
+and verified observation lineage; changed past observations require replay.
 
-Older rewindable bundles without `state_context` can be used with `seed_plan`
-pointing to their original historical plan. The planner verifies that plan's
-digest, numerical code, assets and checkpoint identity. This adds provenance
-metadata to the next published bundle without rebuilding the old state.
+New code with unchanged numerical meaning can reuse history. Native libraries
+must expose the supported algorithm version. Immutable plans still retain their
+source inventory and integrity digest; regenerate a plan for changed input or
+binary paths. The one-time schema-2 transition requires bootstrapping compatible
+history. Old experimental APIs/checkpoint formats are not accepted, even when a
+`seed_plan` provenance reference is supplied.
 
-For review, install the coordinated feature branches of spires-interpolation and
-spires-batch (or set PYTHONPATH to both checkouts). The optional dependency pointing
-to interpolation's main branch becomes sufficient only after that branch is merged.
+Install the coordinated RittgerLabGroup `main` versions of spires-interpolation
+and spires-batch. Build both native libraries explicitly with kernels
+`snow_fraction` and `spatial`, and supply `snow_library` and `spatial_library`.
+The optional `interpolation` dependency installs the new public API.
 
 ## Development evidence
 

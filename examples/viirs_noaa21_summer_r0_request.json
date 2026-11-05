@@ -166,8 +166,7 @@
       "max_sensor_zenith": 30,
       "ndvi_tie_epsilon": 0.02,
       "min_blue_reflectance": 0.1,
-      "show_progress": false,
-      "chunks": null
+      "show_progress": false
     }
   },
   "output": {
