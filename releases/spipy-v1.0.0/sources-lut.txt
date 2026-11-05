@@ -1,0 +1,4 @@
+# Draft spipy v1.0.0 first-party sources; NOT an environment lock.
+# Generated from manifest.json by scripts/check_spipy_candidate.py.
+spires-contract @ git+https://github.com/RittgerLabGroup/spires-contract.git@dda5155c9af5d4976d67de0fb6de1ff1d73d080d
+spires-lut @ git+https://github.com/RittgerLabGroup/spires-lut.git@c521b978383bd503113a84034ed87524cd81c6bf

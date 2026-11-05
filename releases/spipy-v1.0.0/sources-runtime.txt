@@ -1,0 +1,9 @@
+# Draft spipy v1.0.0 first-party sources; NOT an environment lock.
+# Generated from manifest.json by scripts/check_spipy_candidate.py.
+spires-contract @ git+https://github.com/RittgerLabGroup/spires-contract.git@dda5155c9af5d4976d67de0fb6de1ff1d73d080d
+spires-io @ git+https://github.com/RittgerLabGroup/spires-io.git@2778eac9171fde9c9d67350731349f438a9cf56f
+spires-r0 @ git+https://github.com/RittgerLabGroup/spires-r0.git@70b96648ebb0127ae9d84a4a0586754d2aa57a19
+spires-inversion @ git+https://github.com/RittgerLabGroup/spires-inversion.git@967f1a17522eac03ca09a66ec93fed85a2a8b18a
+spires-postprocess @ git+https://github.com/RittgerLabGroup/spires-postprocess.git@0acf6854d4672e93116835902495e5673d81857d
+spires-interpolation[io,netcdf] @ git+https://github.com/RittgerLabGroup/spires-interpolation.git@60c54f89f5fe952cab7d5328da6e6ad1e47669e0
+spires-batch[science,interpolation] @ git+https://github.com/RittgerLabGroup/spires-batch.git@39d6e3a6d07422fdc85b54b2277033286710a7b7

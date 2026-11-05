@@ -1,0 +1,3 @@
+# Draft spipy v1.0.0 first-party sources; NOT an environment lock.
+# Generated from manifest.json by scripts/check_spipy_candidate.py.
+viirs-cloudmask-batch @ git+https://github.com/RittgerLabGroup/viirs-cloudmask-batch.git@3a25fd94a8a148454c603ff34b66fb6014d44b95

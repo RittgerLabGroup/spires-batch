@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "product": "spipy",
+  "target_version": "1.0.0",
+  "status": "draft",
+  "release_created": false,
+  "environment_lock": null,
+  "components": {
+    "spires-contract": {
+      "commit": "dda5155c9af5d4976d67de0fb6de1ff1d73d080d",
+      "groups": [
+        "runtime",
+        "lut"
+      ],
+      "repository": "https://github.com/RittgerLabGroup/spires-contract.git"
+    },
+    "spires-io": {
+      "commit": "2778eac9171fde9c9d67350731349f438a9cf56f",
+      "groups": [
+        "runtime"
+      ],
+      "repository": "https://github.com/RittgerLabGroup/spires-io.git"
+    },
+    "spires-r0": {
+      "commit": "70b96648ebb0127ae9d84a4a0586754d2aa57a19",
+      "groups": [
+        "runtime"
+      ],
+      "repository": "https://github.com/RittgerLabGroup/spires-r0.git"
+    },
+    "spires-inversion": {
+      "commit": "967f1a17522eac03ca09a66ec93fed85a2a8b18a",
+      "groups": [
+        "runtime"
+      ],
+      "repository": "https://github.com/RittgerLabGroup/spires-inversion.git"
+    },
+    "spires-postprocess": {
+      "commit": "0acf6854d4672e93116835902495e5673d81857d",
+      "groups": [
+        "runtime"
+      ],
+      "repository": "https://github.com/RittgerLabGroup/spires-postprocess.git"
+    },
+    "spires-interpolation": {
+      "commit": "60c54f89f5fe952cab7d5328da6e6ad1e47669e0",
+      "groups": [
+        "runtime"
+      ],
+      "extras": [
+        "io",
+        "netcdf"
+      ],
+      "repository": "https://github.com/RittgerLabGroup/spires-interpolation.git"
+    },
+    "spires-batch": {
+      "commit": "39d6e3a6d07422fdc85b54b2277033286710a7b7",
+      "groups": [
+        "runtime"
+      ],
+      "extras": [
+        "science",
+        "interpolation"
+      ],
+      "repository": "https://github.com/RittgerLabGroup/spires-batch.git"
+    },
+    "viirs-cloudmask-batch": {
+      "commit": "3a25fd94a8a148454c603ff34b66fb6014d44b95",
+      "groups": [
+        "cloudmask"
+      ],
+      "repository": "https://github.com/RittgerLabGroup/viirs-cloudmask-batch.git"
+    },
+    "spires-lut": {
+      "commit": "c521b978383bd503113a84034ed87524cd81c6bf",
+      "groups": [
+        "lut"
+      ],
+      "repository": "https://github.com/RittgerLabGroup/spires-lut.git"
+    }
+  },
+  "validation": {
+    "environment": "spipy14 (existing development environment; not a clean installation)",
+    "existing_tests_passed": 124,
+    "existing_tests_skipped": 6,
+    "test_scope": "contract, R0, archived VIIRS loading, inversion Dask and contract boundaries",
+    "clean_install_validated": false,
+    "historical_and_nrt_acceptance_validated": false,
+    "lut_build_validated": false
+  },
+  "release_blockers": [
+    "Resolve and validate platform-specific third-party and native-library environments; source requirement files are not environment locks.",
+    "Validate LUT packaging and the native DISORT build in an isolated environment.",
+    "Validate representative historical processing and NRT restart/staging, including the full-history transfer kill switch.",
+    "Record and verify LUT, ancillary, and cloud-model assets.",
+    "Disposition archived test failures and skipped coverage before release approval."
+  ]
+}
