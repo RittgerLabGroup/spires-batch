@@ -919,7 +919,17 @@
           "type": "boolean",
           "required": false,
           "default": false,
-          "requires_named_input_when_true": "ancillary:canopy_fraction"
+          "requires_named_inputs_when_true": [
+            "ancillary:canopy_fraction",
+            "ancillary:slope",
+            "ancillary:aspect"
+          ]
+        },
+        "canopy_correction_policy": {
+          "type": "string",
+          "required": false,
+          "choices": ["modis_full_shade", "viirs_canopy_weighted_shade"],
+          "description": "When canopy correction is enabled, omitted policies resolve from run.sensor. Explicit policies must match the sensor. Resolved tasks always contain a policy; legacy and retired research labels are rejected."
         },
         "apply_ice_adjustment": {
           "type": "boolean",

@@ -239,7 +239,7 @@ def _task_input_issues(task: Task) -> list[PreflightIssue]:
         else:
             if options.apply_canopy_correction:
                 require_count(InputRole.ANCILLARY, name="canopy_fraction")
-            if options.canopy_correction_policy != "legacy":
+            if options.apply_canopy_correction:
                 require_count(InputRole.ANCILLARY, name="slope")
                 require_count(InputRole.ANCILLARY, name="aspect")
             if options.apply_ice_adjustment:

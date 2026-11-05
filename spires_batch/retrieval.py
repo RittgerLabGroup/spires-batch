@@ -78,7 +78,8 @@ def corrected_magnitude(result, ancillary, geometry):
         sensor_azimuth=da(geometry["sensor_azimuth"]),
         slope=da(ancillary["slope"]),
         aspect=da(ancillary["aspect"]),
-        canopy_correction_policy="viirs_s2_083",
+        canopy_correction_policy="viirs_canopy_weighted_shade",
+        sensor="viirs",
     ).canopy_adjusted_fsnow.values[0]
 
 
@@ -279,7 +280,7 @@ def retrieve(request, output):
                     tile=actual["tile"],
                     elapsed_seconds=time.monotonic() - start,
                     max_rss_kib=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
-                    canopy_policy="viirs_s2_083",
+                    canopy_policy="viirs_canopy_weighted_shade",
                 )
     finally:
         if scene is not None:

@@ -26,7 +26,7 @@ science = [
     "spires-io @ git+https://github.com/SPIReS-Organization/spires-io.git@main",
     "spires-r0 @ git+https://github.com/SPIReS-Organization/spires-r0.git@main",
     "spires-inversion @ git+https://github.com/SPIReS-Organization/spires-inversion.git@main",
-    "spires-postprocess @ git+https://github.com/SPIReS-Organization/spires-postprocess.git@main",
+    "spires-postprocess @ git+https://github.com/RittgerLabGroup/spires-postprocess.git@main",
 ]
 
 [project.scripts]

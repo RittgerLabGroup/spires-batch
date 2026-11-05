@@ -20,6 +20,10 @@ from pydantic import (
 
 
 SCHEMA_VERSION = 1
+CANOPY_POLICY_BY_SENSOR = {
+    "modis": "modis_full_shade",
+    "viirs": "viirs_canopy_weighted_shade",
+}
 STAGE_ORDER = {
     "cloud_mask": 0,
     "build_r0": 1,
@@ -640,7 +644,9 @@ class InvertScienceConfig(FrozenModel):
 
 class AlbedoScienceConfig(FrozenModel):
     apply_canopy_correction: bool = False
-    canopy_correction_policy: Literal["legacy", "modis_s2_062", "viirs_s2_083"] = "legacy"
+    canopy_correction_policy: Literal[
+        "modis_full_shade", "viirs_canopy_weighted_shade"
+    ] | None = None
     apply_ice_adjustment: bool = False
     calculate_albedo: bool = True
     calculate_delta_vis: bool = False
@@ -649,17 +655,25 @@ class AlbedoScienceConfig(FrozenModel):
     average_horizontal_crown_radius: float = Field(default=1.72, gt=0.0)
 
     @model_serializer(mode="wrap")
-    def preserve_legacy_serialization(self, handler: Any) -> dict[str, Any]:
-        """Keep existing schema-v1 request and manifest digests unchanged."""
+    def omit_unused_canopy_policy(self, handler: Any) -> dict[str, Any]:
+        """Do not serialize an unused policy when canopy correction is disabled."""
         data = handler(self)
-        if self.canopy_correction_policy == "legacy":
+        if self.canopy_correction_policy is None:
             data.pop("canopy_correction_policy", None)
         return data
 
     @model_validator(mode="after")
     def require_operation(self) -> "AlbedoScienceConfig":
-        if self.canopy_correction_policy != "legacy" and not self.apply_canopy_correction:
+        if (
+            self.canopy_correction_policy is not None
+            and not self.apply_canopy_correction
+        ):
             raise ValueError("sensor-specific canopy policy requires apply_canopy_correction")
+        if self.apply_canopy_correction and (
+            self.average_vertical_crown_radius != 4.644
+            or self.average_horizontal_crown_radius != 1.72
+        ):
+            raise ValueError("Selected canopy policies require crown radii 4.644 and 1.72")
         if not any(
             (
                 self.apply_canopy_correction,
@@ -673,6 +687,17 @@ class AlbedoScienceConfig(FrozenModel):
                 "science.albedo must enable at least one postprocessing operation"
             )
         return self
+
+    def for_sensor(self, sensor: str) -> "AlbedoScienceConfig":
+        """Resolve the evaluated policy once, before requests become task manifests."""
+        if not self.apply_canopy_correction:
+            return self
+        expected = CANOPY_POLICY_BY_SENSOR.get(sensor)
+        if expected is None:
+            raise ValueError(f"No evaluated canopy policy for sensor {sensor!r}")
+        if self.canopy_correction_policy not in (None, expected):
+            raise ValueError(f"Sensor {sensor!r} requires canopy policy {expected!r}")
+        return self.model_copy(update={"canopy_correction_policy": expected})
 
 
 class ScienceConfig(FrozenModel):
@@ -1036,15 +1061,19 @@ class RequestConfig(FrozenModel):
                 "files or roots"
             )
         if Stage.ALBEDO in steps:
-            albedo = self.science.albedo
-            expected_sensor = {"modis_s2_062": "modis", "viirs_s2_083": "viirs"}.get(albedo.canopy_correction_policy)
-            if expected_sensor is not None and self.run.sensor != expected_sensor:
-                raise ValueError(f"{albedo.canopy_correction_policy} requires sensor {expected_sensor}")
+            albedo = self.science.albedo.for_sensor(self.run.sensor)
+            object.__setattr__(
+                self, "science", self.science.model_copy(update={"albedo": albedo})
+            )
             required_context: list[tuple[InputRole, str]] = []
-            if expected_sensor is not None:
-                required_context.extend(((InputRole.ANCILLARY, "slope"), (InputRole.ANCILLARY, "aspect")))
             if albedo.apply_canopy_correction:
-                required_context.append((InputRole.ANCILLARY, "canopy_fraction"))
+                required_context.extend(
+                    (
+                        (InputRole.ANCILLARY, "slope"),
+                        (InputRole.ANCILLARY, "aspect"),
+                        (InputRole.ANCILLARY, "canopy_fraction"),
+                    )
+                )
             if albedo.apply_ice_adjustment:
                 required_context.append((InputRole.ANCILLARY, "ice_fraction"))
             if albedo.calculate_albedo:
@@ -1175,6 +1204,17 @@ class Task(FrozenModel):
     depends_on: tuple[str, ...] = ()
     science: TaskScienceConfig
     resource_profile: str
+
+    @model_validator(mode="after")
+    def validate_canopy_policy(self) -> "Task":
+        options = self.science.albedo
+        if options is not None and options.apply_canopy_correction:
+            resolved = options.for_sensor(self.sensor)
+            if options.canopy_correction_policy != resolved.canopy_correction_policy:
+                raise ValueError(
+                    "Resolved canopy tasks require an explicit policy; regenerate the plan"
+                )
+        return self
 
 
 class PreflightIssue(FrozenModel):

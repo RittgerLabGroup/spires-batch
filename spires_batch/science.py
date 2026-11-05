@@ -228,7 +228,7 @@ def validate_scientific_outputs(task: Task) -> tuple[bool, str]:
                         f"persisted output is missing completed operation(s) {missing}",
                     )
                 options = task.science.albedo
-                if options is not None and options.canopy_correction_policy != "legacy":
+                if options is not None and options.apply_canopy_correction:
                     import xarray as xr
 
                     with xr.open_dataset(output.path, group="results") as results:
@@ -594,9 +594,10 @@ def _postprocess(task: Task, data):
         )
     lut_inputs = _named_inputs(task, InputRole.LUT)
     kwargs = options.model_dump()
-    expected_sensor = {"modis_s2_062": "modis", "viirs_s2_083": "viirs"}.get(options.canopy_correction_policy)
-    if expected_sensor is not None and task.sensor != expected_sensor:
-        raise ValueError(f"{options.canopy_correction_policy} requires sensor {expected_sensor}")
+    resolved = options.for_sensor(task.sensor)
+    if options.canopy_correction_policy != resolved.canopy_correction_policy:
+        raise ValueError("Canopy policy is unresolved; regenerate the task plan")
+    kwargs["sensor"] = task.sensor
     kwargs["albedo_lookup"] = (
         None
         if "albedo_lookup" not in lut_inputs

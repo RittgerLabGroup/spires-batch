@@ -344,9 +344,18 @@ For an explicitly authorized daily inversion rerun, set
 `output.existing_output_policy="replace"`. This recomputes the daily product
 and atomically replaces the previous file only after validating the temporary
 product. It does not enable R0 replacement and does not bypass output reservations.
-Set `science.albedo.canopy_correction_policy` to `modis_s2_062` for MODIS or
-`viirs_s2_083` for VIIRS with `apply_canopy_correction=true`. Cross-sensor
-policy assignments are rejected. Both require terrain slope and aspect.
+With `science.albedo.apply_canopy_correction=true`, batch selects
+`modis_full_shade` for MODIS or `viirs_canopy_weighted_shade` for VIIRS from
+`run.sensor`. An explicit `science.albedo.canopy_correction_policy` is optional
+in the submission request, but must match that sensor. Resolved tasks always
+record the explicit policy. Both require terrain slope/aspect, sensor azimuth,
+and crown radii 4.644/1.72. Missing policies in resolved tasks, cross-sensor
+assignments, `legacy`, and retired research identifiers are rejected.
+
+Use the coordinated RittgerLabGroup `spires-postprocess` package; the `science`
+extra now selects that source. Direct postprocessing callers must pass both the
+sensor and policy explicitly. The numerical canopy algorithms are unchanged.
+Regenerate old batch plans rather than editing their immutable manifests.
 
 The selected value is copied into every resolved raw-output task. It does not
 change whether the product is `inversion_raw` or `postprocessed_raw`; fused

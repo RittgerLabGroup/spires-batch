@@ -75,7 +75,8 @@ reflectance LUT, native x/y axes, ancillary maps including ice fraction, previou
 summer background bindings (`baseline`, optional `screened` plus `index`), and the
 background's availability date. It retains original parameters/SSE, selected
 background membership and SWIR scores alongside normalized interpolation fields.
-The selected algorithm-6 settings and viirs_s2_083 canopy policy are fixed. Corrected
+The selected inversion settings and `viirs_canopy_weighted_shade` canopy policy
+are fixed; retrieval explicitly passes `sensor="viirs"` to postprocessing. Corrected
 clouds apply after inversion so newly clear observations retain usable retrievals.
 It uses maintained I/O, inversion and canopy APIs; it imports no research runtime.
 
