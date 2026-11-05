@@ -54,7 +54,7 @@
       "repository": "https://github.com/RittgerLabGroup/spires-interpolation.git"
     },
     "spires-batch": {
-      "commit": "39d6e3a6d07422fdc85b54b2277033286710a7b7",
+      "commit": "0b36e29672f5f2073f6fd6db956efe30dc50d01e",
       "groups": [
         "runtime"
       ],
@@ -65,7 +65,7 @@
       "repository": "https://github.com/RittgerLabGroup/spires-batch.git"
     },
     "viirs-cloudmask-batch": {
-      "commit": "3a25fd94a8a148454c603ff34b66fb6014d44b95",
+      "commit": "67d860a5072ae7c03f15e2728dddd87c3e894dff",
       "groups": [
         "cloudmask"
       ],
@@ -86,7 +86,13 @@
     "test_scope": "contract, R0, archived VIIRS loading, inversion Dask and contract boundaries",
     "clean_install_validated": false,
     "historical_and_nrt_acceptance_validated": false,
-    "lut_build_validated": false
+    "lut_build_validated": false,
+    "standalone_cloud_preparation": {
+      "validated": true,
+      "slurm_job_id": "29327825",
+      "reference_reader_commit": "2778eac9171fde9c9d67350731349f438a9cf56f",
+      "scope": "All 13 prepared arrays match exactly on one standard and one NRT 2400-by-2400 scene, including compact observations; SPIReS imports forbidden in the cloud subprocess. This is not full-grid inference or end-to-end acceptance."
+    }
   },
   "release_blockers": [
     "Resolve and validate platform-specific third-party and native-library environments; source requirement files are not environment locks.",
