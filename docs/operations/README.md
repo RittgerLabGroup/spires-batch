@@ -8,6 +8,10 @@ synthetic snow histories, or a second training-only processing pipeline.
 
 ## Read in this order
 
+Before processing, review [environment setup](environment.md) and
+[per-user paths and shared assets](user-paths.md). Cloning alone does not install
+the runtime, and changing the initialization root does not rewrite other JSONs.
+
 1. This page: package responsibilities and the scientific changes.
 2. [Historical campaign](historical.md): h08v05, NOAA-20, WY2026, with fresh R0
    and inversions and the existing shared reflectance archive.
@@ -29,7 +33,7 @@ synthetic snow histories, or a second training-only processing pipeline.
 | spires-r0 | All-summer in-memory background selection and reuse | Explicit build or existing R0 |
 | spires-inversion | Spectral fit | Approved retrieval recipe/resources |
 | spires-postprocess | Sensor-specific canopy correction and radiative products | Correct sensor and policy |
-| viirs-cloudmask-batch | Matched cloud inference and neighboring context | Model manifest and cloud interpreter |
+| viirs-cloudmask-batch | Standalone VIIRS matching, cloud inference and neighboring context | Model manifest and cloud interpreter; no SPIReS dependencies |
 | spires-interpolation | Screening, snow state, interpolation, albedo, checkpoints | Prepared inputs, donor domain, native libraries |
 | spires-lut | LUT generation | Versioned LUT assets, usually built separately |
 | earthdata-downloads | Historical archive acquisition helper | Generate/download only missing reflectance |

@@ -10,6 +10,7 @@ choices are approved. Read `docs/operations/historical.md` first.
 | `tile_initialization.json` | Valid layout-only initializer; asset list intentionally empty until files are supplied |
 | `r0_request.json` | Fresh previous-summer R0 from 122 existing shared archive scenes; one full-memory exclusive blanca-snow node |
 | `cycle.json` | Reusable science/cloud interpreters and tile/WY retrieval recipe; asset paths and cloud-policy checksum must be completed |
+| `storage.json` | Durable NRT archive for the scratch stream; apply before historical registration, using independent destinations for each trainee |
 
 R0 uses explicit 2025 summer source dates, not `selection.water_years=[2026]`,
 which would incorrectly filter the source inventory. The resulting artifact is
@@ -33,6 +34,9 @@ The background binding initially points to the fresh scratch R0; archive/registe
 that output and finalize stable production bindings before a durable NRT handoff.
 The ancillary and LUT paths describe required destinations; they do not claim
 those files already exist. Verify the cloud interpreter and native libraries.
+The cycle's stream lives on scratch; `storage.json` places its archive on `/pl`.
+Neither file has been applied to create or migrate a live stream. Follow the
+per-user path checklist before sharing a runnable copy with colleagues.
 
 Generate prepared observations using the existing `pipeline.prepare_date` API,
 then populate a complete interpolation inventory from its real receipts.

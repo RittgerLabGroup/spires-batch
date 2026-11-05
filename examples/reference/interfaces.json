@@ -405,12 +405,12 @@
       "science_python": {
         "type": "path",
         "required": true,
-        "description": "Interpreter with coordinated science packages and matched preparation module."
+        "description": "Interpreter with coordinated science packages for snow retrieval; the cloud package is not required here."
       },
       "cloud_python": {
         "type": "path",
         "required": true,
-        "description": "Dedicated cloud inference interpreter."
+        "description": "Standalone cloud interpreter for both observation-matched preparation and cloud inference; no SPIReS packages required."
       },
       "cloud_model": {
         "type": "path",

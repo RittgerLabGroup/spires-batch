@@ -1,5 +1,5 @@
 {
-  "stream_root": "/pl/active/rittger_ops/spipy/state/noaa20/h08v05-wy2026-acceptance",
+  "stream_root": "/scratch/alpine/ropa5718/spipy/streams/noaa20/h08v05-wy2026-acceptance",
   "science_python": "/projects/ropa5718/software/anaconda/envs/spipy14/bin/python",
   "cloud_python": "/projects/ropa5718/software/anaconda/envs/viirs-cloudmask-batch/bin/python",
   "cloud_model": "/pl/active/rittger_ops/spipy/assets/cloud-models/matched/manifest.json",

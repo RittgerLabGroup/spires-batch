@@ -3,25 +3,34 @@
 Use the real h08v05 WY2026 historical campaign. Do not generate a fake checkpoint
 or a separate demonstration history. There is one necessary bookkeeping step:
 the current `nrt bootstrap` command **registers completed historical products and
-checkpoints**. It does not generate, rerun or copy a year of science for an
-exercise. Omitting registration is not currently supported by the cycle API.
+checkpoints**. It does not rerun the historical science, but registration does
+archive existing inputs/products and populate working state. This initial
+handoff can involve substantial I/O; inspect the historical inventory and
+destinations first. Omitting registration is not supported by the cycle API.
 
 ## One-time handoff
 
 After historical export and QA succeed, retain its exact native source inventory
 and prepared receipts. Bind the same donor domain, observation policy (including
-the cloud-model manifest checksum), climatology, grids and assets. Register it:
+the cloud-model manifest checksum), climatology, grids and assets. Complete
+`cycle.json` and `storage.json`, then configure the durable archive before
+registering the historical results:
 
 ```bash
-spires-batch nrt bootstrap historical-plan.json inventory.json --root STREAM_ROOT
-spires-batch nrt status --root STREAM_ROOT
+STREAM_ROOT="$(python -c 'import json; print(json.load(open("cycle.json"))["stream_root"])')"
+spires-batch nrt storage-config storage.json --root "$STREAM_ROOT"
+spires-batch nrt bootstrap historical-plan.json inventory.json --root "$STREAM_ROOT"
+spires-batch nrt status --root "$STREAM_ROOT"
 ```
 
-Choose a durable `STREAM_ROOT`, not the sole scratch copy. Initialization does
-not automatically restore/publish a scratch stream. Keep the historical prepared
-files at their registered stable paths until an explicit supported migration;
-deleting them after export can break future recovery. There is no automatic
-blanket rsync in this workflow.
+Use a scratch `STREAM_ROOT` for fast working state and a separate `/pl` archive.
+Without storage configuration the archive defaults to `STREAM_ROOT/archive`,
+which would leave both copies on scratch. Initialization does not automatically
+configure, restore or publish a stream. Give each independent training exercise
+its own stream and archive. Keep historical prepared inputs at their registered
+paths until archival and supported retention/migration are verified; do not
+delete them merely because export succeeded. There is no blanket rsync command
+in this workflow. See [per-user paths](user-paths.md).
 
 ## First real continuation
 

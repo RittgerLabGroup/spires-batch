@@ -103,7 +103,8 @@ Local plans, logs and the status snapshot are under
 
 Use the maintained `spires_batch.pipeline.prepare_date` coordinator for each
 day of the complete domain. This same coordinator is used by NRT; it calls
-matched cloud preparation, the cloud environment, and `retrieval.retrieve`.
+matched preparation and inference in the standalone cloud environment, then
+`retrieval.retrieve` in the science environment.
 It does not require an existing NRT stream. Run it only in a suitably sized
 allocation with explicit science/cloud interpreters and tile/WY retrieval assets.
 

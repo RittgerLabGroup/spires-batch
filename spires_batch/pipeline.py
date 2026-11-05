@@ -53,7 +53,7 @@ def prepare_date(config, inventory, day, directory):
         matched = output / (tile + "_matched.h5")
         if not matched.exists():
             invoke(
-                config["science_python"],
+                config["cloud_python"],
                 "import sys; from viirs_cloudmask_batch.matched import prepare_matched; prepare_matched(sys.argv[1],sys.argv[2])",
                 source["path"],
                 matched,
