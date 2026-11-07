@@ -251,6 +251,7 @@ def _coordinator_script(
     qos: str | None,
     environment_name: str,
     memory: str,
+    science_python: str | None = None,
 ) -> str:
     directives = [
         "#!/bin/bash",
@@ -270,12 +271,16 @@ def _coordinator_script(
     body = ["", "set -euo pipefail"]
     if cluster == "blanca":
         body.append("module try-load slurm/blanca")
+    launcher = (
+        shlex.join([science_python, "-m", "spires_batch.cli"])
+        if science_python else
+        f"mamba run -n {shlex.quote(environment_name)} spires-batch"
+    )
     body.extend(
         [
-            "module load miniforge",
+            *([] if science_python else ["module load miniforge"]),
             (
-                f"mamba run -n {shlex.quote(environment_name)} "
-                "spires-batch submission advance "
+                f"{launcher} submission advance "
                 f"{shlex.quote(str(operation_path))} "
                 f"--wave-dir {shlex.quote(str(wave_directory))}"
             ),
@@ -336,6 +341,7 @@ def _submit_coordinator(
             account=coordinator_profile.account,
             qos=coordinator_profile.qos,
             environment_name=coordinator_profile.environment_name,
+            science_python=coordinator_profile.science_python,
             memory=coordinator_profile.memory,
         ),
         executable=True,

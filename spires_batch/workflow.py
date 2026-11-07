@@ -236,6 +236,7 @@ def plan(config_path, destination, *, cycle_job=None, through=None):
     config = Workflow.model_validate({**raw, "variables": variables})
     order = ordered_jobs(config)
     scheduler = resolve_paths(config.scheduler, source.parent, "scheduler")
+    scheduler.setdefault("python", sys.executable)
     allowed_scheduler = set(Resources.model_fields) | {"python", "policy", "job_type", "queue"}
     if set(scheduler) - allowed_scheduler or "policy" not in scheduler:
         raise ValueError(
@@ -316,6 +317,9 @@ def plan(config_path, destination, *, cycle_job=None, through=None):
             )
             request["selection"] = {**config.selection, **request.get("selection", {})}
             execution = request.setdefault("execution", {})
+            execution.setdefault("resources", {}).setdefault("science_python", scheduler["python"])
+            for profile in execution.get("profiles", {}).values():
+                profile.setdefault("resources", {}).setdefault("science_python", scheduler["python"])
             if job.max_auto_retry_count is not None:
                 execution["max_auto_retry_count"] = job.max_auto_retry_count
             else:

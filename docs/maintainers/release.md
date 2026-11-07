@@ -71,6 +71,11 @@ and checks the generated source files. It does not install, fetch, change
 checkouts, submit jobs, or test scientific results. Run it where Git access is
 permitted. Python 3.11 or newer is required for this standalone staging helper.
 
+For operator installations, `--installed-group runtime` (or `cloudmask` in the
+cloud interpreter) checks installed non-editable Git provenance against the
+manifest without sibling repositories. Keep that check separate from the
+maintainer source-snapshot check above.
+
 ## Making adjustments before release
 
 1. Edit and validate the relevant RittgerLabGroup component. Do not reset tags

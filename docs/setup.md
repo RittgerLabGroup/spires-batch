@@ -26,6 +26,7 @@ the scientific packages, so a non-editable runtime does not need every source
 repository cloned locally.
 
 ```bash
+module load miniforge
 checkout="/projects/$USER/spipy"
 science="/projects/$USER/spipy-envs/spipy14"
 cloud="/projects/$USER/spipy-envs/viirs-cloudmask-batch"
@@ -102,10 +103,9 @@ The cloud package owns its observation-matching reader and has no SPIReS package
 dependencies. Keep model dependencies in the cloud environment; no science-side
 `PYTHONPATH` workaround is needed.
 
-Use coordinated current batch/cloud revisions. The pinned draft snapshot may
-predate checkout changes: verify `spires-batch workflow submit --help` and the
-installed source revision before teaching the unified launcher. Do not assume
-a successful installation of an older pin includes new commands.
+Use the coordinated batch/cloud revisions in the candidate manifest. Verify the
+installed source revisions and unified launcher with the commands below before
+teaching or submitting a workflow.
 
 ### Separate cloud environment
 
@@ -126,21 +126,38 @@ Do not change the model merely to accommodate a different environment.
 
 ## Verification before submission
 
-From the activated science environment, the following checks must all pass for
-an accepted setup; cloud imports are checked only with `cloud_python` above:
+For a non-editable candidate installation, use the explicit environment prefixes
+set above. These checks need only the batch checkout and installed distributions;
+they do not require the other component repositories or invoke Git:
 
 ```bash
-python -m pip check
-python -c 'import sys, spires_batch, spires_interpolation; from spires_inversion import _core; print(sys.executable, spires_batch.__file__, spires_interpolation.__file__, _core.__file__, sep="\n")'
 cd "$checkout/spires-batch"
-python scripts/check_spipy_candidate.py
+mamba run --prefix "$science" python -m pip check
+mamba run --prefix "$science" python -c 'import sys, spires_batch, spires_interpolation; from spires_inversion import _core; print(sys.executable, spires_batch.__file__, spires_interpolation.__file__, _core.__file__, sep="\n")'
+mamba run --prefix "$science" python scripts/check_spipy_candidate.py --installed-group runtime
+mamba run --prefix "$science" python -m spires_batch.cli workflow submit --help
+mamba run --prefix "$cloud" python -m pip check
+mamba run --prefix "$cloud" python scripts/check_spipy_candidate.py --installed-group cloudmask
 ```
 
-Run the source checker where Git access is permitted. It verifies the recorded
-snapshot, not a clean installation or that every current checkout equals its pin.
-Inspect generated Slurm scripts before submission: the daily renderer uses a
-mamba environment name, the universal renderer can use `scheduler.python`, and
-the interpolation renderer captures the interpreter used to render it.
+The installed check verifies each component's repository and exact Git revision
+from pip provenance, rejects editable/local snapshots, and checks that packages
+belong to the selected environment. The cloud check also rejects SPIReS packages.
+Load the cloud models separately as described above. These checks do not replace
+native execution or scientific validation.
+
+Maintainers with all nine sibling repositories can still run
+`python scripts/check_spipy_candidate.py` where Git access is permitted. That
+mode validates the source snapshot and generated requirements; it does not check
+the installed environment and is not an operator installation prerequisite.
+
+Set `variables.science_python` to `"$science/bin/python"` with the actual absolute
+path in workflow JSON. Daily/R0 workers and their coordinators use the explicit
+`execution.resources.science_python`, inherited from the workflow interpreter
+when omitted. The standalone R0 example includes this field too. Inspect the
+rendered commands to confirm the path; the legacy `environment_name` fallback
+is used only when no explicit interpreter is configured. Interpolation arrays
+capture the interpreter used to render them.
 
 The new unified orchestration still requires a deployed end-to-end pilot.
 Consult the dated validation reports for the checks already performed. Model loading is not full-grid

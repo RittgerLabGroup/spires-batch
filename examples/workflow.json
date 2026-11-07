@@ -523,7 +523,7 @@
           },
           "job_type": "r0",
           "resources": {
-            "environment_name": "spipy14"
+            "science_python": "${science_python}"
           }
         },
         "preflight": {

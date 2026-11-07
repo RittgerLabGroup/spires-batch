@@ -49,13 +49,22 @@ def _group_tasks(
             raise ValueError(f"Slurm selection contains unknown task IDs {sorted(missing)}")
     if not ordered:
         raise ValueError("Slurm rendering requires at least one selected task")
+    tiles_by_profile: dict[tuple[tuple[str, ...], str], set[str]] = defaultdict(set)
+    for task in ordered:
+        if task.resource_profile not in profiles:
+            raise ValueError(f"Unknown task resource profile {task.resource_profile!r}")
+        key = (tuple(stage.value for stage in task.stages), task.resource_profile)
+        tiles_by_profile[key].add(task.tile or "global")
     grouped: dict[tuple[tuple[str, ...], str, str], list[Task]] = defaultdict(list)
     order: list[tuple[tuple[str, ...], str, str]] = []
     for task in ordered:
+        stages = tuple(stage.value for stage in task.stages)
+        # Share one array cap when the budget cannot fund one array per tile.
+        combine_tiles = len(tiles_by_profile[(stages, task.resource_profile)]) > profiles[task.resource_profile].max_concurrent_tasks
         key = (
-            tuple(stage.value for stage in task.stages),
+            stages,
             task.resource_profile,
-            task.tile or "global",
+            "domain" if combine_tiles else task.tile or "global",
         )
         if key not in grouped:
             order.append(key)
@@ -122,7 +131,8 @@ def render_slurm(
 
     for index, tasks in enumerate(raw_groups):
         stages = "-".join(stage.value for stage in tasks[0].stages)
-        tile = tasks[0].tile or "global"
+        tiles = {task.tile for task in tasks}
+        tile = (tasks[0].tile or "global") if len(tiles) == 1 else "domain"
         group_id = f"g{index:03d}-{stages}-{tile}"
         dependency_groups = sorted(
             {
@@ -191,9 +201,13 @@ def render_slurm(
             directives.append(
                 extra if extra.startswith("#SBATCH ") else f"#SBATCH {extra}"
             )
+        launcher = (
+            shlex.join([profile.science_python, "-m", "spires_batch.cli"])
+            if profile.science_python else
+            f"mamba run -n {shlex.quote(profile.environment_name)} spires-batch"
+        )
         worker_command = (
-            f"mamba run -n {shlex.quote(profile.environment_name)} "
-            f"spires-batch execute-task --manifest {shlex.quote(str(manifest))} "
+            f"{launcher} execute-task --manifest {shlex.quote(str(manifest))} "
             f"--task-index {shlex.quote(str(index_path))} "
             '--array-index "${SLURM_ARRAY_TASK_ID}"'
         )
@@ -209,7 +223,7 @@ def render_slurm(
         body = [
             "",
             "set -euo pipefail",
-            "module load miniforge",
+            *([] if profile.science_python else ["module load miniforge"]),
             worker_command,
             "",
         ]

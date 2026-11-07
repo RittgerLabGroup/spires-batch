@@ -102,7 +102,7 @@
     },
     "job_type": "r0",
     "resources": {
-      "environment_name": "spipy14"
+      "science_python": "/projects/REPLACE_USER/envs/spipy14/bin/python"
     },
     "policy": "scheduler_policy.json"
   },

@@ -98,6 +98,7 @@ def _resolve_resource_profile(
         memory=overrides.memory or "8G",
         max_concurrent_tasks=max_concurrent_tasks,
         environment_name=overrides.environment_name or "spipy14",
+        science_python=overrides.science_python,
         extra_directives=overrides.extra_directives,
     )
 

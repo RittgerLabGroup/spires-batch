@@ -529,7 +529,7 @@ Maximum automatic retries after the initial attempt for eligible transient failu
 
 #### `request_fields.execution.resources`
 
-Explicit resource overrides on the selected job profile. Keep environment_name here. Node exclusions, exclusive and node-count directives come from the policy, not extra_directives.
+Explicit resource overrides on the selected job profile. Set science_python here to bind the installed interpreter; environment_name is a legacy fallback. Node exclusions, exclusive and node-count directives come from the policy, not extra_directives.
 
 | Property | Value |
 | --- | --- |
@@ -1664,6 +1664,20 @@ Additional literal #SBATCH directive bodies. Use only site-approved directives.
 ##### `definitions.resource_overrides.extra_directives.default`
 
 `[]` (empty list)
+
+#### `definitions.resource_overrides.science_python`
+
+Absolute science Python executable for workers and coordinators; takes precedence over environment_name. Unified workflows inherit scheduler.python when omitted.
+
+| Property | Value |
+| --- | --- |
+| `required` | `false` |
+| `default` | `null` |
+
+##### `definitions.resource_overrides.science_python.type`
+
+- string
+- null
 
 ### `definitions.staging`
 

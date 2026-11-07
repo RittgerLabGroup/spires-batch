@@ -342,7 +342,7 @@
           "type": "object",
           "required": false,
           "field_reference": "definitions.resource_overrides",
-          "description": "Explicit resource overrides on the selected job profile. Keep environment_name here. Node exclusions, exclusive and node-count directives come from the policy, not extra_directives."
+          "description": "Explicit resource overrides on the selected job profile. Set science_python here to bind the installed interpreter; environment_name is a legacy fallback. Node exclusions, exclusive and node-count directives come from the policy, not extra_directives."
         },
         "profiles": {
           "type": "object keyed by profile name",
@@ -614,7 +614,7 @@
           ],
           "required": false,
           "default": null,
-          "description": "Target processing water year (1900–2200), not the summer acquisition year. Required for build-mode recipe defaults unless both explicit date bounds are supplied. WY2026 defaults to summer 2025."
+          "description": "Target processing water year (1900\u20132200), not the summer acquisition year. Required for build-mode recipe defaults unless both explicit date bounds are supplied. WY2026 defaults to summer 2025."
         },
         "start_date": {
           "type": [
@@ -1099,6 +1099,15 @@
           "required": false,
           "default": [],
           "description": "Additional literal #SBATCH directive bodies. Use only site-approved directives."
+        },
+        "science_python": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "default": null,
+          "description": "Absolute science Python executable for workers and coordinators; takes precedence over environment_name. Unified workflows inherit scheduler.python when omitted."
         }
       }
     },

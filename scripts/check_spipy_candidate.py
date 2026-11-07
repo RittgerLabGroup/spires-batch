@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+from importlib import metadata
 import json
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tomllib
 
 
@@ -40,7 +42,7 @@ def check_requirement(requirement: str, components: dict, source: str) -> None:
         raise ValueError(f"{source}: {name} must reference {expected}, got {requirement!r}")
 
 
-def validate_manifest(manifest: dict, workspace: Path) -> None:
+def validate_manifest_header(manifest: dict) -> None:
     if manifest.get("schema_version") != 1 or manifest.get("product") != "spipy":
         raise ValueError("Expected a schema-version 1 spipy manifest")
     if manifest.get("status") != "draft" or manifest.get("target_version") != "1.0.0":
@@ -61,6 +63,10 @@ def validate_manifest(manifest: dict, workspace: Path) -> None:
         if not component["groups"] or not set(component["groups"]).issubset(GROUPS):
             raise ValueError(f"{name}: invalid installation groups")
 
+
+def validate_manifest(manifest: dict, workspace: Path) -> None:
+    validate_manifest_header(manifest)
+    components = manifest["components"]
     for name, component in components.items():
         repository = workspace / name
         revision = component["commit"]
@@ -80,6 +86,38 @@ def validate_manifest(manifest: dict, workspace: Path) -> None:
                 for requirement in git_output(repository, "show", f"{revision}:{documentation_file}").splitlines():
                     check_requirement(requirement.strip(), components, f"{name}/{documentation_file}")
         print(f"{name}: {revision}")
+
+
+def validate_installed(manifest: dict, group: str) -> None:
+    """Check pip's installed Git provenance without requiring source checkouts."""
+    validate_manifest_header(manifest)
+    prefix = Path(sys.prefix).resolve()
+    print(f"Interpreter: {sys.executable}")
+    for name, component in manifest["components"].items():
+        if group not in component["groups"]:
+            continue
+        distribution = metadata.distribution(name)
+        if not Path(distribution.locate_file("")).resolve().is_relative_to(prefix):
+            raise ValueError(f"{name}: distribution is outside the selected environment")
+        direct = json.loads(distribution.read_text("direct_url.json") or "{}")
+        repository = component["repository"]
+        accepted_urls = {
+            repository,
+            repository.replace("https://github.com/", "ssh://git@github.com/"),
+            repository.replace("https://github.com/", "git@github.com:"),
+        }
+        vcs = direct.get("vcs_info", {})
+        if (direct.get("url") not in accepted_urls
+                or vcs.get("vcs") != "git"
+                or vcs.get("commit_id") != component["commit"]
+                or direct.get("dir_info", {}).get("editable")):
+            raise ValueError(f"{name}: install the non-editable Git revision {component['commit']} from {repository}")
+        print(f"{name}: {component['commit']} ({distribution.version})")
+    if group == "cloudmask":
+        science = sorted({d.metadata["Name"] for d in metadata.distributions()
+                          if (d.metadata.get("Name") or "").lower().replace("_", "-").startswith("spires")})
+        if science:
+            raise ValueError(f"Cloud environment must not contain SPIReS packages: {science}")
 
 
 def requirements_text(manifest: dict, group: str) -> str:
@@ -103,10 +141,18 @@ def main() -> None:
         default=BATCH_ROOT / "releases/spipy-v1.0.0/manifest.json",
     )
     parser.add_argument("--workspace", type=Path, default=BATCH_ROOT.parent)
+    parser.add_argument("--installed-group", choices=GROUPS,
+                        help="Verify this interpreter's installed Git revisions; no sibling repositories or Git commands required")
     parser.add_argument("--write-requirements", action="store_true")
     args = parser.parse_args()
+    if args.installed_group and args.write_requirements:
+        parser.error("--installed-group cannot write requirements")
     try:
         manifest = json.loads(args.manifest.read_text())
+        if args.installed_group:
+            validate_installed(manifest, args.installed_group)
+            print("Installed source revisions match the candidate. No environment or release was changed.")
+            return
         validate_manifest(manifest, args.workspace)
         for group in GROUPS:
             path = args.manifest.parent / f"sources-{group}.txt"
@@ -115,7 +161,7 @@ def main() -> None:
                 path.write_text(expected)
             elif not path.exists() or path.read_text() != expected:
                 raise ValueError(f"{path}: stale or missing; use --write-requirements")
-    except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError) as error:
+    except (OSError, ValueError, KeyError, TypeError, metadata.PackageNotFoundError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"Candidate validation failed: {error}\n")
     print("Draft source snapshot is consistent. No environment or release was changed.")
 

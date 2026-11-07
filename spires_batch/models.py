@@ -782,7 +782,15 @@ class ResourceOverrides(FrozenModel):
     cpus_per_task: int | None = Field(default=None, ge=1)
     memory: str | None = None
     environment_name: str | None = None
+    science_python: str | None = Field(default=None, description="Absolute science Python executable for daily workers; takes precedence over environment_name.")
     extra_directives: tuple[str, ...] = ()
+
+    @field_validator("science_python")
+    @classmethod
+    def validate_science_python(cls, value: str | None) -> str | None:
+        if value is not None and (not Path(value).is_absolute() or "\n" in value or "\r" in value):
+            raise ValueError("science_python must be an absolute executable path")
+        return value
 
 
 class ExecutionProfileConfig(FrozenModel):
@@ -1184,7 +1192,13 @@ class ResourceProfile(FrozenModel):
     memory: str = "8G"
     max_concurrent_tasks: int = Field(default=20, ge=1)
     environment_name: str = "spipy14"
+    science_python: str | None = Field(default=None, description="Absolute science Python executable; when absent, use the legacy named mamba environment.")
     extra_directives: tuple[str, ...] = ()
+
+    @field_validator("science_python")
+    @classmethod
+    def validate_science_python(cls, value: str | None) -> str | None:
+        return ResourceOverrides.validate_science_python(value)
 
     @field_validator("cluster", "partition", "account", "qos")
     @classmethod
