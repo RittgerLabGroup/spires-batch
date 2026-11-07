@@ -114,6 +114,10 @@ def storage_lock(root, exclusive=False):
 
 
 def configure(root, config):
+    from .configuration import HEADER_FIELDS, require_configuration
+
+    require_configuration(config, "nrt_storage")
+    config = {name: value for name, value in config.items() if name not in HEADER_FIELDS}
     with storage_lock(root, True):
         root = Path(root)
         old = settings(root)
@@ -601,7 +605,7 @@ def publication_archive(root, generation):
     paths = artifact_paths(root, generation)
     ledger = json.loads(paths["ledger"].read_text())
     if ledger.get("schema_version") != 2:
-        raise ValueError("Migrate legacy stream before retention")
+        raise ValueError("Archive and compact the current-science ledger before retention")
     record = dict(generation=generation, ledger=durable_ledger(root, ledger))
     path = store.archive / "publications" / (generation["generation"] + ".json")
     if path.exists():

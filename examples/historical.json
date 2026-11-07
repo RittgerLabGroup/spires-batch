@@ -1,0 +1,457 @@
+{
+  "config_type": "historical",
+  "schema_version": 1,
+  "start": "2025-10-01",
+  "stop": "2026-05-12",
+  "reflectance_root": "/pl/active/rittger_ops/vj109ga.002/input",
+  "missing_reflectance": "error",
+  "output": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/historical",
+  "preparation": {
+    "science_python": "/projects/REPLACE_USER/envs/spipy14/bin/python",
+    "cloud_python": "/projects/REPLACE_USER/envs/viirs-cloudmask-batch/bin/python",
+    "cloud_model": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/cloud-models/matched/manifest.json",
+    "collection": "002",
+    "observation_policy": {
+      "cloud_model_sha256": "673989ac8f81b5eb55dc2fa766ef9009bfb4f0c5c8f199cb6fba8b2343b680a8"
+    },
+    "tiles": {
+      "h08v04": {
+        "2026": {
+          "lut": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/luts/viirs-reflectance.nc",
+          "background_available_through": "2025-09-30",
+          "preparation": {
+            "cloud_mask_application_stage": "post_inversion",
+            "cloud_mask_source_policy": "external_only",
+            "low_reflectance_threshold": 0.1,
+            "mask_low_reflectance_for_inversion": true,
+            "mask_water_using_external_file": true,
+            "mask_water_using_reflectance_qf": false,
+            "max_sensor_zenith": 65,
+            "max_solar_zenith": 85,
+            "min_obs_1km": 1,
+            "min_obs_500m": 1,
+            "water_mask_values": [
+              0,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "water_mask_source": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v04/v1/water.tif"
+          },
+          "axes": {
+            "x": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0/h08v04/viirs_h08v04_r0_2025.nc",
+              "dataset": "x",
+              "axis": "x"
+            },
+            "y": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0/h08v04/viirs_h08v04_r0_2025.nc",
+              "dataset": "y",
+              "axis": "y"
+            }
+          },
+          "ancillary": {
+            "canopy_fraction": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v04/v1/context.h5",
+              "dataset": "canopy_fraction"
+            },
+            "slope": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v04/v1/context.h5",
+              "dataset": "slope"
+            },
+            "aspect": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v04/v1/context.h5",
+              "dataset": "aspect"
+            },
+            "ice_fraction": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v04/v1/context.h5",
+              "dataset": "ice_fraction"
+            }
+          },
+          "background": {
+            "baseline": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0/h08v04/viirs_h08v04_r0_2025.nc",
+              "dataset": "r0_reflectance"
+            },
+            "screened": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v04/v1/screened-background-summer2025.h5",
+              "dataset": "screened_reflectance"
+            },
+            "index": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v04/v1/screened-background-summer2025.h5",
+              "dataset": "source_index"
+            }
+          }
+        }
+      },
+      "h08v05": {
+        "2026": {
+          "lut": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/luts/viirs-reflectance.nc",
+          "background_available_through": "2025-09-30",
+          "preparation": {
+            "cloud_mask_application_stage": "post_inversion",
+            "cloud_mask_source_policy": "external_only",
+            "low_reflectance_threshold": 0.1,
+            "mask_low_reflectance_for_inversion": true,
+            "mask_water_using_external_file": true,
+            "mask_water_using_reflectance_qf": false,
+            "max_sensor_zenith": 65,
+            "max_solar_zenith": 85,
+            "min_obs_1km": 1,
+            "min_obs_500m": 1,
+            "water_mask_values": [
+              0,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "water_mask_source": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v05/v1/water.tif"
+          },
+          "axes": {
+            "x": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0/h08v05/viirs_h08v05_r0_2025.nc",
+              "dataset": "x",
+              "axis": "x"
+            },
+            "y": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0/h08v05/viirs_h08v05_r0_2025.nc",
+              "dataset": "y",
+              "axis": "y"
+            }
+          },
+          "ancillary": {
+            "canopy_fraction": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v05/v1/context.h5",
+              "dataset": "canopy_fraction"
+            },
+            "slope": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v05/v1/context.h5",
+              "dataset": "slope"
+            },
+            "aspect": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v05/v1/context.h5",
+              "dataset": "aspect"
+            },
+            "ice_fraction": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v05/v1/context.h5",
+              "dataset": "ice_fraction"
+            }
+          },
+          "background": {
+            "baseline": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0/h08v05/viirs_h08v05_r0_2025.nc",
+              "dataset": "r0_reflectance"
+            },
+            "screened": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v05/v1/screened-background-summer2025.h5",
+              "dataset": "screened_reflectance"
+            },
+            "index": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v05/v1/screened-background-summer2025.h5",
+              "dataset": "source_index"
+            }
+          }
+        }
+      },
+      "h09v04": {
+        "2026": {
+          "lut": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/luts/viirs-reflectance.nc",
+          "background_available_through": "2025-09-30",
+          "preparation": {
+            "cloud_mask_application_stage": "post_inversion",
+            "cloud_mask_source_policy": "external_only",
+            "low_reflectance_threshold": 0.1,
+            "mask_low_reflectance_for_inversion": true,
+            "mask_water_using_external_file": true,
+            "mask_water_using_reflectance_qf": false,
+            "max_sensor_zenith": 65,
+            "max_solar_zenith": 85,
+            "min_obs_1km": 1,
+            "min_obs_500m": 1,
+            "water_mask_values": [
+              0,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "water_mask_source": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v04/v1/water.tif"
+          },
+          "axes": {
+            "x": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0/h09v04/viirs_h09v04_r0_2025.nc",
+              "dataset": "x",
+              "axis": "x"
+            },
+            "y": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0/h09v04/viirs_h09v04_r0_2025.nc",
+              "dataset": "y",
+              "axis": "y"
+            }
+          },
+          "ancillary": {
+            "canopy_fraction": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v04/v1/context.h5",
+              "dataset": "canopy_fraction"
+            },
+            "slope": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v04/v1/context.h5",
+              "dataset": "slope"
+            },
+            "aspect": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v04/v1/context.h5",
+              "dataset": "aspect"
+            },
+            "ice_fraction": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v04/v1/context.h5",
+              "dataset": "ice_fraction"
+            }
+          },
+          "background": {
+            "baseline": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0/h09v04/viirs_h09v04_r0_2025.nc",
+              "dataset": "r0_reflectance"
+            },
+            "screened": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v04/v1/screened-background-summer2025.h5",
+              "dataset": "screened_reflectance"
+            },
+            "index": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v04/v1/screened-background-summer2025.h5",
+              "dataset": "source_index"
+            }
+          }
+        }
+      },
+      "h09v05": {
+        "2026": {
+          "lut": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/luts/viirs-reflectance.nc",
+          "background_available_through": "2025-09-30",
+          "preparation": {
+            "cloud_mask_application_stage": "post_inversion",
+            "cloud_mask_source_policy": "external_only",
+            "low_reflectance_threshold": 0.1,
+            "mask_low_reflectance_for_inversion": true,
+            "mask_water_using_external_file": true,
+            "mask_water_using_reflectance_qf": false,
+            "max_sensor_zenith": 65,
+            "max_solar_zenith": 85,
+            "min_obs_1km": 1,
+            "min_obs_500m": 1,
+            "water_mask_values": [
+              0,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "water_mask_source": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v05/v1/water.tif"
+          },
+          "axes": {
+            "x": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0/h09v05/viirs_h09v05_r0_2025.nc",
+              "dataset": "x",
+              "axis": "x"
+            },
+            "y": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0/h09v05/viirs_h09v05_r0_2025.nc",
+              "dataset": "y",
+              "axis": "y"
+            }
+          },
+          "ancillary": {
+            "canopy_fraction": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v05/v1/context.h5",
+              "dataset": "canopy_fraction"
+            },
+            "slope": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v05/v1/context.h5",
+              "dataset": "slope"
+            },
+            "aspect": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v05/v1/context.h5",
+              "dataset": "aspect"
+            },
+            "ice_fraction": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v05/v1/context.h5",
+              "dataset": "ice_fraction"
+            }
+          },
+          "background": {
+            "baseline": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0/h09v05/viirs_h09v05_r0_2025.nc",
+              "dataset": "r0_reflectance"
+            },
+            "screened": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v05/v1/screened-background-summer2025.h5",
+              "dataset": "screened_reflectance"
+            },
+            "index": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v05/v1/screened-background-summer2025.h5",
+              "dataset": "source_index"
+            }
+          }
+        }
+      },
+      "h10v04": {
+        "2026": {
+          "lut": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/luts/viirs-reflectance.nc",
+          "background_available_through": "2025-09-30",
+          "preparation": {
+            "cloud_mask_application_stage": "post_inversion",
+            "cloud_mask_source_policy": "external_only",
+            "low_reflectance_threshold": 0.1,
+            "mask_low_reflectance_for_inversion": true,
+            "mask_water_using_external_file": true,
+            "mask_water_using_reflectance_qf": false,
+            "max_sensor_zenith": 65,
+            "max_solar_zenith": 85,
+            "min_obs_1km": 1,
+            "min_obs_500m": 1,
+            "water_mask_values": [
+              0,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "water_mask_source": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h10v04/v1/water.tif"
+          },
+          "axes": {
+            "x": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0/h10v04/viirs_h10v04_r0_2025.nc",
+              "dataset": "x",
+              "axis": "x"
+            },
+            "y": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0/h10v04/viirs_h10v04_r0_2025.nc",
+              "dataset": "y",
+              "axis": "y"
+            }
+          },
+          "ancillary": {
+            "canopy_fraction": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h10v04/v1/context.h5",
+              "dataset": "canopy_fraction"
+            },
+            "slope": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h10v04/v1/context.h5",
+              "dataset": "slope"
+            },
+            "aspect": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h10v04/v1/context.h5",
+              "dataset": "aspect"
+            },
+            "ice_fraction": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h10v04/v1/context.h5",
+              "dataset": "ice_fraction"
+            }
+          },
+          "background": {
+            "baseline": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0/h10v04/viirs_h10v04_r0_2025.nc",
+              "dataset": "r0_reflectance"
+            },
+            "screened": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h10v04/v1/screened-background-summer2025.h5",
+              "dataset": "screened_reflectance"
+            },
+            "index": {
+              "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h10v04/v1/screened-background-summer2025.h5",
+              "dataset": "source_index"
+            }
+          }
+        }
+      }
+    }
+  },
+  "terrain": {
+    "h08v04": {
+      "dem": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v04/v1/context.h5",
+        "dataset": "dem"
+      },
+      "slope": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v04/v1/context.h5",
+        "dataset": "slope"
+      },
+      "aspect": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v04/v1/context.h5",
+        "dataset": "aspect"
+      }
+    },
+    "h08v05": {
+      "dem": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v05/v1/context.h5",
+        "dataset": "dem"
+      },
+      "slope": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v05/v1/context.h5",
+        "dataset": "slope"
+      },
+      "aspect": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v05/v1/context.h5",
+        "dataset": "aspect"
+      }
+    },
+    "h09v04": {
+      "dem": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v04/v1/context.h5",
+        "dataset": "dem"
+      },
+      "slope": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v04/v1/context.h5",
+        "dataset": "slope"
+      },
+      "aspect": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v04/v1/context.h5",
+        "dataset": "aspect"
+      }
+    },
+    "h09v05": {
+      "dem": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v05/v1/context.h5",
+        "dataset": "dem"
+      },
+      "slope": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v05/v1/context.h5",
+        "dataset": "slope"
+      },
+      "aspect": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v05/v1/context.h5",
+        "dataset": "aspect"
+      }
+    },
+    "h10v04": {
+      "dem": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h10v04/v1/context.h5",
+        "dataset": "dem"
+      },
+      "slope": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h10v04/v1/context.h5",
+        "dataset": "slope"
+      },
+      "aspect": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h10v04/v1/context.h5",
+        "dataset": "aspect"
+      }
+    }
+  },
+  "albedo_lut": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/luts/albedo.nc",
+  "scheduler": {
+    "job_type": "daily_five_tiles",
+    "policy": "scheduler_policy.json"
+  }
+}

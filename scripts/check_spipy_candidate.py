@@ -75,10 +75,10 @@ def validate_manifest(manifest: dict, workspace: Path) -> None:
             requirements.extend(extra_requirements)
         for requirement in requirements:
             check_requirement(requirement, components, f"{name}/pyproject.toml")
-        documentation_file = "doc/requirements.txt"
-        if git_output(repository, "ls-tree", "--name-only", revision, documentation_file).strip():
-            for requirement in git_output(repository, "show", f"{revision}:{documentation_file}").splitlines():
-                check_requirement(requirement.strip(), components, f"{name}/{documentation_file}")
+        for documentation_file in ("docs/requirements.txt", "doc/requirements.txt"):
+            if git_output(repository, "ls-tree", "--name-only", revision, documentation_file).strip():
+                for requirement in git_output(repository, "show", f"{revision}:{documentation_file}").splitlines():
+                    check_requirement(requirement.strip(), components, f"{name}/{documentation_file}")
         print(f"{name}: {revision}")
 
 

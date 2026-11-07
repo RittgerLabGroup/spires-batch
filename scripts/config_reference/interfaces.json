@@ -1,0 +1,1128 @@
+{
+  "workflow_scheduler": {
+    "source": "spires_batch.workflow.plan/render",
+    "fields": {
+      "policy": {
+        "type": [
+          "path",
+          "object"
+        ],
+        "required": true,
+        "description": "Shared scheduler policy path or complete inline policy object. Frozen into the plan. Child requests inherit it unless they explicitly select another policy."
+      },
+      "python": {
+        "type": "path",
+        "required": false,
+        "description": "Science interpreter used by rendered workflow jobs.",
+        "default": "planning interpreter"
+      },
+      "partition": {
+        "type": "string",
+        "required": false,
+        "description": "Slurm partition.",
+        "default": "blanca-snow"
+      },
+      "account": {
+        "type": "string",
+        "required": false,
+        "description": "Authorized Slurm account.",
+        "default": "blanca-snow"
+      },
+      "cpus": {
+        "type": "integer",
+        "required": false,
+        "description": "CPUs for individual job allocations. Scientific arrays use their child execution/scheduler resources; coordinator resources are separate.",
+        "default": 1
+      },
+      "memory": {
+        "type": "string",
+        "required": false,
+        "description": "Slurm memory size; 0 requires exclusive=true. Named profiles supply defaults.",
+        "default": "8G"
+      },
+      "time": {
+        "type": "string",
+        "required": false,
+        "description": "Slurm walltime.",
+        "default": "04:00:00"
+      },
+      "job_type": {
+        "type": "string",
+        "required": false,
+        "description": "Named job_types entry in execution.policy; required with a policy. Select one job type per batch request; do not combine with inline tile/stage profile routing."
+      },
+      "queue": {
+        "type": "string",
+        "required": false,
+        "description": "Named queue override from the same policy; sets cluster, partition, account and QoS together. Requires a job_type."
+      },
+      "cluster": {
+        "type": "string",
+        "required": false,
+        "description": "Slurm cluster; defaults from the selected queue, or blanca for explicit-resource configurations."
+      },
+      "qos": {
+        "type": "string",
+        "required": false,
+        "description": "Explicit authorized QoS override; normally select a named queue instead."
+      },
+      "exclusive": {
+        "type": "boolean",
+        "required": false,
+        "description": "Reserve an exclusive node; false unless the profile or request enables it."
+      }
+    },
+    "notes": [
+      "Unified workflows preserve managed batch arrays, historical date arrays and per-stage interpolation arrays. Named jobs advance after successful scheduler and scientific verification. Initialization, registration and NRT use individual allocations.",
+      "jobs.NAME.job_type and jobs.NAME.queue select per-job defaults; scheduler resource fields override defaults, then jobs.NAME.resources overrides those. The policy snapshot and resolved allocations are saved in the workflow plan."
+    ]
+  },
+  "scheduler_policy": {
+    "source": "spires_batch.scheduler_policy.load_policy",
+    "fields": {
+      "config_type": {
+        "type": "string",
+        "required": true,
+        "allowed_values": [
+          "scheduler_policy"
+        ],
+        "description": "Required baseline configuration kind; never an algorithm-selection switch."
+      },
+      "schema_version": {
+        "type": "integer",
+        "required": true,
+        "allowed_values": [
+          1
+        ],
+        "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+      },
+      "exclude_nodes": {
+        "type": "array[string]",
+        "required": true,
+        "description": "Verified site exclusion list. Do not substitute an empty list for the usual operational exclusions."
+      },
+      "queues": {
+        "type": "map[string,scheduler_queue]",
+        "required": false,
+        "description": "Named cluster/partition/account/QoS combinations; required when using named job profiles."
+      },
+      "job_types": {
+        "type": "map[string,scheduler_job_type]",
+        "required": false,
+        "description": "Shared per-job defaults and measurement evidence; explicitly selected by job_type."
+      }
+    },
+    "notes": []
+  },
+  "acquire": {
+    "source": "spires_batch.workflow.execute_job -> acquisition.acquire",
+    "fields": {
+      "config_type": {
+        "type": "string",
+        "required": true,
+        "allowed_values": [
+          "acquisition"
+        ],
+        "description": "Required baseline configuration kind; never an algorithm-selection switch."
+      },
+      "schema_version": {
+        "type": "integer",
+        "required": true,
+        "allowed_values": [
+          1
+        ],
+        "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+      },
+      "stream_root": {
+        "type": "path",
+        "required": true,
+        "description": "Already registered NRT stream."
+      },
+      "through": {
+        "type": "ISO date",
+        "required": true,
+        "description": "Inclusive requested availability."
+      },
+      "collection": {
+        "type": "string",
+        "required": false,
+        "description": "Native filename collection.",
+        "default": "002"
+      }
+    },
+    "notes": [
+      "Workflow acquire downloads; standalone nrt acquire needs --download.",
+      "Not a generic unregistered historical archive downloader."
+    ]
+  },
+  "mapped_field": {
+    "source": "spires_interpolation.raster_io.read_mapped_fields",
+    "fields": {
+      "path": {
+        "type": "path",
+        "required": true,
+        "description": "HDF5/NetCDF source file."
+      },
+      "dataset": {
+        "type": "string",
+        "required": true,
+        "description": "Dataset name or slash-separated HDF5 group path."
+      },
+      "index": {
+        "type": "integer",
+        "required": false,
+        "description": "Optional leading-axis selection, zero based."
+      },
+      "band": {
+        "type": "integer",
+        "required": false,
+        "description": "Optional trailing parameter-axis selection, zero based."
+      },
+      "axis": {
+        "type": "x|y",
+        "required": false,
+        "description": "Read one-dimensional native axis and broadcast over a raster window. Do not combine with other selection transforms."
+      },
+      "bitwise_and": {
+        "type": "integer",
+        "required": false,
+        "description": "Apply an integer bit mask after reading a non-axis field."
+      },
+      "archive_file": {
+        "type": "object",
+        "required": false,
+        "description": "Controller-owned historical file identity (bytes, mtime_ns; may include path). Not a manual override."
+      }
+    },
+    "notes": []
+  },
+  "interpolation": {
+    "source": "spires_batch.interpolation.plan",
+    "fields": {
+      "config_type": {
+        "type": "string",
+        "required": true,
+        "allowed_values": [
+          "interpolation"
+        ],
+        "description": "Required baseline configuration kind; never an algorithm-selection switch."
+      },
+      "schema_version": {
+        "type": "integer",
+        "required": true,
+        "allowed_values": [
+          1
+        ],
+        "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+      },
+      "algorithm": {
+        "type": "string",
+        "required": false,
+        "description": "Evaluated sensor recipe; not solver ID.",
+        "default": "viirs_snow",
+        "allowed_values": [
+          "viirs_snow"
+        ]
+      },
+      "history_start": {
+        "type": "ISO date",
+        "required": true,
+        "description": "Beginning of consecutive historical input/state sequence."
+      },
+      "start": {
+        "type": "ISO date",
+        "required": true,
+        "description": "Inclusive target start. Initial historical requests begin October 1."
+      },
+      "stop": {
+        "type": "ISO date",
+        "required": true,
+        "description": "Exclusive target stop."
+      },
+      "available_through": {
+        "type": "ISO date",
+        "required": true,
+        "description": "Inclusive input availability; final issues require seven look-ahead days."
+      },
+      "shape": {
+        "type": "array[integer]",
+        "required": true,
+        "description": "Actual native [rows, columns]; do not assume the generic example's shape."
+      },
+      "stripe_rows": {
+        "type": "integer",
+        "required": false,
+        "description": "Positive processing stripe height; part of checkpoint layout.",
+        "default": 20
+      },
+      "source_stream": {
+        "type": "string",
+        "required": false,
+        "description": "Input stream provenance.",
+        "default": "standard",
+        "allowed_values": [
+          "standard",
+          "nrt",
+          "mixed"
+        ]
+      },
+      "tiles": {
+        "type": "map[tile,tile_context]",
+        "required": true,
+        "description": "Complete donor domain; each value follows interpolation_tile."
+      },
+      "output": {
+        "type": "path",
+        "required": true,
+        "description": "Distinct working/output generation root."
+      },
+      "snow_library": {
+        "type": "path",
+        "required": true,
+        "description": "Explicitly built snow-fraction native library."
+      },
+      "spatial_library": {
+        "type": "path",
+        "required": true,
+        "description": "Explicitly built OpenMP spatial library."
+      },
+      "albedo_lut": {
+        "type": "path",
+        "required": true,
+        "description": "Validated albedo LUT; checksum recorded."
+      },
+      "scheduler": {
+        "type": "object",
+        "required": true,
+        "description": "See interpolation_scheduler; all base fields required."
+      },
+      "asset_provenance": {
+        "type": "object",
+        "required": true,
+        "description": "Versioned scientific evidence. Arbitrary descriptive metadata permitted; observation_policy is used for compatibility/NRT handoff."
+      },
+      "seed": {
+        "type": "map[tile,path]",
+        "required": false,
+        "description": "Controller-selected compatible checkpoint for every tile; absent for initial historical run."
+      },
+      "seed_plan": {
+        "type": "path",
+        "required": false,
+        "description": "Original historical plan provenance for current-format state; never a compatibility bypass or a legacy-algorithm selector."
+      },
+      "stream_root": {
+        "type": "path",
+        "required": false,
+        "description": "Controller-assigned stream root during incremental operation."
+      }
+    },
+    "notes": [
+      "history_start <= start < stop <= available_through + one day.",
+      "Field paths resolve relative to request JSON; every calendar date must be present, with null only for a verified missing observation.",
+      "Controller-written state_context/state_identity are generated artifacts, not accepted initial request fields."
+    ]
+  },
+  "interpolation_scheduler": {
+    "source": "spires_batch.interpolation.stage_resources/plan",
+    "fields": {
+      "policy": {
+        "type": "path",
+        "required": false,
+        "description": "Shared scheduler-policy JSON resolved relative to the configuration file."
+      },
+      "job_type": {
+        "type": "string",
+        "required": false,
+        "description": "Named job_types entry in execution.policy; required with a policy. Select one job type per batch request; do not combine with inline tile/stage profile routing."
+      },
+      "queue": {
+        "type": "string",
+        "required": false,
+        "description": "Named queue override from the same policy; sets cluster, partition, account and QoS together. Requires a job_type."
+      },
+      "cluster": {
+        "type": "string",
+        "required": false,
+        "description": "Slurm cluster; defaults from the selected queue, or blanca for explicit-resource configurations."
+      },
+      "partition": {
+        "type": "string",
+        "required": false,
+        "description": "Explicit partition override; normally select a named queue instead."
+      },
+      "account": {
+        "type": "string",
+        "required": false,
+        "description": "Explicit authorized account override; normally select a named queue instead."
+      },
+      "qos": {
+        "type": "string",
+        "required": false,
+        "description": "Explicit authorized QoS override; normally select a named queue instead."
+      },
+      "cpus": {
+        "type": "positive integer",
+        "required": false,
+        "description": "CPUs per task; overrides the selected job profile."
+      },
+      "memory": {
+        "type": "Slurm memory string",
+        "required": false,
+        "description": "Total memory per task, not per CPU. 0 means all node memory and requires exclusive=true; interpolation requires a bounded size."
+      },
+      "time": {
+        "type": "Slurm walltime string",
+        "required": false,
+        "description": "Per-task walltime; overrides the selected profile."
+      },
+      "concurrency": {
+        "type": "positive integer",
+        "required": false,
+        "description": "Maximum simultaneous array tasks, not threads within a task. Does not create concurrent updates to one NRT stream."
+      },
+      "exclusive": {
+        "type": "boolean",
+        "required": false,
+        "description": "Reserve an exclusive node; false unless the profile or request enables it."
+      },
+      "stages": {
+        "type": "map[stage,object]",
+        "required": false,
+        "description": "Overrides for screen, spatial, properties and export. Each accepts job_type, queue and the resource fields above (not policy).",
+        "default": {}
+      }
+    },
+    "notes": [
+      "Stage profile defaults replace base profile defaults. Explicit base resource fields override profile defaults, and explicit stage fields win last. A base queue override applies to every stage unless a stage selects its own queue.",
+      "Every stage uses one cluster; cluster/QoS/exclusive directives are emitted in generated Slurm scripts."
+    ]
+  },
+  "interpolation_tile": {
+    "source": "spires_batch.interpolation.plan; spires_interpolation.raster_io",
+    "fields": {
+      "daily": {
+        "type": "map[ISO date,object|null]",
+        "required": true,
+        "description": "Exactly all prepared_daily fields per nonmissing date, each mapped_field."
+      },
+      "terrain": {
+        "type": "object",
+        "required": true,
+        "description": "Exactly x, y, dem, slope, aspect, canopy_fraction, each mapped_field. Axes are projected metres; elevations integer metres; geometry degrees."
+      },
+      "bright_soil": {
+        "type": "map[WY,mapped_field]",
+        "required": true,
+        "description": "Annual bright-soil Boolean masks covering every observation WY, including replay prefix."
+      },
+      "agriculture": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Agricultural Boolean mask."
+      },
+      "coastal": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Explicit Boolean coastal mask controlling missing climatology treatment."
+      },
+      "frequency": {
+        "type": "array[mapped_field]",
+        "required": true,
+        "description": "Exactly 12 monthly snow frequencies, January through December."
+      }
+    },
+    "notes": []
+  },
+  "prepared_daily": {
+    "source": "spires_interpolation.raster_io.DAILY_FIELDS",
+    "fields": {
+      "state": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "0 unknown, 1 observed snow-free, 2 snow."
+      },
+      "canopy_adjusted_fsca": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Ground/canopy-adjusted snow fraction, 0–1."
+      },
+      "raw_snow_fraction": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Original inversion snow fraction, 0–1."
+      },
+      "sensor_zenith": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "View zenith in physical degrees."
+      },
+      "screening_conditions": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Packed cloud/SWIR conditions; see algorithm documentation."
+      },
+      "cloud_adjacency": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Observation-matched QA adjacency."
+      },
+      "context": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Incomplete cloud-neighbor context flag."
+      },
+      "grain_radius": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Snow grain radius in micrometres."
+      },
+      "dust": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Dust concentration in ppm."
+      },
+      "screening_flags": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Packed retrieval eligibility bits."
+      },
+      "solar_zenith": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Solar zenith in degrees."
+      },
+      "solar_azimuth": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Solar azimuth in degrees clockwise from north."
+      }
+    },
+    "notes": []
+  },
+  "nrt_cycle": {
+    "source": "spires_batch.pipeline.cycle/prepare_date",
+    "fields": {
+      "config_type": {
+        "type": "string",
+        "required": true,
+        "allowed_values": [
+          "nrt_cycle"
+        ],
+        "description": "Required baseline configuration kind; never an algorithm-selection switch."
+      },
+      "schema_version": {
+        "type": "integer",
+        "required": true,
+        "allowed_values": [
+          1
+        ],
+        "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+      },
+      "stream_root": {
+        "type": "path",
+        "required": true,
+        "description": "Registered real historical stream; do not invent an empty history."
+      },
+      "science_python": {
+        "type": "path",
+        "required": true,
+        "description": "Interpreter with coordinated science packages for snow retrieval; the cloud package is not required here."
+      },
+      "cloud_python": {
+        "type": "path",
+        "required": true,
+        "description": "Standalone cloud interpreter for both observation-matched preparation and cloud inference; no SPIReS packages required."
+      },
+      "cloud_model": {
+        "type": "path",
+        "required": true,
+        "description": "Selected matched-cloud model manifest."
+      },
+      "collection": {
+        "type": "string",
+        "required": false,
+        "description": "Collection for selected native sources.",
+        "default": "002"
+      },
+      "observation_policy": {
+        "type": "object",
+        "required": true,
+        "description": "Must exactly match historical asset_provenance.observation_policy; cloud_model_sha256 must equal the manifest bytes' SHA256. Additional policy fields are scientific identity, not arbitrary runtime overrides."
+      },
+      "tiles": {
+        "type": "map[tile,map[WY,retrieval_recipe]]",
+        "required": true,
+        "description": "Every tile in the registered domain; retain previous WY recipes for replacements."
+      },
+      "annual_bright_soil": {
+        "type": "map[tile,map[WY,mapped_field]]",
+        "required": false,
+        "description": "Append-only new annual mask bindings.",
+        "default": {}
+      },
+      "seed_plan": {
+        "type": "path",
+        "required": false,
+        "description": "Original historical-plan provenance for current scientific state; never a numerical compatibility bypass."
+      },
+      "through": {
+        "type": "ISO date",
+        "required": false,
+        "description": "Required in a universal nrt job. Standalone cycle takes --through instead; a JSON value alone does not select its date."
+      },
+      "retrieval_concurrency": {
+        "type": "positive integer",
+        "required": false,
+        "description": "Concurrent tile/date subprocesses after whole-domain cloud inference. Defaults to all nonmissing tiles. Each subprocess runs one inversion worker with numerical-library threads limited to one. Request at least this many CPUs per task; smaller allocations fail rather than silently serialize. A smaller explicit value permits queued tile retrievals. This applies to historical prepare_date as well as NRT.",
+        "default": "number of nonmissing tiles"
+      },
+      "retrieval_memory_gib": {
+        "type": "positive integer",
+        "required": false,
+        "description": "Alternative per-worker memory budget, not an RSS limit. Mutually exclusive with preparation_memory_gib. When neither is specified, defaults to 6 GiB per concurrent tile plus 2 GiB coordinator headroom. Cloud and subsequent interpolation may require more. Slurm memory/CPU checks use allocation environment variables when available; outside Slurm, the caller must enforce reservations.",
+        "default": 6
+      },
+      "preparation_memory_gib": {
+        "type": "positive integer",
+        "required": false,
+        "description": "Direct total allocation budget in GiB for one date's cloud preparation, concurrent retrievals and coordinator. No additional per-tile multiplication or headroom is added. Mutually exclusive with retrieval_memory_gib. Set the Slurm --mem request to this value or greater; JSON checks an existing allocation, it does not submit or resize jobs. The five-tile example uses 16. Later interpolation may need a separately sized allocation."
+      },
+      "scheduler": {
+        "type": "scheduler_selection",
+        "required": false,
+        "description": "Optional shared resource profile. Supplies preparation concurrency/memory defaults and archives resolved configuration; does not submit, resize an allocation or change the stream interpolation recipe."
+      }
+    },
+    "notes": [
+      "Run inside an allocation. Even without --execute, acquisition, matched clouds and retrieval run.",
+      "Use absolute deployed interpreter/model/recipe paths for standalone cycle. Universal workflow resolves recognized path fields relative to its/request JSON.",
+      "No automatic bootstrap, cron installation, schema migration or full-history replay.",
+      "With scheduler.job_type, preparation defaults come from the profile before explicit recipe overrides. Ensure the existing allocation also covers the registered interpolation settings."
+    ]
+  },
+  "retrieval_recipe": {
+    "source": "spires_batch.retrieval.retrieve",
+    "fields": {
+      "lut": {
+        "type": "path",
+        "required": true,
+        "description": "Reflectance LUT in evaluated band order I1/I2/I3/M2/M4/M8/M11."
+      },
+      "background_available_through": {
+        "type": "ISO date",
+        "required": true,
+        "description": "Must precede every processed observation."
+      },
+      "preparation": {
+        "type": "object",
+        "required": true,
+        "description": "Scene preparation options; see retrieval_preparation. Must use post_inversion clouds."
+      },
+      "axes": {
+        "type": "object",
+        "required": true,
+        "description": "x and y mapped_field bindings for the exact native grid."
+      },
+      "ancillary": {
+        "type": "object",
+        "required": true,
+        "description": "Mapped canopy_fraction, slope, aspect, ice_fraction required by retained retrieval."
+      },
+      "background": {
+        "type": "object",
+        "required": true,
+        "description": "baseline mapped_field with trailing band axis; optionally screened plus index as a pair."
+      },
+      "source": {
+        "type": "source_record",
+        "required": false,
+        "description": "Required by direct retrieve; filled from inventory by prepare_date."
+      },
+      "clouds": {
+        "type": "map[tile,object]",
+        "required": false,
+        "description": "Each value contains cloud and context GeoTIFF paths for the same-day domain; coordinator supplies it."
+      },
+      "prepared_context": {
+        "type": "string",
+        "required": false,
+        "description": "day_context digest for the complete same-day source inventory; coordinator supplies it."
+      }
+    },
+    "notes": [
+      "Source, clouds and prepared_context are mandatory when calling retrieve directly.",
+      "Solver 6, max_eval=200 and initial radius=250 micrometres are fixed by this worker; generic daily tuning fields are not accepted alternatives."
+    ]
+  },
+  "retained_prepare": {
+    "source": "spires_batch.inputs.prepare_retained",
+    "fields": {
+      "config_type": {
+        "type": "string",
+        "required": true,
+        "allowed_values": [
+          "prepared_observation"
+        ],
+        "description": "Required baseline configuration kind; never an algorithm-selection switch."
+      },
+      "schema_version": {
+        "type": "integer",
+        "required": true,
+        "allowed_values": [
+          1
+        ],
+        "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+      },
+      "date": {
+        "type": "ISO date",
+        "required": true,
+        "description": "Must equal native source acquisition date."
+      },
+      "tile": {
+        "type": "string",
+        "required": true,
+        "description": "Must equal source tile."
+      },
+      "shape": {
+        "type": "array[integer]",
+        "required": true,
+        "description": "Actual native rows/columns."
+      },
+      "fields": {
+        "type": "object",
+        "required": true,
+        "description": "Required raw_snow_fraction, canopy_adjusted_fsca, screening_flags, qa_qf1, qa_qf7, sensor_zenith, grain_radius, dust, solar_zenith, solar_azimuth mapped fields; additionally exactly one of swir_flags or swir_score, or spectral reconstruction."
+      },
+      "axes": {
+        "type": "object",
+        "required": true,
+        "description": "x and y mapped_field bindings."
+      },
+      "clouds": {
+        "type": "map[tile,object]",
+        "required": true,
+        "description": "cloud/context paths, including available neighboring tiles."
+      },
+      "source": {
+        "type": "source_record",
+        "required": true,
+        "description": "Exact original native source vintage."
+      },
+      "prepared_context": {
+        "type": "string",
+        "required": true,
+        "description": "Complete same-day source context digest."
+      },
+      "spectral": {
+        "type": "object",
+        "required": false,
+        "description": "Original spectral reconstruction evidence, see spectral_reconstruction."
+      },
+      "output": {
+        "type": "path",
+        "required": false,
+        "description": "Required by universal prepare jobs; standalone nrt prepare uses --output."
+      }
+    },
+    "notes": []
+  },
+  "spectral_reconstruction": {
+    "source": "spires_batch.inputs.reconstruct_swir",
+    "fields": {
+      "bands": {
+        "type": "array[string]",
+        "required": true,
+        "description": "Original fitted band order."
+      },
+      "lut": {
+        "type": "path",
+        "required": true,
+        "description": "Original fitted reflectance LUT."
+      },
+      "shade": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Original fitted shade fraction."
+      },
+      "sse": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Original spectral sum of squared errors; reconstructed fit must agree."
+      },
+      "background": {
+        "type": "mapped_field",
+        "required": true,
+        "description": "Original baseline background spectrum."
+      },
+      "screened_background": {
+        "type": "mapped_field",
+        "required": false,
+        "description": "Alternative original background, paired with screen_used."
+      },
+      "screen_used": {
+        "type": "mapped_field",
+        "required": false,
+        "description": "Boolean per-pixel alternative background selection, paired with screened_background."
+      }
+    },
+    "notes": []
+  },
+  "source_record": {
+    "source": "spires_batch.nrt.source_record",
+    "fields": {
+      "path": {
+        "type": "path",
+        "required": true,
+        "description": "Native source path."
+      },
+      "bytes": {
+        "type": "integer",
+        "required": true,
+        "description": "File size from stat; not user-estimated."
+      },
+      "mtime_ns": {
+        "type": "integer",
+        "required": true,
+        "description": "File modification time in nanoseconds."
+      },
+      "product": {
+        "type": "string",
+        "required": true,
+        "description": "VJ109GA or VJ109GA_NRT."
+      },
+      "date": {
+        "type": "ISO date",
+        "required": true,
+        "description": "Derived acquisition date."
+      },
+      "tile": {
+        "type": "string",
+        "required": true,
+        "description": "Derived native tile."
+      },
+      "collection": {
+        "type": "string",
+        "required": true,
+        "description": "Derived filename collection."
+      },
+      "processing": {
+        "type": "string",
+        "required": true,
+        "description": "Derived processing timestamp."
+      },
+      "source_stream": {
+        "type": "string",
+        "required": true,
+        "description": "standard or nrt, derived from product."
+      },
+      "prepared": {
+        "type": "object",
+        "required": false,
+        "description": "Generated prepared_daily bindings on retrieval receipt."
+      },
+      "prepared_context": {
+        "type": "string",
+        "required": false,
+        "description": "Generated matched-domain observation digest."
+      }
+    },
+    "notes": [
+      "Create with source_record rather than hand-editing stat fields. Acquisition/archive controllers may attach additional provenance such as cmr_updated or origin; those are not deployment knobs."
+    ]
+  },
+  "nrt_storage": {
+    "source": "spires_batch.nrt_storage.DEFAULTS/configure",
+    "fields": {
+      "config_type": {
+        "type": "string",
+        "required": true,
+        "allowed_values": [
+          "nrt_storage"
+        ],
+        "description": "Required baseline configuration kind; never an algorithm-selection switch."
+      },
+      "schema_version": {
+        "type": "integer",
+        "required": true,
+        "allowed_values": [
+          1
+        ],
+        "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+      },
+      "working_days": {
+        "type": "integer",
+        "required": false,
+        "description": "Bounded working inventory retention; must be at least 66 days.",
+        "default": 90
+      },
+      "daily_days": {
+        "type": "integer",
+        "required": false,
+        "description": "Daily recovery generation retention.",
+        "default": 7
+      },
+      "monthly_months": {
+        "type": "integer",
+        "required": false,
+        "description": "Monthly recovery checkpoint retention.",
+        "default": 12
+      },
+      "success_grace_days": {
+        "type": "integer",
+        "required": false,
+        "description": "Grace before completed workspace cleanup.",
+        "default": 7
+      },
+      "failed_grace_days": {
+        "type": "integer",
+        "required": false,
+        "description": "Grace before failed workspace cleanup.",
+        "default": 14
+      },
+      "unresolved_warning_days": {
+        "type": "integer",
+        "required": false,
+        "description": "Age at which unresolved NRT-to-standard dates warn.",
+        "default": 30
+      },
+      "warning_bytes": {
+        "type": "object",
+        "required": false,
+        "description": "Category-to-byte warning thresholds; warnings are not transfer permission or a hard byte cap.",
+        "default": {}
+      },
+      "growth_warning_bytes": {
+        "type": "integer",
+        "required": false,
+        "description": "Inventory growth warning threshold; 0 disables this warning.",
+        "default": 0
+      },
+      "archive_root": {
+        "type": "path",
+        "required": false,
+        "description": "Durable archive; default STREAM_ROOT/archive. Cannot change in place once published. Must not overlap mutable workspaces."
+      }
+    },
+    "notes": []
+  },
+  "historical_download": {
+    "source": "earthdata-downloads/scripts/generate_viirs_download_script.py",
+    "fields": {
+      "product": {
+        "type": "string",
+        "required": true,
+        "description": "Standard VNP09GA, VJ109GA or VJ209GA."
+      },
+      "version": {
+        "type": "string",
+        "required": true,
+        "description": "Three-digit collection such as 002."
+      },
+      "tiles": {
+        "type": "array[string]",
+        "required": true,
+        "description": "Nonempty unique tile IDs."
+      },
+      "start_date": {
+        "type": "ISO date",
+        "required": true,
+        "description": "Inclusive query start."
+      },
+      "end_date": {
+        "type": "ISO date",
+        "required": true,
+        "description": "Inclusive query stop."
+      },
+      "archive_root": {
+        "type": "absolute path",
+        "required": true,
+        "description": "Existing product input directory; files organized by tile/year."
+      },
+      "script_root": {
+        "type": "absolute path",
+        "required": true,
+        "description": "Fresh output directory for coverage report and interactive download scripts."
+      }
+    },
+    "notes": [
+      "Standalone external acquisition utility, not a universal workflow job kind.",
+      "Default command only inspects local presence; --query writes scripts after CMR lookup, never downloads/submits."
+    ]
+  },
+  "historical_preparation": {
+    "source": "spires_batch.historical.HistoricalRequest / pipeline.prepare_date",
+    "fields": {},
+    "notes": [
+      "See schemas.historical for every top-level field and scheduler option. Nested preparation is a recipe fragment, not a standalone nrt_cycle config: it has no config_type/schema_version header and uses science_python, cloud_python, cloud_model, collection, observation_policy, retrieval_concurrency, retrieval_memory_gib, preparation_memory_gib and tiles. stream_root, through and annual_bright_soil are not historical preparation options.",
+      "Tile/WY retrieval bindings follow interfaces.retrieval_recipe. terrain uses mapped_field bindings for dem (metres), slope and aspect (degrees). Daily albedo is evaluated only for state=2 and screening_flags=0; no interpolation is performed.",
+      "missing_reflectance defaults to error: missing local tile/dates stop planning. Explicit allow records each absent tile/date and search pattern in missing_sources, writes a null source inventory entry, and permits a missing-observation receipt. Receipt assembly verifies the saved plan and writes null daily mappings, expanded by interpolation into unknown state and NaN scientific fields. No fake reflectance or empty raster is written. These gaps remain null in NRT history and can be revisited. The planner does not query upstream availability; the operator authorizes local gaps. Duplicate vintages, corrupt existing files, inaccessible archive roots and sources lost or newly appearing after planning still fail. Dates use start inclusive and stop exclusive."
+    ]
+  },
+  "scheduler_selection": {
+    "source": "spires_batch.scheduler_policy.resolve_scheduler",
+    "fields": {
+      "policy": {
+        "type": "path",
+        "required": false,
+        "description": "Shared scheduler-policy JSON resolved relative to the configuration file."
+      },
+      "job_type": {
+        "type": "string",
+        "required": false,
+        "description": "Named job_types entry in execution.policy; required with a policy. Select one job type per batch request; do not combine with inline tile/stage profile routing."
+      },
+      "queue": {
+        "type": "string",
+        "required": false,
+        "description": "Named queue override from the same policy; sets cluster, partition, account and QoS together. Requires a job_type."
+      },
+      "cluster": {
+        "type": "string",
+        "required": false,
+        "description": "Slurm cluster; defaults from the selected queue, or blanca for explicit-resource configurations."
+      },
+      "partition": {
+        "type": "string",
+        "required": false,
+        "description": "Explicit partition override; normally select a named queue instead."
+      },
+      "account": {
+        "type": "string",
+        "required": false,
+        "description": "Explicit authorized account override; normally select a named queue instead."
+      },
+      "qos": {
+        "type": "string",
+        "required": false,
+        "description": "Explicit authorized QoS override; normally select a named queue instead."
+      },
+      "cpus": {
+        "type": "positive integer",
+        "required": false,
+        "description": "CPUs per task; overrides the selected job profile."
+      },
+      "memory": {
+        "type": "Slurm memory string",
+        "required": false,
+        "description": "Total memory per task, not per CPU. 0 means all node memory and requires exclusive=true; interpolation requires a bounded size."
+      },
+      "time": {
+        "type": "Slurm walltime string",
+        "required": false,
+        "description": "Per-task walltime; overrides the selected profile."
+      },
+      "concurrency": {
+        "type": "positive integer",
+        "required": false,
+        "description": "Maximum simultaneous array tasks, not threads within a task. Does not create concurrent updates to one NRT stream."
+      },
+      "exclusive": {
+        "type": "boolean",
+        "required": false,
+        "description": "Reserve an exclusive node; false unless the profile or request enables it."
+      }
+    },
+    "notes": [
+      "Profile defaults are resolved before planning. Explicit resource fields override profile defaults. Plans store resolved resources and a snapshot; policy edits do not resize submitted jobs.",
+      "snapshot is generated plan metadata, not a field to author. Named workflows use job_type/queue beside each jobs entry and resource overrides under jobs.NAME.resources."
+    ]
+  },
+  "scheduler_queue": {
+    "source": "spires_batch.scheduler_policy.QUEUE_FIELDS",
+    "fields": {
+      "cluster": {
+        "type": "string",
+        "required": true,
+        "description": "Single scheduler token for the named queue; no comma-separated automatic fallback."
+      },
+      "partition": {
+        "type": "string",
+        "required": true,
+        "description": "Single scheduler token for the named queue; no comma-separated automatic fallback."
+      },
+      "account": {
+        "type": "string",
+        "required": true,
+        "description": "Single scheduler token for the named queue; no comma-separated automatic fallback."
+      },
+      "qos": {
+        "type": "string",
+        "required": true,
+        "description": "Single scheduler token for the named queue; no comma-separated automatic fallback."
+      }
+    },
+    "notes": [
+      "The supplied queues are blanca-snow, blanca-rittger and preemptable. preemptable uses cluster/partition blanca, account blanca-snow and QoS preemptable; verify each operator's account authorization. Shared exclusions apply to every queue. No automatic overflow or redistribution is implied."
+    ]
+  },
+  "scheduler_job_type": {
+    "source": "spires_batch.scheduler_policy.profile_resources/preparation_defaults",
+    "fields": {
+      "cpus": {
+        "type": "positive integer",
+        "required": true,
+        "description": "CPUs per task; overrides the selected job profile."
+      },
+      "memory": {
+        "type": "Slurm memory string",
+        "required": true,
+        "description": "Total memory per task, not per CPU. 0 means all node memory and requires exclusive=true; interpolation requires a bounded size."
+      },
+      "time": {
+        "type": "Slurm walltime string",
+        "required": true,
+        "description": "Per-task walltime; overrides the selected profile."
+      },
+      "concurrency": {
+        "type": "positive integer",
+        "required": true,
+        "description": "Maximum simultaneous array tasks, not threads within a task. Does not create concurrent updates to one NRT stream."
+      },
+      "exclusive": {
+        "type": "boolean",
+        "required": false,
+        "description": "Reserve an exclusive node; false unless the profile or request enables it."
+      },
+      "queue": {
+        "type": "string",
+        "required": true,
+        "description": "Default queue name from policy.queues."
+      },
+      "description": {
+        "type": "string",
+        "required": false,
+        "description": "Optional human-readable explanation; does not affect execution."
+      },
+      "unit": {
+        "type": "string",
+        "required": false,
+        "description": "What one task processes: tile/date, whole domain/date, stripe, or export."
+      },
+      "status": {
+        "type": "string",
+        "required": false,
+        "description": "Evidence maturity, such as measured, operator_baseline, or starting_budget; documentation only."
+      },
+      "evidence": {
+        "type": "array[string]",
+        "required": false,
+        "description": "Measurements, campaign/job identifiers, dates and limitations supporting the reservation."
+      },
+      "preparation": {
+        "type": "object",
+        "required": false,
+        "description": "Defaults for matched daily/NRT preparation: retrieval_concurrency and either preparation_memory_gib or retrieval_memory_gib. Explicit recipe settings override these."
+      },
+      "max_tiles": {
+        "type": "positive integer",
+        "required": false,
+        "description": "Maximum domain size supported by this preparation profile. Larger domains must select or define a suitable profile."
+      }
+    },
+    "notes": [
+      "Raw tile inversion and full matched preparation are different work units; a multi-tile preparation request must cover cloud inference and coordinator overhead, not just one inversion.",
+      "R0 uses memory=0 and exclusive=true on blanca-snow; CPU count does not assert algorithmic scaling."
+    ]
+  }
+}

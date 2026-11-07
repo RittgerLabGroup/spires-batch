@@ -1,0 +1,8 @@
+{% extends "layout.html" %}
+{% block extrahead %}
+{{ super() }}
+<meta http-equiv="refresh" content="0; url={{ pathto(master_doc) }}">
+{% endblock %}
+{% block body %}
+<p><a href="{{ pathto(master_doc) }}">Open the spires-batch documentation.</a></p>
+{% endblock %}

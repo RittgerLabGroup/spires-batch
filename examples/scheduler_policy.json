@@ -1,3 +1,173 @@
 {
-  "exclude_nodes": []
+  "config_type": "scheduler_policy",
+  "schema_version": 1,
+  "exclude_nodes": [
+    "bhpc-c7-u7-16",
+    "bnode0505",
+    "bnode0506",
+    "bhpc-c5-u7-20",
+    "bhpc-c7-u7-4",
+    "bhpc-c7-u7-14",
+    "bhpc-c7-u19-16",
+    "bhpc-c7-u7-15",
+    "bhpc-c7-u7-11",
+    "bhpc-c7-u19-4",
+    "bhpc-c7-u19-7",
+    "bhpc-c5-u7-22",
+    "bhpc-c5-u7-14",
+    "bhpc-c7-u7-10",
+    "bgpu-mktg1"
+  ],
+  "queues": {
+    "blanca-snow": {
+      "cluster": "blanca",
+      "partition": "blanca-snow",
+      "account": "blanca-snow",
+      "qos": "blanca-snow"
+    },
+    "blanca-rittger": {
+      "cluster": "blanca",
+      "partition": "blanca-rittger",
+      "account": "blanca-rittger",
+      "qos": "blanca-rittger"
+    },
+    "preemptable": {
+      "cluster": "blanca",
+      "partition": "blanca",
+      "account": "blanca-snow",
+      "qos": "preemptable"
+    }
+  },
+  "job_types": {
+    "r0": {
+      "queue": "blanca-snow",
+      "cpus": 1,
+      "memory": "0",
+      "time": "08:00:00",
+      "concurrency": 1,
+      "unit": "One tile / summer; exclusive full node",
+      "status": "measured",
+      "evidence": [
+        "WY2026 five-tile campaign: 122 summer scenes per tile, maintained in-memory construction.",
+        "Request all node memory and exclusive access; one CPU requested does not mean the rest of the node is shared. Additional compute threads have not been benchmarked."
+      ],
+      "exclusive": true
+    },
+    "tile_inversion": {
+      "queue": "blanca-rittger",
+      "cpus": 1,
+      "memory": "6G",
+      "time": "04:00:00",
+      "concurrency": 20,
+      "unit": "One tile / date spectral inversion worker",
+      "status": "operator_baseline",
+      "evidence": [
+        "Operator baseline: one worker and 6 GiB per tile/date.",
+        "This is not the budget for a complete multi-tile cloud/preparation job."
+      ]
+    },
+    "daily_single_tile": {
+      "queue": "blanca-rittger",
+      "cpus": 1,
+      "memory": "8G",
+      "time": "04:00:00",
+      "concurrency": 4,
+      "unit": "One date with one tile, clouds, retrieval and daily albedo",
+      "status": "starting_budget",
+      "evidence": [
+        "6 GiB worker baseline plus 2 GiB coordinator headroom; validate a pilot with the complete runner."
+      ],
+      "max_tiles": 1,
+      "preparation": {
+        "retrieval_concurrency": 1,
+        "preparation_memory_gib": 8
+      }
+    },
+    "daily_five_tiles": {
+      "queue": "blanca-rittger",
+      "cpus": 5,
+      "memory": "16G",
+      "time": "04:00:00",
+      "concurrency": 4,
+      "unit": "One date across up to five tiles, one retrieval worker per tile",
+      "status": "measured",
+      "evidence": [
+        "Five-tile 16 GiB trial and historical preparation completed; observed preparation peak was below 10 GiB.",
+        "The current runner adds daily albedo; validate the complete runner before treating that measurement as its guarantee."
+      ],
+      "max_tiles": 5,
+      "preparation": {
+        "retrieval_concurrency": 5,
+        "preparation_memory_gib": 16
+      }
+    },
+    "nrt_five_tiles": {
+      "queue": "blanca-rittger",
+      "cpus": 5,
+      "memory": "16G",
+      "time": "12:00:00",
+      "concurrency": 1,
+      "unit": "One NRT cycle over up to five tiles; serialized updates to one stream",
+      "status": "starting_budget",
+      "evidence": [
+        "Preparation uses the five-tile measured budget; complete cycle time/memory still needs validation.",
+        "The allocation must also cover the interpolation settings registered with the stream. No cron or Slurm job is created by selecting this profile."
+      ],
+      "max_tiles": 5,
+      "preparation": {
+        "retrieval_concurrency": 5,
+        "preparation_memory_gib": 16
+      }
+    },
+    "interpolation_screen": {
+      "queue": "blanca-rittger",
+      "cpus": 1,
+      "memory": "6G",
+      "time": "08:00:00",
+      "concurrency": 16,
+      "unit": "One tile / row stripe over the historical interval",
+      "status": "measured",
+      "evidence": [
+        "600 screening tasks completed in the five-tile WY2026 campaign with this per-task allocation."
+      ]
+    },
+    "interpolation_spatial": {
+      "queue": "blanca-rittger",
+      "cpus": 4,
+      "memory": "8G",
+      "time": "12:00:00",
+      "concurrency": 8,
+      "unit": "One date across the full five-tile donor domain",
+      "status": "measured",
+      "evidence": [
+        "2026-11-06: 76 completed spatial tasks had a maximum sampled MaxRSS of 1.30 GiB, median 0.75 GiB.",
+        "Four CPUs support the multithreaded spatial kernel; 8 GiB retains headroom. Full winter/spring coverage remains to be checked.",
+        "Campaign array 29341812 was changed from 24 GiB / concurrency 4 to 8 GiB / concurrency 8, split manually across blanca-snow and blanca-rittger. This profile selects one queue; it does not reproduce that split automatically."
+      ]
+    },
+    "interpolation_properties": {
+      "queue": "blanca-rittger",
+      "cpus": 1,
+      "memory": "8G",
+      "time": "12:00:00",
+      "concurrency": 12,
+      "unit": "One tile / row stripe over the historical interval",
+      "status": "starting_budget",
+      "evidence": [
+        "Retain until the property-completion pilot has measured CPU, peak memory and runtime."
+      ]
+    },
+    "interpolation_export": {
+      "queue": "blanca-rittger",
+      "cpus": 1,
+      "memory": "8G",
+      "time": "12:00:00",
+      "concurrency": 2,
+      "unit": "One tile product export",
+      "status": "starting_budget",
+      "evidence": [
+        "Retain until export has measured CPU, peak memory and runtime."
+      ]
+    }
+  }
 }

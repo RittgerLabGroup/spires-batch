@@ -108,7 +108,7 @@ def collect(root, *, as_of=None):
     now = instant(as_of or utcnow())
     g, _, ledger = current(root)
     if ledger.get("schema_version") != 2:
-        raise ValueError("Run nrt migrate before retention on a legacy stream")
+        raise ValueError("Archive and compact the current-science ledger with nrt migrate before retention")
     workspaces = {
         p.name: json.loads(p.read_text()) for p in (root / "workspaces").glob("*.json")
     }

@@ -127,7 +127,23 @@ class CurcPathDiscoveryAdapter:
             ]
 
         configured_files: list[InputFileConfig] = []
-        matches = sorted(path for path in root_path.glob(root.pattern) if path.is_file())
+        patterns = {root.pattern}
+        if "{year}" in root.pattern or "{tile}" in root.pattern:
+            patterns = set()
+            if request.r0 is None:
+                raise ValueError("R0 discovery placeholders require r0.artifacts")
+            for artifact in request.r0.artifacts:
+                if artifact.start_date is None or artifact.end_date is None:
+                    raise ValueError("R0 discovery placeholders require a resolved date window")
+                tiles = (artifact.tile,) if artifact.tile else request.selection.tiles
+                if "{tile}" in root.pattern and not tiles:
+                    raise ValueError("{tile} requires an artifact tile or selection.tiles")
+                for tile in tiles or ("*",):
+                    for year in range(artifact.start_date.year, artifact.end_date.year + 1):
+                        patterns.add(root.pattern.format(tile=tile, year=year))
+        matches = sorted({
+            path for pattern in patterns for path in root_path.glob(pattern) if path.is_file()
+        })
         for path in matches:
             parsed = parse_path_identity(path)
             parsed_product = parsed.get("product")
@@ -590,7 +606,7 @@ def _resolved_input(
     )
     product = configured.product or parsed.get("product")
 
-    if configured.role in {InputRole.REFLECTANCE, InputRole.RAW}:
+    if configured.role in {InputRole.REFLECTANCE, InputRole.RAW, InputRole.R0_SOURCE}:
         missing = [
             key
             for key, value in {
@@ -681,6 +697,24 @@ def _resolved_input(
 
 def _matches_selection(item: InputFileConfig, request: RequestConfig) -> bool:
     selection = request.selection
+    if item.role == InputRole.R0_SOURCE and request.r0 is not None:
+        parsed = parse_path_identity(item.path)
+        tile = item.tile or parsed.get("tile")
+        acquisition_date = item.date or parsed.get("date")
+        if tile is not None and selection.tiles and tile not in selection.tiles:
+            return False
+        if acquisition_date is None:
+            return True
+        if selection.dates and acquisition_date not in selection.dates:
+            return False
+        return any(
+            (artifact.tile is None or tile is None or artifact.tile == tile)
+            and (
+                artifact.start_date is None
+                or artifact.start_date <= acquisition_date <= artifact.end_date
+            )
+            for artifact in request.r0.artifacts
+        )
     if item.role in {
         InputRole.R0_SOURCE,
         InputRole.ANCILLARY,

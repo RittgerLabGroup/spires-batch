@@ -1,0 +1,624 @@
+# Advanced batch requests and submission records
+
+The [unified workflow](../../examples/workflow.md) is the normal operator path.
+This reference covers the lower-level batch interface used by R0 and customized
+retrieval jobs. Do not repeat its submission steps for an already submitted workflow.
+
+## JSON requests
+
+Only JSON is accepted. Every request declares schema version `1` and exactly
+one sensor/platform combination:
+
+```json
+{
+  "config_type": "batch_request",
+  "artifact_type": "spires_batch_request",
+  "schema_version": 1,
+  "run": {
+    "name": "vj109ga-h09v04-wy2026",
+    "sensor": "viirs",
+    "platform": "noaa20"
+  },
+  "selection": {
+    "tiles": ["h09v04"],
+    "water_years": [2026],
+    "dates": []
+  },
+  "steps": ["invert", "albedo"],
+  "inputs": {
+    "files": [
+      {
+        "role": "lut",
+        "name": "inversion_lut",
+        "path": "/exact/path/reflectance-lut.nc"
+      },
+      {
+        "role": "lut",
+        "name": "albedo_lookup",
+        "path": "/exact/path/albedo-lut.nc"
+      }
+    ],
+    "roots": [
+      {
+        "adapter": "curc",
+        "role": "reflectance",
+        "path": "/current/authoritative/root",
+        "pattern": "**/VJ109GA.A*.h09v04.*.h5"
+      }
+    ],
+    "static_context_roots": [
+      {
+        "adapter": "tiled_static_context",
+        "path": "/exact/path/static-context",
+        "pattern": "h??v??/*.tif"
+      }
+    ]
+  },
+  "r0": {
+    "mode": "existing",
+    "artifacts": [
+      {
+        "id": "r0_20250601_20250930",
+        "path": "/exact/path/r0_20250601_20250930.nc",
+        "tile": "h09v04",
+        "water_year": 2026
+      }
+    ]
+  },
+  "science": {
+    "invert": {
+      "algorithm": 6,
+      "max_eval": 200,
+      "n_workers": 1
+    },
+    "albedo": {
+      "calculate_albedo": true
+    }
+  },
+  "output": {
+    "root": "/product/root",
+    "product_contents": "full",
+    "existing_file_handling": "write_new_file",
+    "existing_output_policy": "error"
+  }
+}
+```
+
+For operations, use the [three task templates](../../examples/README.md): R0,
+historical processing (including canopy adjustment and daily albedo), and
+interpolation. Their dedicated planners are:
+
+```bash
+spires-batch plan r0.json --output r0-plan.json
+spires-batch historical plan historical.json --output historical-plan.json
+spires-batch interpolation plan bound/interpolation.json --output interpolation-plan.json
+```
+
+The historical controller calls the same matched preparation/retrieval API as
+NRT and renders concurrent date arrays. Interpolation bindings are assembled from
+real historical receipts; see the example guide. The daily schema described in
+this section remains the advanced leaf API, not a second recommended raw-inversion
+training path. Generate its authoritative schemas with `spires-batch schema request`
+and `spires-batch schema resolved-plan`.
+
+[`docs/reference/config_reference.json`](../../docs/reference/config_reference.json) documents all
+request interfaces; it is not itself a runnable request. Planning/rendering never
+submit work. Use the documented controller-specific submission flow after review.
+
+Unknown fields are rejected. Relative paths are resolved relative to the
+request file.
+
+Scientific context files use stable names:
+
+- LUTs: `inversion_lut`, `albedo_lookup`, and `forcing_lookup`.
+- Ancillary layers: `dem`, `slope`, `aspect`, `skyview`,
+  `canopy_fraction`, and `ice_fraction`.
+- Masks: `cloud_mask`, `water_mask`, `ice_mask`, and `playa_mask`.
+
+Names are validated during request loading, and each resolved task must contain
+exactly one copy of every context input required by its selected operations.
+Explicit `files` and fixed-name `roots` remain available. When static
+ancillary and mask files share one directory tree organized as
+`hNNvNN/*.tif`, `inputs.static_context_roots` can replace the per-file entries:
+
+```json
+{
+  "adapter": "tiled_static_context",
+  "path": "/authoritative/static-context",
+  "pattern": "h??v??/*.tif",
+  "required": true
+}
+```
+
+The adapter is sensor-independent. It derives the tile from the immediate
+parent directory and canonical filename prefix, then classifies canonical
+elevation/DEM, slope, clockwise-from-north aspect, sky-view, canopy-fraction,
+and ice-fraction rasters as ancillary inputs. Static water, ice, and playa
+masks are classified as mask inputs. Daily cloud masks, R0 products, legacy
+percentage fractions, counterclockwise-from-south aspect files, STC files, and
+other unrecognized names are excluded. Multiple canonical matches for the same
+tile, role, and name are a preflight error.
+
+Date-specific cloud masks remain separate from static context. They can be
+discovered with a named mask root when files use the canonical
+`<platform>_hNNvNN_YYYYMMDD_cloud_mask.tif` convention:
+
+```json
+{
+  "adapter": "curc",
+  "role": "mask",
+  "name": "cloud_mask",
+  "path": "/authoritative/daily-cloud-masks",
+  "pattern": "h??v??/*/*_cloud_mask.tif",
+  "required": true
+}
+```
+
+The platform, tile, and acquisition date are derived from each filename so
+that a mask is attached only to its matching task. Cloud-mask source and
+application are explicit inversion-preparation policies:
+
+```json
+{
+  "cloud_mask_source_policy": "external_only",
+  "cloud_mask_application_stage": "pre_inversion"
+}
+```
+
+`cloud_mask_source_policy` accepts `external_only`, `qa_only`,
+`qa_or_external`, or `none`. `external_only` requires a matching external
+mask; a single-layer external raster contributes no implicit QA cloud-shadow
+mask. If omitted, the historical behavior applies: QA-only without an
+external mask and external-only when one is supplied.
+`cloud_mask_application_stage` accepts `pre_inversion` or
+`post_inversion`. Post-inversion application keeps cloud and cloud-shadow out
+of inversion exclusions so the persisted retrieval can be combined with a
+versioned cloud mask later.
+
+Static-context metadata preflight requires a single-band GeoTIFF with explicit
+units and a CRS, checks complete finite-value ranges, enforces binary mask
+codes, and requires exact shape, CRS, and transform agreement among the
+selected layers for each inspected tile. Aspect files must declare
+`angular_convention=clockwise_from_north` in their band metadata.
+If `science.invert.preparation.bands` is omitted, execution derives the ordered
+band set from a labeled R0 product. Positional GeoTIFF R0 bands require an
+explicit band list. The executor then selects those exact bands, in scene
+order, from the canonical master reflectance LUT.
+
+Source-reader metadata is normalized only at the persistence boundary: HDF5
+dimension-scale bookkeeping is discarded, while a source `_FillValue` is
+retained as `source_fill_value`. This prevents source-container internals from
+colliding with the canonical grouped NetCDF representation.
+
+## Stages and artifacts
+
+The schema recognizes:
+
+```text
+build_r0 -> invert -> albedo -> interpolate
+```
+
+Selected stages are explicit; prerequisites are never inserted silently.
+`invert` and `albedo` are initially fused into one daily task when both are
+selected, producing:
+
+```text
+<root>/<sensor>/<platform>/<tile>/
+    spires_<product>_<tile>_<YYYYMMDD>_raw.nc
+```
+
+For example:
+
+```text
+viirs/noaa20/h09v04/spires_vj109ga_h09v04_20260314_raw.nc
+```
+
+`output.product_contents` independently selects the stored payload for each raw
+product:
+
+- `full` retains the complete grouped `SpiresData` inputs and results.
+- `results_subset` retains the self-describing grid, packed QA, and results
+  while omitting inputs that can be reopened from their configured sources.
+
+For an explicitly authorized daily inversion rerun, set
+`output.existing_output_policy="replace"`. This recomputes the daily product
+and atomically replaces the previous file only after validating the temporary
+product. It does not enable R0 replacement and does not bypass output reservations.
+With `science.albedo.apply_canopy_correction=true`, batch selects
+`modis_full_shade` for MODIS or `viirs_canopy_weighted_shade` for VIIRS from
+`run.sensor`. An explicit `science.albedo.canopy_correction_policy` is optional
+in the submission request, but must match that sensor. Resolved tasks always
+record the explicit policy. Both require terrain slope/aspect, sensor azimuth,
+and crown radii 4.644/1.72. Missing policies in resolved tasks, cross-sensor
+assignments, `legacy`, and retired research identifiers are rejected.
+
+Use the coordinated RittgerLabGroup `spires-postprocess` package; the `science`
+extra now selects that source. Direct postprocessing callers must pass both the
+sensor and policy explicitly. The numerical canopy algorithms are unchanged.
+Regenerate old batch plans rather than editing their immutable manifests.
+
+The selected value is copied into every resolved raw-output task. It does not
+change whether the product is `inversion_raw` or `postprocessed_raw`; fused
+`invert + albedo` tasks can write the latter directly, while standalone albedo
+with `update_atomically` transitions an existing raw file.
+
+Standalone albedo requires a `full` input product. Preflight rejects
+`results_subset` inputs because they intentionally omit the scene and ancillary
+context needed to calculate postprocessing products. Fused `invert + albedo`
+tasks may still write `results_subset` directly.
+
+The low-level batch request does not execute interpolation. Use the dedicated
+`interpolation` interface or an interpolation job in a unified workflow instead.
+
+An existing R0 always has an explicit ID and path. Build requests likewise
+provide each desired output path; batch does not infer reference-year or water-
+year directory conventions.
+
+Build requests use exactly one of two recipes:
+
+- `viirs_summer_composite` for VIIRS runs;
+- `modis_summer_composite` for MODIS runs.
+
+Both dispatch to the same summer-composite workflow and typed science options;
+the sensor-specific public R0 API supplies the reflectance reader and canonical
+band definitions.
+
+R0 builds load all summer scenes for one tile/year into RAM before selection,
+for both VIIRS and MODIS. Allocate sufficient RAM (full-tile jobs can require
+hundreds of GiB). `chunks`, `zarr_path` and `zarr_mode` are rejected; disk-backed
+R0 staging is not supported. `science.build_r0.show_progress: true` enables
+scene progress.
+
+## Discovery and scratch staging
+
+Mutable site roots belong in each request. No `/pl` or `/scratch` path is
+compiled into the package. The public `curc` adapter understands supported NASA
+filename identities, while exact roots and patterns remain operational
+configuration.
+
+Optional staging records both the authoritative source and effective scratch
+path in every resolved task:
+
+```json
+{
+  "execution": {
+    "staging": {
+      "enabled": true,
+      "root": "/scratch/alpine/USER/spires-batch/input-cache",
+      "verification": "stat",
+      "reuse_valid": true
+    }
+  }
+}
+```
+
+`stat` verifies file size; `sha256` provides a stricter, more expensive copy
+check. Copies use a temporary sibling and atomic promotion.
+
+## Preflight
+
+Preflight always runs before Slurm rendering:
+
+1. JSON schema validation.
+2. Cross-section semantic validation.
+3. Exact inventory and collision validation.
+4. Optional lightweight metadata-header inspection.
+
+Metadata modes are:
+
+- `none`: inventory only.
+- `sample`: one deterministic representative per homogeneous role/product/
+  format/name group. This is the default.
+- `all`: every resolved input header.
+
+Runtime scientific tasks will still validate every input authoritatively.
+
+## Planning and inspection
+
+```bash
+spires-batch validate request.json
+spires-batch plan request.json --output resolved-plan.json
+spires-batch dry-run resolved-plan.json
+spires-batch stage resolved-plan.json
+spires-batch stage resolved-plan.json --execute
+```
+
+Resolved plans are immutable: an existing manifest is never overwritten. The
+manifest records:
+
+- `config_digest`: SHA-256 of canonical validated request JSON.
+- `plan_digest`: SHA-256 of deterministic resolved tasks and resources.
+- A unique run ID.
+- Stable semantic task IDs independent of array indices.
+
+Hashes are operational identifiers and do not appear in scientific filenames.
+
+## Serial scientific execution
+
+Execute the same immutable task manifest used by dry-run and Slurm rendering:
+
+```bash
+spires-batch execute resolved-plan.json --events-dir task-events
+```
+
+Tasks run in dependency order. Existing outputs are reused only under
+`existing_output_policy: reuse_valid` and only after stage-specific scientific
+validation. New and updated raw products are reopened and sample-validated
+before a success event is written. Deterministic configuration and contract
+failures are separated from retryable filesystem, timeout, and resource
+failures.
+
+## Slurm rendering
+
+```bash
+spires-batch render-slurm resolved-plan.json --output-dir slurm-preview
+```
+
+This writes strict dependency array scripts and a `submit.sh` preview using the
+profile's explicit Slurm cluster, partition, account, QoS, and environment. The
+built-in profiles are `blanca-snow`, `blanca-rittger`, and Alpine's `acpu`
+CPU partition; custom profiles must supply both cluster and partition.
+Rendering never submits a job. Rendered arrays invoke the same scientific
+executor used by serial execution.
+
+Explicit tile routing defines named profiles, maps every selected tile to
+exactly one profile, and selects a non-preemptable coordinator profile:
+
+```json
+{
+  "profiles": {
+    "blanca-snow": {
+      "max_concurrent_tasks": 24,
+      "resources": {
+        "account": "blanca-snow",
+        "qos": "blanca-snow",
+        "memory": "16G"
+      }
+    },
+    "blanca-rittger": {
+      "max_concurrent_tasks": 36,
+      "resources": {
+        "account": "blanca-rittger",
+        "qos": "blanca-rittger",
+        "memory": "16G"
+      }
+    }
+  },
+  "tile_profiles": {
+    "h08v04": "blanca-snow",
+    "h08v05": "blanca-snow",
+    "h09v04": "blanca-rittger"
+  },
+  "coordinator_profile": "blanca-snow"
+}
+```
+
+The planner assigns the routed profile to every tile task. Slurm arrays are
+grouped by stage, profile, and tile. A profile's concurrency cap is distributed
+across its sibling tile arrays, so five tiles sharing a cap of 60 render as
+five arrays throttled to 12 each. Routed profiles in one operational request
+must use the same Slurm cluster and environment. Legacy single-profile
+requests remain supported.
+
+Tile arrays larger than 1,000 tasks are split into multiple
+Slurm arrays for compatibility with clusters that enforce
+`max_array_tasks=1000`. The configured concurrency is distributed across the
+sibling arrays so splitting does not multiply the requested simultaneous task
+limit.
+
+## Audited submission and scheduling
+
+Submission preparation records the exact scheduler intent and reserves outputs
+without calling `sbatch`. Testing provides the non-mutating scheduler gate before the
+single-use live transition:
+
+```bash
+spires-batch submission prepare resolved-plan.json \
+    --state-root /product/root \
+    --output-dir submission-preview
+
+spires-batch submission reserve \
+    submission-preview/submission.json
+
+spires-batch submission test-only \
+    submission-preview/reservation-set.json
+
+spires-batch submission submit \
+    submission-preview/reservation-set.json
+```
+
+Preparation reloads and verifies both manifest digests, rechecks preflight,
+validates current external or staged inputs, confirms output policies and
+writable parents, diagnoses every intended reservation, renders immutable
+Slurm scripts and indices, hashes every artifact, and writes
+`submission.json`. It does not mutate reservation state.
+
+Reservation acquisition repeats the mutable readiness checks, verifies that
+the manifest and rendered artifacts still match their recorded hashes, and
+acquires the complete output set. If any acquisition conflicts, reservations
+created earlier by the same operation are removed with an audit event. The
+successful set is retained as immutable `reservation-set.json`; submission
+lifecycle transitions are appended to `submission-events.jsonl`.
+
+`test-only` rechecks the manifest, rendered hashes, mutable inputs and outputs,
+and exact reservation ownership before invoking `sbatch --test-only` for every
+array. Its responses are retained in immutable `scheduler-test.json`; no jobs
+are created. `submit` requires that matching test record, repeats all checks,
+uses an exclusive submission lock, executes the dependency-ordered
+`sbatch --parsable` commands, appends each returned job identity immediately,
+attaches the base job and array index to every affected reservation, and writes
+immutable `scheduler-submission.json`. Each script carries an explicit Slurm
+cluster and a recoverable run/group comment.
+
+Submission-rendered workers load the immutable reservation set and match every
+task output against its run, plan, submission, group, cluster, base job, and
+array-element identities. Ownership is checked at worker startup and again
+immediately before a scientific write. The terminal task event is durably
+recorded before reservations transition: validated success and
+`loaded_existing` remove completed reservations after audit, while failures
+remain in audited `failed` state for explicit recovery or a later retry.
+
+If scheduler submission will not follow, roll back the unsubmitted set
+explicitly:
+
+```bash
+spires-batch submission rollback-reservations \
+    submission-preview/reservation-set.json \
+    --reason "operator cancelled before submission"
+```
+
+Rollback prevalidates the complete set and refuses to remove anything if any
+reservation carries a Slurm job ID.
+
+## Status and retries
+
+Task workers emit append-only JSON Lines start and terminal events. Status is
+derived from attempt history plus output validation; file existence alone is
+not scientific completion.
+
+```bash
+spires-batch summarize resolved-plan.json \
+    --events-dir task-logs \
+    --output-dir summaries
+
+spires-batch retry-manifest resolved-plan.json \
+    --events-dir task-logs \
+    --output retry-1.json
+```
+
+Summaries are written as JSON, CSV, and concise text at run and tile levels.
+By default they trust successful worker terminal events, which are emitted only
+after the worker atomically publishes, reopens, and scientifically validates
+its output. Add `--revalidate-outputs` to reopen and scientifically validate
+every successful output again while building a detailed persistence audit.
+Only transient failures below the configured retry cap enter a retry manifest.
+
+## Stage-gated operational execution
+
+E5 wraps the immutable E1-E4 submission lifecycle in strict operational waves:
+
+```bash
+module try-load slurm/blanca
+
+spires-batch submission start-operational resolved-plan.json \
+    --state-root /product/root \
+    --output-dir operational-run
+```
+
+This is a live scheduler mutation. The command validates and submits only
+dependency-free tasks, then submits a small coordinator with an `afterany`
+dependency on that wave. The coordinator:
+
+- trusts exact worker terminal events when present;
+- uses `sacct` to terminalize workers that exited without an event;
+- treats node failure, boot failure, preemption, timeout, and out-of-memory as
+  transient scheduler failures;
+- treats cancellation and unclassified scheduler/protocol failures as
+  non-retryable;
+- re-arms only failed reservations with the same manifest family, task,
+  configuration, and output identity;
+- writes and submits immutable retry manifests until
+  `max_auto_retry_count` is exhausted; and
+- releases a downstream wave only after every task in the preceding wave has
+  validated success.
+
+On Blanca the coordinator uses `module try-load slurm/blanca`; installations
+with the Slurm client already on `PATH` therefore continue safely when that
+module name is unavailable.
+
+Successful-subset release is intentionally unsupported. Any deterministic,
+cancelled, or retry-exhausted failure durably blocks every unsubmitted
+downstream task. Each wave retains its submission, reservation, scheduler,
+events, retry lineage, coordinator, and advance artifacts beneath
+`operational-run/waves/`.
+
+When the operation reaches terminal success or failure, the coordinator
+collects every initial, downstream, retry, and blocked-task event and writes:
+
+- `operational-run/summaries/run-summary.{json,csv,txt}`;
+- `operational-run/summaries/tiles/<tile>/tile-summary.{json,csv,txt}`; and
+- `operational-run/summaries/summary-index.json`, which links the run and tile
+  reports and carries their terminal counts.
+
+The reports include final task status, complete attempt history, retry counts,
+failure codes and messages, output and event-log paths, Slurm job and array
+identities, start/end times, active elapsed seconds, and the terminal requested
+stage. Their `output_validation_mode` records whether they trusted validated
+worker events or performed an explicit scientific revalidation. The terminal
+`operational-result.json` links the same summary artifacts.
+
+The operational coordinator uses the fast event-backed mode by default. Worker
+events already reflect post-write validation, so terminal reporting does not
+serially reopen every output.
+
+Terminal reports can be regenerated safely from retained operational artifacts:
+
+```bash
+spires-batch submission summarize-operational \
+    operational-run/operation.json
+```
+
+Use the detailed persistence-audit mode when needed:
+
+```bash
+spires-batch submission summarize-operational \
+    operational-run/operation.json \
+    --revalidate-outputs
+```
+
+The coordinator normally invokes the following single-use command itself:
+
+```bash
+spires-batch submission advance operational-run/operation.json \
+    --wave-dir operational-run/waves/0001-initial
+```
+
+An `advance.lock` retained without `advance-result.json` means advancement
+failed after scheduler mutation began. Inspect that wave's submission events,
+scheduler record, reservations, and coordinator log before any recovery; the
+lock prevents an unsafe duplicate submission.
+
+## Output reservations
+
+The reservation store diagnoses and protects shared output paths. E2
+automatically acquires the complete submission set, E3 durably attaches
+scheduler identities, and E4 verifies those identities in workers before
+writes and derives reservation state from terminal task outcomes. Preview
+current conflicts with:
+
+```bash
+spires-batch reservations diagnose resolved-plan.json --state-root /product/root
+spires-batch reservations list --state-root /product/root
+```
+
+Managed workers verify reservations before writing and record validated
+completion before cleanup. Failed reservations remain available for diagnosis;
+do not delete them merely to bypass a conflict.
+
+```bash
+spires-batch reservations prune \
+    --state-root /product/root \
+    --status completed \
+    --older-than-days 7
+```
+
+Failed or interrupted reservations are never removed because of age alone.
+Releasing one requires the exact run ID, task ID, reason, and explicit
+`--apply`.
+
+## Reused R0 grid preflight
+
+With metadata preflight enabled, every distinct reused NetCDF/Zarr R0 product is
+checked for a valid scalar CRS/GeoTransform and matching pixel-center coordinate
+vectors. Representative mode still checks all R0 water years, rather than one
+file per tile. These checks read coordinate vectors and metadata, not the full
+reflectance arrays. Invalid grids fail with `invalid_r0_grid` before submission;
+repair a proven metadata-only error or rebuild an actually misaligned product.
+Explicitly disabling metadata preflight also disables this check.
+
+Live submission holds new arrays until all reservation ownership records and the
+immutable scheduler submission have been written, then releases those temporary
+holds automatically. This also applies to automatic retry waves. Explicit
+`--hold`/`-H` resource directives remain under operator control. If registration
+or release fails, the submission events identify any held arrays requiring
+recovery; workers never need to race incomplete ownership registration.

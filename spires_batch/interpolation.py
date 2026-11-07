@@ -14,6 +14,7 @@ import os
 import shlex
 import re
 import sys
+from .configuration import require_configuration
 
 
 def digest(value):
@@ -130,7 +131,9 @@ def plan(config, destination, *, header_cache=None):
 
     config = Path(config).resolve()
     request = json.loads(config.read_text())
+    require_configuration(request, "interpolation")
     required = {
+        "config_type",
         "schema_version",
         "history_start",
         "start",
@@ -156,7 +159,6 @@ def plan(config, destination, *, header_cache=None):
     if (
         required - set(request)
         or set(request) - required - optional
-        or request["schema_version"] != 2
     ):
         raise ValueError("Invalid interpolation request fields/schema")
     if request.get("source_stream", "standard") not in ("standard", "nrt", "mixed"):
@@ -193,53 +195,9 @@ def plan(config, destination, *, header_cache=None):
         request[key] = str(
             (config.parent / p).resolve() if not p.is_absolute() else p.resolve()
         )
-    scheduler = request["scheduler"]
-    if set(scheduler) - {"stages"} != {
-        "partition",
-        "account",
-        "policy",
-        "cpus",
-        "memory",
-        "time",
-        "concurrency",
-    }:
-        raise ValueError(
-            "Scheduler requires partition/account/policy/cpus/memory/time/concurrency"
-        )
-    policy = Path(scheduler["policy"])
-    policy = (config.parent / policy).resolve() if not policy.is_absolute() else policy
-    scheduler["policy"] = str(policy)
-    scheduler["snapshot"] = json.loads(policy.read_text())
-    if not isinstance(scheduler["snapshot"].get("exclude_nodes"), list):
-        raise ValueError("Scheduler policy lacks exclude_nodes")
-    for key in ("partition", "account"):
-        if not re.fullmatch("[A-Za-z0-9_.-]+", scheduler[key]):
-            raise ValueError("Invalid scheduler name")
-    if set(scheduler.get("stages", {})) - {"screen", "spatial", "properties", "export"}:
-        raise ValueError("Unknown scheduler stage")
-    for override in scheduler.get("stages", {}).values():
-        if set(override) - {"cpus", "memory", "time", "concurrency"}:
-            raise ValueError("Invalid stage resource override")
-    for stage in ("screen", "spatial", "properties", "export"):
-        resources = stage_resources(scheduler, stage)
-        if not re.fullmatch("[0-9]+[KMGT]?", resources["memory"]) or not re.fullmatch(
-            "[0-9:-]+", resources["time"]
-        ):
-            raise ValueError("Invalid memory or walltime")
-        if any(
-            (
-                not isinstance(resources[k], int) or resources[k] < 1
-                for k in ("cpus", "concurrency")
-            )
-        ):
-            raise ValueError("Invalid worker allocation")
-    if any(
-        (
-            not re.fullmatch("[A-Za-z0-9_.-]+", node)
-            for node in scheduler["snapshot"]["exclude_nodes"]
-        )
-    ):
-        raise ValueError("Invalid excluded node")
+    from .scheduler_policy import resolve_interpolation_scheduler
+
+    request["scheduler"] = resolve_interpolation_scheduler(request["scheduler"], config.parent)
     for tile, t in request["tiles"].items():
         if (
             set(t)
@@ -440,11 +398,14 @@ def load_plan(path, *, compatible_state=False):
 def execute(path, stage, index):
     from contextlib import nullcontext
     from .nrt_storage import storage_lock
+    from .workflow_logging import serial_task_log
 
     raw = json.loads(Path(path).read_text())
     root = raw["request"].get("stream_root")
+    task = raw["tasks"][stage][index]
     with storage_lock(root) if root else nullcontext():
-        return _execute(path, stage, index)
+        with serial_task_log(Path(raw["request"]["output"]), f"{stage}-{index}", tile=task.get("tile"), day=task.get("day")):
+            return _execute(path, stage, index)
 
 
 def _execute(path, stage, index):
@@ -671,6 +632,12 @@ def render(plan_path, directory):
             ]
             if excludes:
                 directives.append(f"#SBATCH --exclude={excludes}")
+            if s.get("cluster"):
+                directives.append(f"#SBATCH --clusters={s['cluster']}")
+            if s.get("qos"):
+                directives.append(f"#SBATCH --qos={s['qos']}")
+            if s.get("exclusive"):
+                directives.append("#SBATCH --exclusive")
             path.write_text("\n".join([lines[0], *directives, *lines[1:]]) + "\n")
             scripts.append(dict(stage=stage, path=str(path)))
     (directory / "scheduler_policy.json").write_text(

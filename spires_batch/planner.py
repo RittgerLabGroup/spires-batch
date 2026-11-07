@@ -758,8 +758,11 @@ def plan_request(
     base_dir: str | Path = ".",
     fail_on_preflight_error: bool = True,
 ) -> ResolvedPlan:
+    from .scheduler_policy import resolve_batch_request
+
     started = datetime.now(timezone.utc)
     base = Path(base_dir).resolve()
+    request = resolve_batch_request(request, base)
     config_digest = sha256_digest(request)
     discovery = discover_inputs(request, base_dir=base)
     if request.r0 is not None and request.r0.mode == R0Mode.EXISTING:

@@ -1,0 +1,23 @@
+name: spipy14
+channels:
+  - conda-forge
+dependencies:
+  - python=3.14.4
+  - numpy=2.4.5
+  - scipy=1.17.1
+  - h5py=3.16.0
+  - netcdf4=1.7.4
+  - xarray=2026.4.0
+  - rasterio=1.5.0
+  - rioxarray
+  - pyproj
+  - affine
+  - pydantic=2.13.4
+  - dask
+  - nlopt
+  - swig
+  - git-lfs
+  - pip
+  - setuptools
+  - setuptools-scm
+  - wheel

@@ -132,6 +132,9 @@ def prepare_retained(request, output):
         if isinstance(request, (str, Path))
         else request
     )
+    from .configuration import require_configuration
+
+    require_configuration(request, "prepared_observation")
     fields = request["fields"]
     shape = tuple(request["shape"])
     tile = request["tile"]

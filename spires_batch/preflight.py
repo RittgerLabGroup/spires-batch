@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -649,6 +649,45 @@ def _static_context_grid_issues(
     return issues
 
 
+def _r0_coverage_issues(
+    request: RequestConfig, discovery: DiscoveryResult
+) -> list[PreflightIssue]:
+    issues = []
+    if request.r0 is None or Stage.BUILD_R0 not in request.steps:
+        return issues
+    for artifact in request.r0.artifacts:
+        sources = [
+            source
+            for source in discovery.inputs
+            if source.role == InputRole.R0_SOURCE
+            and (artifact.tile is None or source.tile == artifact.tile)
+            and source.date is not None
+            and artifact.start_date <= source.date <= artifact.end_date
+        ]
+        expected_dates = {
+            artifact.start_date + timedelta(days=offset)
+            for offset in range((artifact.end_date - artifact.start_date).days + 1)
+        }
+        if request.selection.dates:
+            expected_dates.intersection_update(request.selection.dates)
+        available_dates = {source.date for source in sources}
+        missing_dates = sorted(expected_dates - available_dates)
+        missing_text = ", ".join(day.isoformat() for day in missing_dates) or "none"
+        issues.append(PreflightIssue(
+            layer=CheckLayer.INVENTORY,
+            severity=CheckSeverity.WARNING if missing_dates else CheckSeverity.INFO,
+            code="r0_source_coverage",
+            message=(
+                f"R0 {artifact.id}: tile={artifact.tile}, target WY={artifact.water_year}, "
+                f"window={artifact.start_date} through {artifact.end_date} (inclusive); "
+                f"{len(sources)} source files, "
+                f"{len(expected_dates & available_dates)}/{len(expected_dates)} requested dates "
+                f"available; missing dates: {missing_text}"
+            ),
+        ))
+    return issues
+
+
 def run_preflight(
     request: RequestConfig,
     discovery: DiscoveryResult,
@@ -659,6 +698,7 @@ def run_preflight(
     started = started_at or datetime.now(timezone.utc)
     issues = _schema_and_semantic_issues(request)
     issues.extend(_inventory_issues(request, discovery, tasks))
+    issues.extend(_r0_coverage_issues(request, discovery))
     issues.extend(_standalone_product_policy_issues(tasks))
     if not any(
         issue.severity == CheckSeverity.ERROR and issue.layer == CheckLayer.INVENTORY

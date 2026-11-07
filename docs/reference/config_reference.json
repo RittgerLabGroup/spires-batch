@@ -1,0 +1,4706 @@
+{
+  "document_type": "spipy_configuration_reference",
+  "runnable_request": false,
+  "description": "JSON docstring/reference, NOT a submission file. Each schema lists every declared field, required fields, defaults, enums and constraints. Dictionaries consumed without Pydantic are documented under interfaces. Descriptions are documentation, not accepted config keys. Omitted fields, explicit null, and empty objects are not universally interchangeable.",
+  "regenerate": "python scripts/build_config_reference.py",
+  "check": "python scripts/build_config_reference.py --check",
+  "entry_points": {
+    "workflow": "spires-batch workflow plan CONFIG --output PLAN; config_type=workflow, schema_version=1",
+    "daily_request": "spires-batch plan CONFIG --output PLAN; config_type=batch_request, schema_version=1",
+    "historical": "spires-batch historical plan CONFIG --output PLAN; config_type=historical, schema_version=1. render-slurm writes date arrays; run requires an allocation; assemble binds real receipts for interpolation.",
+    "initialization": "spires-batch tile-init CONFIG --dry-run; config_type=initialization, schema_version=1",
+    "interpolation": "spires-batch interpolation plan CONFIG --output PLAN; config_type=interpolation, schema_version=1",
+    "nrt_cycle": "spires-batch nrt cycle CONFIG --through DATE --output DIRECTORY [--execute]; requires an allocation and already registered real history",
+    "nrt_storage": "See docs/reference/storage.md for configure/retention commands"
+  },
+  "schemas": {
+    "workflow": {
+      "$defs": {
+        "Job": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "title": "Kind",
+              "type": "string",
+              "description": "initialize, daily, prepare, interpolation, acquire, or nrt. Each request follows its documented interface."
+            },
+            "depends_on": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Depends On",
+              "type": "array",
+              "description": "Names of prerequisite jobs. Dependencies must exist and form an acyclic selected graph."
+            },
+            "request": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "title": "Request",
+              "description": "Inline request object or JSON filename. Filename requests resolve relative to their own file; inline paths use the workflow file."
+            },
+            "resources": {
+              "$ref": "#/$defs/Resources",
+              "description": "Per-job overrides for individual allocations and historical/interpolation/NRT schedulers. Batch overrides belong in request.execution.resources."
+            },
+            "job_type": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional named resource profile from the workflow scheduler policy.",
+              "title": "Job Type"
+            },
+            "queue": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional named queue override for this job's policy profile.",
+              "title": "Queue"
+            },
+            "historical_job": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "For interpolation, assemble observations and inventory from this historical prerequisite automatically.",
+              "title": "Historical Job"
+            },
+            "max_auto_retry_count": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Retries after the first attempt; overrides the workflow default for this job. Only recognized transient scheduler failures are retried.",
+              "title": "Max Auto Retry Count"
+            }
+          },
+          "required": [
+            "kind",
+            "request"
+          ],
+          "title": "Job",
+          "type": "object"
+        },
+        "Resources": {
+          "additionalProperties": false,
+          "properties": {
+            "partition": {
+              "default": "blanca-snow",
+              "pattern": "^[A-Za-z0-9_.-]+$",
+              "title": "Partition",
+              "type": "string",
+              "description": "Slurm partition; use blanca-snow or blanca-rittger, or approved preemptable overflow."
+            },
+            "account": {
+              "default": "blanca-snow",
+              "pattern": "^[A-Za-z0-9_.-]+$",
+              "title": "Account",
+              "type": "string",
+              "description": "Slurm account authorized for the selected partition."
+            },
+            "cpus": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Cpus",
+              "type": "integer",
+              "description": "CPUs allocated per universal job. Cover the maximum thread count of all contained stages."
+            },
+            "memory": {
+              "default": "8G",
+              "pattern": "^(?:0|[1-9][0-9]*[KMGT]?)$",
+              "title": "Memory",
+              "type": "string",
+              "description": "Total Slurm memory per task, not per CPU. R0 uses 0 with exclusive allocation for all node memory; bounded positive sizes are required for interpolation."
+            },
+            "cluster": {
+              "default": "blanca",
+              "description": "Slurm cluster for this allocation.",
+              "pattern": "^[A-Za-z0-9_.-]+$",
+              "title": "Cluster",
+              "type": "string"
+            },
+            "qos": {
+              "anyOf": [
+                {
+                  "pattern": "^[A-Za-z0-9_.-]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional authorized Slurm QoS; named policy queues supply this explicitly.",
+              "title": "Qos"
+            },
+            "exclusive": {
+              "default": false,
+              "description": "Reserve the whole node; required when memory is 0 (all node memory).",
+              "title": "Exclusive",
+              "type": "boolean"
+            },
+            "time": {
+              "default": "04:00:00",
+              "pattern": "^(?:[0-9]+-)?[0-9]+(?::[0-5][0-9]){0,2}$",
+              "title": "Time",
+              "type": "string",
+              "description": "Slurm walltime, optionally day-prefixed."
+            }
+          },
+          "title": "Resources",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "config_type": {
+          "const": "workflow",
+          "title": "Config Type",
+          "type": "string",
+          "description": "Required public configuration kind; selects the interface, not a scientific algorithm."
+        },
+        "schema_version": {
+          "const": 1,
+          "description": "Required integer 1: the spipy v1.0.0 configuration baseline. Independent of saved-state formats and package versions.",
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "mode": {
+          "default": "historical",
+          "title": "Mode",
+          "type": "string",
+          "description": "Historical or nrt universal workflow mode; nrt jobs are forbidden in historical mode."
+        },
+        "sensor": {
+          "default": "viirs",
+          "title": "Sensor",
+          "type": "string",
+          "description": "Sensor family. The universal workflow passes it to each supported child."
+        },
+        "platform": {
+          "default": "noaa20",
+          "title": "Platform",
+          "type": "string",
+          "description": "Platform identity. Evaluated interpolation and native NRT orchestration currently require noaa20."
+        },
+        "selection": {
+          "additionalProperties": true,
+          "title": "Selection",
+          "type": "object",
+          "description": "Tile, water-year and explicit date selection. No implicit dates are downloaded or created."
+        },
+        "output": {
+          "title": "Output",
+          "type": "string",
+          "description": "Output destination/settings. Use a new generation or run directory; do not overwrite accepted results."
+        },
+        "log_root": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Base directory for logs and readable summaries. Each workflow gets an identity-named subdirectory. Defaults to output/logs; scientific outputs are not moved.",
+          "title": "Log Root"
+        },
+        "max_auto_retry_count": {
+          "default": 3,
+          "description": "Maximum additional attempts for transient scheduler failures; 0 disables retries. Per-job overrides take precedence. Explicit daily request.execution.max_auto_retry_count takes precedence over this default.",
+          "minimum": 0,
+          "title": "Max Auto Retry Count",
+          "type": "integer"
+        },
+        "scheduler": {
+          "additionalProperties": true,
+          "title": "Scheduler",
+          "type": "object",
+          "description": "Scheduler configuration; unified workflows accept an inline policy or a policy file plus an optional science interpreter. Scientific arrays keep their own resource settings."
+        },
+        "jobs": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Job"
+          },
+          "title": "Jobs",
+          "type": "object",
+          "description": "Named jobs, each with kind, request, dependencies and optional resources. Names allow letters, digits, underscores and hyphens."
+        },
+        "selected_jobs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Selected Jobs",
+          "type": "array",
+          "description": "Jobs to run; empty selects all. Omitting dependencies requires explicit existing-input handling."
+        },
+        "build_prerequisites": {
+          "default": false,
+          "title": "Build Prerequisites",
+          "type": "boolean",
+          "description": "Include transitive prerequisites of selected jobs. False prevents surprise construction of omitted prerequisites."
+        },
+        "variables": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Literal substitutions for ${name} in configuration values; no shell expansion or recursive substitutions.",
+          "title": "Variables",
+          "type": "object"
+        },
+        "coordinator": {
+          "$ref": "#/$defs/Resources",
+          "description": "Non-preemptable resources for planning, verification and automatic submissions, separate from scientific task resources."
+        }
+      },
+      "required": [
+        "config_type",
+        "schema_version",
+        "output",
+        "jobs"
+      ],
+      "title": "Workflow",
+      "type": "object"
+    },
+    "daily_request": {
+      "$defs": {
+        "AlbedoScienceConfig": {
+          "additionalProperties": false,
+          "properties": {
+            "apply_canopy_correction": {
+              "default": false,
+              "title": "Apply Canopy Correction",
+              "type": "boolean",
+              "description": "Apply the explicit sensor-matched canopy policy when true."
+            },
+            "canopy_correction_policy": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "modis_full_shade",
+                    "viirs_canopy_weighted_shade"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Canopy Correction Policy",
+              "description": "When canopy correction is enabled, omitted policies resolve from run.sensor. Explicit policies must match the sensor. Resolved tasks always contain a policy; legacy and retired research labels are rejected."
+            },
+            "apply_ice_adjustment": {
+              "default": false,
+              "title": "Apply Ice Adjustment",
+              "type": "boolean",
+              "description": "Enable glacier-ice adjustment using the bound ice fraction."
+            },
+            "calculate_albedo": {
+              "default": true,
+              "title": "Calculate Albedo",
+              "type": "boolean",
+              "description": "Compute snow albedo using the configured albedo LUT."
+            },
+            "calculate_delta_vis": {
+              "default": false,
+              "title": "Calculate Delta Vis",
+              "type": "boolean",
+              "description": "Compute visible-band albedo change from impurities."
+            },
+            "calculate_radiative_forcing": {
+              "default": false,
+              "title": "Calculate Radiative Forcing",
+              "type": "boolean",
+              "description": "Compute radiative forcing; requires the corresponding irradiance inputs."
+            },
+            "average_vertical_crown_radius": {
+              "default": 4.644,
+              "exclusiveMinimum": 0.0,
+              "title": "Average Vertical Crown Radius",
+              "type": "number",
+              "description": "Vertical crown radius used in canopy geometry; retain the evaluated recipe value."
+            },
+            "average_horizontal_crown_radius": {
+              "default": 1.72,
+              "exclusiveMinimum": 0.0,
+              "title": "Average Horizontal Crown Radius",
+              "type": "number",
+              "description": "Horizontal crown radius used in canopy geometry; retain the evaluated recipe value."
+            }
+          },
+          "title": "AlbedoScienceConfig",
+          "type": "object"
+        },
+        "CloudMaskApplicationStage": {
+          "enum": [
+            "pre_inversion",
+            "post_inversion"
+          ],
+          "title": "CloudMaskApplicationStage",
+          "type": "string"
+        },
+        "CloudMaskConfig": {
+          "additionalProperties": false,
+          "description": "Operational cloud-mask production and reuse policy.",
+          "properties": {
+            "mode": {
+              "$ref": "#/$defs/CloudMaskMode",
+              "description": "How daily cloud masks are provided/generated. See the enum and cross-field checks."
+            },
+            "model_manifest": {
+              "anyOf": [
+                {
+                  "format": "path",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Model Manifest",
+              "description": "Path to the selected cloud model manifest, with its model assets available."
+            },
+            "output_root": {
+              "anyOf": [
+                {
+                  "format": "path",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Output Root",
+              "description": "Destination for immutable cloud products."
+            },
+            "reuse_policy": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CloudMaskReusePolicy"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Whether verified compatible existing cloud outputs may be reused."
+            },
+            "device": {
+              "const": "cpu",
+              "default": "cpu",
+              "title": "Device",
+              "type": "string",
+              "description": "Inference device selector for supported cloud execution; do not assume a GPU allocation."
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "title": "CloudMaskConfig",
+          "type": "object"
+        },
+        "CloudMaskMode": {
+          "enum": [
+            "existing",
+            "build",
+            "ensure"
+          ],
+          "title": "CloudMaskMode",
+          "type": "string"
+        },
+        "CloudMaskReusePolicy": {
+          "enum": [
+            "compatible_provenance",
+            "valid_raster"
+          ],
+          "title": "CloudMaskReusePolicy",
+          "type": "string"
+        },
+        "CloudMaskSourcePolicy": {
+          "enum": [
+            "external_only",
+            "qa_only",
+            "qa_or_external",
+            "none"
+          ],
+          "title": "CloudMaskSourcePolicy",
+          "type": "string"
+        },
+        "ClusteringScienceConfig": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "title": "Enabled",
+              "type": "boolean",
+              "description": "Enable clustered inversion rather than independent per-pixel fitting."
+            },
+            "features": {
+              "default": [
+                "reflectance",
+                "background",
+                "solar_zenith"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "title": "Features",
+              "type": "array",
+              "description": "Ordered scene features used by the clustering recipe; schema enumerates supported choices."
+            },
+            "representative_method": {
+              "default": "cluster_mean",
+              "enum": [
+                "cluster_mean",
+                "first_pixel"
+              ],
+              "title": "Representative Method",
+              "type": "string",
+              "description": "Method for selecting cluster representatives."
+            },
+            "reflectance_tol": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                }
+              ],
+              "default": 0.02,
+              "title": "Reflectance Tol",
+              "description": "Tolerance for target-reflectance clustering."
+            },
+            "background_tol": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                }
+              ],
+              "default": 0.02,
+              "title": "Background Tol",
+              "description": "Tolerance for background-reflectance clustering."
+            },
+            "solar_zenith_tol": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                }
+              ],
+              "default": 2.0,
+              "title": "Solar Zenith Tol",
+              "description": "Solar zenith clustering tolerance in physical degrees."
+            },
+            "cosine_illumination_tol": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                }
+              ],
+              "default": 0.02,
+              "title": "Cosine Illumination Tol",
+              "description": "Clustering tolerance for cosine of illumination angle."
+            }
+          },
+          "title": "ClusteringScienceConfig",
+          "type": "object"
+        },
+        "DiscoveryRootConfig": {
+          "additionalProperties": false,
+          "properties": {
+            "adapter": {
+              "default": "curc",
+              "title": "Adapter",
+              "type": "string",
+              "description": "Discovery/static-context adapter name; use one registered by the maintained I/O package."
+            },
+            "role": {
+              "$ref": "#/$defs/InputRole",
+              "description": "Scientific role of an input or discovery root. Distinguishes reflectance, R0 sources and named assets."
+            },
+            "path": {
+              "format": "path",
+              "title": "Path",
+              "type": "string",
+              "description": "Existing R0 path in existing mode or desired output path in build mode. Use a descriptive filename such as viirs_h08v05_r0_2025.nc, where 2025 is the source summer. Output paths are literal and must be updated when changing tile/year."
+            },
+            "pattern": {
+              "default": "**/*",
+              "title": "Pattern",
+              "type": "string",
+              "description": "pathlib-style glob relative to path. Only canonical static-context filenames are classified."
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Name",
+              "description": "Required for ancillary, lut, and mask discovery roots."
+            },
+            "required": {
+              "default": true,
+              "title": "Required",
+              "type": "boolean",
+              "description": "Missing required assets stop an explicitly requested staging operation."
+            }
+          },
+          "required": [
+            "role",
+            "path"
+          ],
+          "title": "DiscoveryRootConfig",
+          "type": "object"
+        },
+        "ExecutionConfig": {
+          "additionalProperties": false,
+          "properties": {
+            "policy": {
+              "anyOf": [
+                {
+                  "format": "path",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Shared scheduler-policy JSON, resolved relative to this request before planning.",
+              "title": "Policy"
+            },
+            "job_type": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Named job_types entry in execution.policy; supplies queue, resources and concurrency defaults.",
+              "title": "Job Type"
+            },
+            "queue": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional named queue override from the selected scheduler policy.",
+              "title": "Queue"
+            },
+            "policy_snapshot": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Resolved-plan policy snapshot for provenance; generated by planning, not an operator setting.",
+              "title": "Policy Snapshot"
+            },
+            "profile": {
+              "default": "blanca-snow",
+              "title": "Profile",
+              "type": "string",
+              "description": "Legacy single-profile mode. Custom names are allowed only when execution.resources supplies both cluster and partition. Do not combine with explicit tile routing."
+            },
+            "max_concurrent_tasks": {
+              "default": 20,
+              "minimum": 1,
+              "title": "Max Concurrent Tasks",
+              "type": "integer",
+              "description": "Total concurrency cap distributed across tile arrays using this profile."
+            },
+            "resources": {
+              "$ref": "#/$defs/ResourceOverrides",
+              "description": "Per-job overrides for individual allocations and historical/interpolation/NRT schedulers. Batch overrides belong in request.execution.resources."
+            },
+            "profiles": {
+              "additionalProperties": {
+                "$ref": "#/$defs/ExecutionProfileConfig"
+              },
+              "title": "Profiles",
+              "type": "object",
+              "description": "Named profiles available to explicit tile routing. Built-in names inherit their cluster and partition; custom names must set both."
+            },
+            "tile_profiles": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "title": "Tile Profiles",
+              "type": "object",
+              "description": "Must exactly cover selection.tiles when explicit routing is enabled."
+            },
+            "stage_profiles": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "propertyNames": {
+                "$ref": "#/$defs/Stage"
+              },
+              "title": "Stage Profiles",
+              "type": "object",
+              "description": "Map daily stage names to named execution profiles; stage routing precedes the applicable fallback."
+            },
+            "coordinator_profile": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Coordinator Profile",
+              "description": "Required with explicit routing. Select a durable non-preemptable profile for the operational coordinator."
+            },
+            "max_auto_retry_count": {
+              "default": 3,
+              "minimum": 0,
+              "title": "Max Auto Retry Count",
+              "type": "integer",
+              "description": "Maximum automatic retries after the initial attempt for eligible transient failures."
+            },
+            "staging": {
+              "$ref": "#/$defs/StagingConfig",
+              "description": "Explicit input copying configuration; disabled does not mean durable storage is fast."
+            }
+          },
+          "title": "ExecutionConfig",
+          "type": "object"
+        },
+        "ExecutionProfileConfig": {
+          "additionalProperties": false,
+          "description": "One named scheduler profile available to explicitly routed tiles.",
+          "properties": {
+            "max_concurrent_tasks": {
+              "default": 20,
+              "minimum": 1,
+              "title": "Max Concurrent Tasks",
+              "type": "integer",
+              "description": "Total concurrency cap distributed across tile arrays using this profile."
+            },
+            "resources": {
+              "$ref": "#/$defs/ResourceOverrides",
+              "description": "Per-job overrides for individual allocations and historical/interpolation/NRT schedulers. Batch overrides belong in request.execution.resources."
+            }
+          },
+          "title": "ExecutionProfileConfig",
+          "type": "object"
+        },
+        "ExistingFileHandling": {
+          "enum": [
+            "write_new_file",
+            "update_atomically"
+          ],
+          "title": "ExistingFileHandling",
+          "type": "string"
+        },
+        "ExistingOutputPolicy": {
+          "enum": [
+            "error",
+            "reuse_valid",
+            "replace"
+          ],
+          "title": "ExistingOutputPolicy",
+          "type": "string"
+        },
+        "InputFileConfig": {
+          "additionalProperties": false,
+          "properties": {
+            "role": {
+              "$ref": "#/$defs/InputRole",
+              "description": "Scientific role of an input or discovery root. Distinguishes reflectance, R0 sources and named assets."
+            },
+            "path": {
+              "format": "path",
+              "title": "Path",
+              "type": "string",
+              "description": "Existing R0 path in existing mode or desired output path in build mode. Use a descriptive filename such as viirs_h08v05_r0_2025.nc, where 2025 is the source summer. Output paths are literal and must be updated when changing tile/year."
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Name",
+              "description": "Required for ancillary, lut, and mask discovery roots."
+            },
+            "tile": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Tile",
+              "description": "Native tile identifier, e.g. h08v05. Must be consistent with selection and source grid."
+            },
+            "date": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Date",
+              "description": "ISO acquisition date for an explicitly registered input."
+            },
+            "water_year": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Water Year",
+              "description": "Processing water year, named by its ending year; e.g. summer 2025 R0 serves WY2026."
+            },
+            "product": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Product",
+              "description": "Optional identity assertion. If the filename supplies a conflicting identity, preflight fails."
+            },
+            "metadata": {
+              "additionalProperties": true,
+              "title": "Metadata",
+              "type": "object",
+              "description": "Free-form operator metadata copied into the resolved input record."
+            }
+          },
+          "required": [
+            "role",
+            "path"
+          ],
+          "title": "InputFileConfig",
+          "type": "object"
+        },
+        "InputRole": {
+          "enum": [
+            "reflectance",
+            "r0",
+            "r0_source",
+            "raw",
+            "interpolated",
+            "ancillary",
+            "lut",
+            "mask"
+          ],
+          "title": "InputRole",
+          "type": "string"
+        },
+        "InputsConfig": {
+          "additionalProperties": false,
+          "properties": {
+            "files": {
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/InputFileConfig"
+              },
+              "title": "Files",
+              "type": "array",
+              "description": "Explicit input records instead of, or alongside, discovery roots."
+            },
+            "roots": {
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/DiscoveryRootConfig"
+              },
+              "title": "Roots",
+              "type": "array",
+              "description": "Input inventory discovery specifications, not download requests."
+            },
+            "static_context_roots": {
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/StaticContextRootConfig"
+              },
+              "title": "Static Context Roots",
+              "type": "array",
+              "description": "Sensor-independent discovery of canonical ancillary and static mask files organized as one directory per hNNvNN tile."
+            }
+          },
+          "title": "InputsConfig",
+          "type": "object"
+        },
+        "InvertScienceConfig": {
+          "additionalProperties": false,
+          "properties": {
+            "preparation": {
+              "$ref": "#/$defs/ScenePreparationConfig",
+              "description": "Scene preparation and validity options; approved retrieval requires cloud application after inversion."
+            },
+            "clustering": {
+              "$ref": "#/$defs/ClusteringScienceConfig",
+              "description": "Cluster settings for generic daily inversion. Not a tuning override for the fixed retained-retrieval worker."
+            },
+            "algorithm": {
+              "default": 6,
+              "maximum": 6,
+              "minimum": 1,
+              "title": "Algorithm",
+              "type": "integer",
+              "description": "Inversion solver identifier for generic daily retrieval; evaluated retained retrieval fixes its solver."
+            },
+            "max_eval": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Max Eval",
+              "description": "Maximum objective evaluations in generic inversion."
+            },
+            "initial_grain_radius_um": {
+              "default": 250.0,
+              "exclusiveMinimum": 0.0,
+              "title": "Initial Grain Radius Um",
+              "type": "number",
+              "description": "Initial inversion grain-radius guess in micrometres."
+            },
+            "apply_valid_inversion_mask": {
+              "default": true,
+              "title": "Apply Valid Inversion Mask",
+              "type": "boolean",
+              "description": "Apply the prepared inversion validity mask to inversion results."
+            },
+            "n_workers": {
+              "default": 1,
+              "minimum": 1,
+              "title": "N Workers",
+              "type": "integer",
+              "description": "Workers used within one scientific task. Slurm array concurrency is controlled separately."
+            }
+          },
+          "title": "InvertScienceConfig",
+          "type": "object"
+        },
+        "MetadataCheck": {
+          "enum": [
+            "none",
+            "sample",
+            "all"
+          ],
+          "title": "MetadataCheck",
+          "type": "string"
+        },
+        "OutputConfig": {
+          "additionalProperties": false,
+          "properties": {
+            "root": {
+              "format": "path",
+              "title": "Root",
+              "type": "string",
+              "description": "Required when enabled is true. Must be visible to submit and compute nodes."
+            },
+            "product_contents": {
+              "$ref": "#/$defs/ProductContents",
+              "default": "full",
+              "description": "full persists scene, background, ancillary, and results groups. results_subset stores compact results where the selected workflow permits it."
+            },
+            "existing_file_handling": {
+              "$ref": "#/$defs/ExistingFileHandling",
+              "default": "write_new_file",
+              "description": "update_atomically is supported only for standalone albedo enrichment of an existing full raw product."
+            },
+            "existing_output_policy": {
+              "$ref": "#/$defs/ExistingOutputPolicy",
+              "default": "error",
+              "description": "error rejects an existing destination. reuse_valid reopens and validates a compatible existing output before treating it as complete."
+            }
+          },
+          "required": [
+            "root"
+          ],
+          "title": "OutputConfig",
+          "type": "object"
+        },
+        "PreflightConfig": {
+          "additionalProperties": false,
+          "properties": {
+            "metadata_check": {
+              "$ref": "#/$defs/MetadataCheck",
+              "default": "sample",
+              "description": "none checks inventory only; sample checks deterministic representatives; all opens every resolved input header."
+            }
+          },
+          "title": "PreflightConfig",
+          "type": "object"
+        },
+        "ProductContents": {
+          "enum": [
+            "full",
+            "results_subset"
+          ],
+          "title": "ProductContents",
+          "type": "string"
+        },
+        "R0ArtifactConfig": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Id",
+              "description": "Unique human-readable asset identifier."
+            },
+            "path": {
+              "format": "path",
+              "title": "Path",
+              "type": "string",
+              "description": "Existing R0 path in existing mode or desired output path in build mode. Use a descriptive filename such as viirs_h08v05_r0_2025.nc, where 2025 is the source summer. Output paths are literal and must be updated when changing tile/year."
+            },
+            "tile": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Tile",
+              "description": "Native tile identifier, e.g. h08v05. Must be consistent with selection and source grid."
+            },
+            "water_year": {
+              "anyOf": [
+                {
+                  "maximum": 2200,
+                  "minimum": 1900,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Water Year",
+              "description": "Processing water year, named by its ending year; e.g. summer 2025 R0 serves WY2026."
+            },
+            "start_date": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Start Date",
+              "description": "Optional override, supplied together with end_date. In build mode, omitting both resolves the recipe's previous-summer window from water_year. Existing mode does not infer dates."
+            },
+            "end_date": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "End Date",
+              "description": "Inclusive last source date; must accompany start_date and not precede it. Omitting both in build mode uses the recipe's previous-summer window."
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "title": "R0ArtifactConfig",
+          "type": "object"
+        },
+        "R0BuildScienceConfig": {
+          "additionalProperties": false,
+          "properties": {
+            "preparation": {
+              "$ref": "#/$defs/ScenePreparationConfig",
+              "description": "Scene preparation and validity options; approved retrieval requires cloud application after inversion."
+            },
+            "max_sensor_zenith": {
+              "default": 30.0,
+              "maximum": 90.0,
+              "minimum": 0.0,
+              "title": "Max Sensor Zenith",
+              "type": "number",
+              "description": "Additional R0 candidate view-angle threshold."
+            },
+            "ndvi_tie_epsilon": {
+              "default": 0.02,
+              "minimum": 0.0,
+              "title": "Ndvi Tie Epsilon",
+              "type": "number",
+              "description": "R0 near-maximum NDVI tolerance used before near-nadir selection."
+            },
+            "min_blue_reflectance": {
+              "default": 0.1,
+              "minimum": 0.0,
+              "title": "Min Blue Reflectance",
+              "type": "number",
+              "description": "Minimum blue reflectance for eligible land R0 candidates."
+            },
+            "show_progress": {
+              "default": false,
+              "title": "Show Progress",
+              "type": "boolean",
+              "description": "Display preparation progress where supported; does not alter calculations."
+            }
+          },
+          "title": "R0BuildScienceConfig",
+          "type": "object"
+        },
+        "R0Config": {
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "$ref": "#/$defs/R0Mode",
+              "description": "Build R0 explicitly or reuse existing immutable artifacts; never rebuild implicitly per date."
+            },
+            "recipe": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/R0Recipe"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Required only in build mode; must match the sensor. viirs_summer_composite and modis_summer_composite default to June 1 through September 30 (inclusive) of artifact.water_year - 1. Explicit artifact start_date/end_date override the window."
+            },
+            "artifacts": {
+              "items": {
+                "$ref": "#/$defs/R0ArtifactConfig"
+              },
+              "title": "Artifacts",
+              "type": "array",
+              "description": "R0 artifacts with explicit tile, processing water year, source interval and output/source path."
+            }
+          },
+          "required": [
+            "mode",
+            "artifacts"
+          ],
+          "title": "R0Config",
+          "type": "object"
+        },
+        "R0Mode": {
+          "enum": [
+            "existing",
+            "build"
+          ],
+          "title": "R0Mode",
+          "type": "string"
+        },
+        "R0Recipe": {
+          "enum": [
+            "viirs_summer_composite",
+            "modis_summer_composite"
+          ],
+          "title": "R0Recipe",
+          "type": "string"
+        },
+        "ResourceOverrides": {
+          "additionalProperties": false,
+          "properties": {
+            "cluster": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cluster",
+              "description": "Scheduler cluster; use blanca at this site."
+            },
+            "partition": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Partition",
+              "description": "Slurm partition; use blanca-snow or blanca-rittger, or approved preemptable overflow."
+            },
+            "account": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Account",
+              "description": "Slurm account authorized for the selected partition."
+            },
+            "qos": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Qos",
+              "description": "Optional Slurm QoS, only when authorized by site policy."
+            },
+            "time_limit": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Time Limit",
+              "description": "Slurm time limit, conventionally HH:MM:SS."
+            },
+            "cpus_per_task": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cpus Per Task",
+              "description": "CPU allocation for a daily task; must cover configured worker threads."
+            },
+            "memory": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Memory",
+              "description": "Total Slurm memory per task, not per CPU. R0 uses 0 with exclusive allocation for all node memory; bounded positive sizes are required for interpolation."
+            },
+            "environment_name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Environment Name",
+              "description": "Named environment activated by the daily renderer."
+            },
+            "extra_directives": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "title": "Extra Directives",
+              "type": "array",
+              "description": "Additional literal #SBATCH directive bodies. Use only site-approved directives."
+            }
+          },
+          "title": "ResourceOverrides",
+          "type": "object"
+        },
+        "RunConfig": {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Name",
+              "type": "string",
+              "description": "Required for ancillary, lut, and mask discovery roots."
+            },
+            "sensor": {
+              "title": "Sensor",
+              "type": "string",
+              "description": "Sensor family. The universal workflow passes it to each supported child."
+            },
+            "platform": {
+              "title": "Platform",
+              "type": "string",
+              "description": "Platform identity. Evaluated interpolation and native NRT orchestration currently require noaa20."
+            },
+            "product": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Product",
+              "description": "Optional identity assertion. If the filename supplies a conflicting identity, preflight fails."
+            }
+          },
+          "required": [
+            "name",
+            "sensor",
+            "platform"
+          ],
+          "title": "RunConfig",
+          "type": "object"
+        },
+        "ScenePreparationConfig": {
+          "additionalProperties": false,
+          "properties": {
+            "bands": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Bands",
+              "description": "Ordered bands. Omit for labeled R0 products; positional GeoTIFF R0 inputs require an explicit list."
+            },
+            "max_sensor_zenith": {
+              "default": 65.0,
+              "maximum": 90.0,
+              "minimum": 0.0,
+              "title": "Max Sensor Zenith",
+              "type": "number",
+              "description": "Additional R0 candidate view-angle threshold."
+            },
+            "max_solar_zenith": {
+              "default": 85.0,
+              "maximum": 90.0,
+              "minimum": 0.0,
+              "title": "Max Solar Zenith",
+              "type": "number",
+              "description": "Maximum valid solar zenith angle in physical degrees."
+            },
+            "min_obs_1km": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Min Obs 1Km",
+              "type": "integer",
+              "description": "Minimum M-band observation count required by VIIRS preparation."
+            },
+            "min_obs_500m": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Min Obs 500M",
+              "type": "integer",
+              "description": "Minimum I-band observation count required by VIIRS preparation."
+            },
+            "water_mask_values": {
+              "default": [
+                0,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7
+              ],
+              "items": {
+                "type": "integer"
+              },
+              "title": "Water Mask Values",
+              "type": "array",
+              "description": "Land/water classification values considered water."
+            },
+            "mask_water_using_reflectance_qf": {
+              "default": true,
+              "title": "Mask Water Using Reflectance Qf",
+              "type": "boolean",
+              "description": "Use native reflectance QA to identify water."
+            },
+            "mask_water_using_external_file": {
+              "default": true,
+              "title": "Mask Water Using External File",
+              "type": "boolean",
+              "description": "Use an externally supplied water layer where bound."
+            },
+            "mask_low_reflectance_for_inversion": {
+              "default": false,
+              "title": "Mask Low Reflectance For Inversion",
+              "type": "boolean",
+              "description": "Enable the optional low-reflectance inversion exclusion."
+            },
+            "low_reflectance_threshold": {
+              "default": 0.1,
+              "minimum": 0.0,
+              "title": "Low Reflectance Threshold",
+              "type": "number",
+              "description": "Reflectance cutoff if low-reflectance masking is enabled."
+            },
+            "cloud_mask_var": {
+              "default": "mask_cloud",
+              "title": "Cloud Mask Var",
+              "type": "string",
+              "description": "Dataset variable for an external cloud mask."
+            },
+            "cloud_shadow_mask_var": {
+              "default": "mask_cloud_shadow",
+              "title": "Cloud Shadow Mask Var",
+              "type": "string",
+              "description": "Dataset variable for an external cloud-shadow mask."
+            },
+            "cloud_mask_source_policy": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CloudMaskSourcePolicy"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "How external/native QA cloud evidence is combined; see supported enum."
+            },
+            "cloud_mask_application_stage": {
+              "$ref": "#/$defs/CloudMaskApplicationStage",
+              "default": "pre_inversion",
+              "description": "Pre- versus post-inversion cloud application. Retained VIIRS retrieval requires post_inversion."
+            },
+            "water_mask_var": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Water Mask Var",
+              "description": "Optional external-water dataset variable."
+            },
+            "ice_mask_var": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ice Mask Var",
+              "description": "Optional external-ice dataset variable."
+            },
+            "playa_mask_var": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Playa Mask Var",
+              "description": "Optional external-playa dataset variable."
+            }
+          },
+          "title": "ScenePreparationConfig",
+          "type": "object"
+        },
+        "ScienceConfig": {
+          "additionalProperties": false,
+          "properties": {
+            "build_r0": {
+              "$ref": "#/$defs/R0BuildScienceConfig",
+              "description": "R0 preparation/selection parameters; no disk-backed or chunked summer execution."
+            },
+            "invert": {
+              "$ref": "#/$defs/InvertScienceConfig",
+              "description": "Generic daily inversion science settings."
+            },
+            "albedo": {
+              "$ref": "#/$defs/AlbedoScienceConfig",
+              "description": "Daily canopy, ice and radiative calculations."
+            }
+          },
+          "title": "ScienceConfig",
+          "type": "object"
+        },
+        "SelectionConfig": {
+          "additionalProperties": false,
+          "properties": {
+            "tiles": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "title": "Tiles",
+              "type": "array",
+              "description": "Complete native tile list; do not silently change an initialized or registered domain."
+            },
+            "water_years": {
+              "default": [],
+              "items": {
+                "type": "integer"
+              },
+              "title": "Water Years",
+              "type": "array",
+              "description": "Processing water years. Adding a year does not build its annual assets automatically."
+            },
+            "dates": {
+              "default": [],
+              "items": {
+                "format": "date",
+                "type": "string"
+              },
+              "title": "Dates",
+              "type": "array",
+              "description": "Optional exact acquisition-date allowlist. Omit or leave empty to use all available dates. For R0 sources it further restricts each artifact's resolved source window; it does not replace that window."
+            }
+          },
+          "title": "SelectionConfig",
+          "type": "object"
+        },
+        "Stage": {
+          "enum": [
+            "cloud_mask",
+            "build_r0",
+            "invert",
+            "albedo",
+            "interpolate"
+          ],
+          "title": "Stage",
+          "type": "string"
+        },
+        "StagingConfig": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "title": "Enabled",
+              "type": "boolean",
+              "description": "Enable explicit scratch staging. Requires a staging root when true."
+            },
+            "root": {
+              "anyOf": [
+                {
+                  "format": "path",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Root",
+              "description": "Required when enabled is true. Must be visible to submit and compute nodes."
+            },
+            "verification": {
+              "$ref": "#/$defs/StagingVerification",
+              "default": "stat",
+              "description": "stat verifies size; sha256 is stricter and more expensive."
+            },
+            "reuse_valid": {
+              "default": true,
+              "title": "Reuse Valid",
+              "type": "boolean",
+              "description": "Reuse an already staged file only after configured verification passes."
+            }
+          },
+          "title": "StagingConfig",
+          "type": "object"
+        },
+        "StagingVerification": {
+          "enum": [
+            "stat",
+            "sha256"
+          ],
+          "title": "StagingVerification",
+          "type": "string"
+        },
+        "StaticContextRootConfig": {
+          "additionalProperties": false,
+          "description": "Discover canonical static ancillary and mask files by tile.",
+          "properties": {
+            "adapter": {
+              "const": "tiled_static_context",
+              "default": "tiled_static_context",
+              "title": "Adapter",
+              "type": "string",
+              "description": "Discovery/static-context adapter name; use one registered by the maintained I/O package."
+            },
+            "path": {
+              "format": "path",
+              "title": "Path",
+              "type": "string",
+              "description": "Existing R0 path in existing mode or desired output path in build mode. Use a descriptive filename such as viirs_h08v05_r0_2025.nc, where 2025 is the source summer. Output paths are literal and must be updated when changing tile/year."
+            },
+            "pattern": {
+              "default": "h??v??/*.tif",
+              "title": "Pattern",
+              "type": "string",
+              "description": "pathlib-style glob relative to path. Only canonical static-context filenames are classified."
+            },
+            "required": {
+              "default": true,
+              "title": "Required",
+              "type": "boolean",
+              "description": "Missing required assets stop an explicitly requested staging operation."
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "title": "StaticContextRootConfig",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "config_type": {
+          "const": "batch_request",
+          "title": "Config Type",
+          "type": "string",
+          "description": "Required public configuration kind; selects the interface, not a scientific algorithm."
+        },
+        "schema_version": {
+          "const": 1,
+          "description": "Required integer 1: the spipy v1.0.0 configuration baseline. Independent of saved-state formats and package versions.",
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "artifact_type": {
+          "const": "spires_batch_request",
+          "default": "spires_batch_request",
+          "title": "Artifact Type",
+          "type": "string",
+          "description": "Artifact discriminator. Omit it or use the only allowed value."
+        },
+        "run": {
+          "$ref": "#/$defs/RunConfig",
+          "description": "Run identity: name, sensor and platform. The workflow supplies sensor/platform to daily children."
+        },
+        "selection": {
+          "$ref": "#/$defs/SelectionConfig",
+          "description": "Tile, water-year and explicit date selection. No implicit dates are downloaded or created."
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/Stage"
+          },
+          "title": "Steps",
+          "type": "array",
+          "description": "Explicit scientific stages. Select any supported ordered subset. interpolate is reserved but not implemented in schema version 1."
+        },
+        "inputs": {
+          "$ref": "#/$defs/InputsConfig",
+          "description": "At least one explicit file, discovery root, or static context root is required."
+        },
+        "cloud_mask": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CloudMaskConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Cloud generation/external-mask policy for daily requests. Matched historical/NRT preparation uses its own cloud coordinator."
+        },
+        "r0": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/R0Config"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Required for inversion. Existing mode points to validated R0 files; build mode defines R0 output artifacts and requires build_r0 inputs."
+        },
+        "science": {
+          "$ref": "#/$defs/ScienceConfig",
+          "description": "Only options for selected stages are attached to resolved tasks. Entire sections may be omitted to use defaults."
+        },
+        "output": {
+          "$ref": "#/$defs/OutputConfig",
+          "description": "Output destination/settings. Use a new generation or run directory; do not overwrite accepted results."
+        },
+        "execution": {
+          "$ref": "#/$defs/ExecutionConfig",
+          "description": "Daily scheduler profiles, routing, concurrency, retry and explicit scratch staging."
+        },
+        "preflight": {
+          "$ref": "#/$defs/PreflightConfig",
+          "description": "Validation level for planning; metadata checks are not a complete scientific validation."
+        }
+      },
+      "required": [
+        "config_type",
+        "schema_version",
+        "run",
+        "selection",
+        "steps",
+        "inputs",
+        "output"
+      ],
+      "title": "RequestConfig",
+      "type": "object"
+    },
+    "initialization": {
+      "$defs": {
+        "Asset": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+              "title": "Id",
+              "type": "string",
+              "description": "Unique human-readable asset identifier."
+            },
+            "kind": {
+              "enum": [
+                "lut",
+                "cloud_model",
+                "ancillary",
+                "climatology",
+                "r0"
+              ],
+              "title": "Kind",
+              "type": "string",
+              "description": "lut, cloud_model, ancillary, climatology or r0; determines the required assets subdirectory."
+            },
+            "relative_path": {
+              "format": "path",
+              "title": "Relative Path",
+              "type": "string",
+              "description": "Individual file path relative to assets/, with the correct kind directory; no absolute path or parent traversal."
+            },
+            "tile": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Tile",
+              "description": "Native tile identifier, e.g. h08v05. Must be consistent with selection and source grid."
+            },
+            "water_year": {
+              "anyOf": [
+                {
+                  "maximum": 2200,
+                  "minimum": 1900,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Water Year",
+              "description": "Processing water year, named by its ending year; e.g. summer 2025 R0 serves WY2026."
+            },
+            "required": {
+              "default": true,
+              "title": "Required",
+              "type": "boolean",
+              "description": "Missing required assets stop an explicitly requested staging operation."
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "relative_path"
+          ],
+          "title": "Asset",
+          "type": "object"
+        },
+        "Storage": {
+          "additionalProperties": false,
+          "properties": {
+            "durable_root": {
+              "default": "/pl/active/rittger_ops/spipy",
+              "format": "path",
+              "title": "Durable Root",
+              "type": "string",
+              "description": "Authoritative spipy assets/products/state root, separate from shared reflectance."
+            },
+            "scratch_root": {
+              "default": "/scratch/alpine/ropa5718/spipy",
+              "format": "path",
+              "title": "Scratch Root",
+              "type": "string",
+              "description": "Fast working/cache root; not the sole durable home for state."
+            },
+            "reflectance_roots": {
+              "additionalProperties": {
+                "format": "path",
+                "type": "string"
+              },
+              "title": "Reflectance Roots",
+              "type": "object",
+              "description": "Product/collection to authoritative archive-root mapping; initializer does not create, scan or download archives."
+            }
+          },
+          "title": "Storage",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "config_type": {
+          "const": "initialization",
+          "title": "Config Type",
+          "type": "string",
+          "description": "Required public configuration kind; selects the interface, not a scientific algorithm."
+        },
+        "schema_version": {
+          "const": 1,
+          "description": "Required integer 1: the spipy v1.0.0 configuration baseline. Independent of saved-state formats and package versions.",
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "sensor": {
+          "default": "viirs",
+          "title": "Sensor",
+          "type": "string",
+          "description": "Sensor family. The universal workflow passes it to each supported child."
+        },
+        "platform": {
+          "default": "noaa20",
+          "title": "Platform",
+          "type": "string",
+          "description": "Platform identity. Evaluated interpolation and native NRT orchestration currently require noaa20."
+        },
+        "domain": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "title": "Domain",
+          "type": "string",
+          "description": "Stable identifier for the complete tile domain that shares interpolation donors and state."
+        },
+        "tiles": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Tiles",
+          "type": "array",
+          "description": "Complete native tile list; do not silently change an initialized or registered domain."
+        },
+        "water_years": {
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 1,
+          "title": "Water Years",
+          "type": "array",
+          "description": "Processing water years. Adding a year does not build its annual assets automatically."
+        },
+        "asset_version": {
+          "default": "v1",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "title": "Asset Version",
+          "type": "string",
+          "description": "Directory/version label for externally prepared ancillary/climatology assets."
+        },
+        "storage": {
+          "$ref": "#/$defs/Storage",
+          "description": "Durable, scratch and shared reflectance roots; managed roots must not overlap shared archives."
+        },
+        "assets": {
+          "items": {
+            "$ref": "#/$defs/Asset"
+          },
+          "title": "Assets",
+          "type": "array",
+          "description": "Explicit individual external files to register. An empty list creates layout only, not a ready scientific inventory."
+        },
+        "stage_assets": {
+          "default": false,
+          "title": "Stage Assets",
+          "type": "boolean",
+          "description": "Copy registered available assets only when explicitly true; never transfers reflectance or full NRT history."
+        }
+      },
+      "required": [
+        "config_type",
+        "schema_version",
+        "domain",
+        "tiles",
+        "water_years"
+      ],
+      "title": "Initialization",
+      "type": "object"
+    },
+    "historical": {
+      "$defs": {
+        "HistoricalScheduler": {
+          "additionalProperties": false,
+          "properties": {
+            "partition": {
+              "default": "blanca-rittger",
+              "pattern": "^[A-Za-z0-9_.-]+$",
+              "title": "Partition",
+              "type": "string",
+              "description": "Slurm partition; use blanca-snow or blanca-rittger, or approved preemptable overflow."
+            },
+            "account": {
+              "default": "blanca-rittger",
+              "pattern": "^[A-Za-z0-9_.-]+$",
+              "title": "Account",
+              "type": "string",
+              "description": "Slurm account authorized for the selected partition."
+            },
+            "cpus": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Cpus",
+              "type": "integer",
+              "description": "CPUs allocated per universal job. Cover the maximum thread count of all contained stages."
+            },
+            "memory": {
+              "default": "8G",
+              "pattern": "^(?:0|[1-9][0-9]*[KMGT]?)$",
+              "title": "Memory",
+              "type": "string",
+              "description": "Total Slurm memory per task, not per CPU. R0 uses 0 with exclusive allocation for all node memory; bounded positive sizes are required for interpolation."
+            },
+            "cluster": {
+              "const": "blanca",
+              "default": "blanca",
+              "description": "Slurm cluster.",
+              "title": "Cluster",
+              "type": "string"
+            },
+            "qos": {
+              "default": "blanca-rittger",
+              "description": "Authorized queue QoS.",
+              "pattern": "^[A-Za-z0-9_.-]+$",
+              "title": "Qos",
+              "type": "string"
+            },
+            "exclusive": {
+              "default": false,
+              "description": "Request an exclusive node when true.",
+              "title": "Exclusive",
+              "type": "boolean"
+            },
+            "time": {
+              "default": "04:00:00",
+              "pattern": "^(?:[0-9]+-)?[0-9]+(?::[0-5][0-9]){0,2}$",
+              "title": "Time",
+              "type": "string",
+              "description": "Slurm walltime, optionally day-prefixed."
+            },
+            "concurrency": {
+              "default": 4,
+              "description": "Maximum concurrent date tasks; chunks run in dependency order.",
+              "minimum": 1,
+              "title": "Concurrency",
+              "type": "integer"
+            },
+            "policy": {
+              "description": "Shared scheduler-policy JSON with exclusions and named job types.",
+              "title": "Policy",
+              "type": "string"
+            },
+            "job_type": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Named historical resource profile in the policy; resolved before budget validation.",
+              "title": "Job Type"
+            },
+            "queue": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Optional named queue override; sets cluster, partition, account and QoS together.",
+              "title": "Queue"
+            },
+            "snapshot": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Policy snapshot generated during planning; do not author this field.",
+              "title": "Snapshot"
+            }
+          },
+          "required": [
+            "policy"
+          ],
+          "title": "HistoricalScheduler",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "config_type": {
+          "const": "historical",
+          "title": "Config Type",
+          "type": "string",
+          "description": "Required public configuration kind; selects the interface, not a scientific algorithm."
+        },
+        "schema_version": {
+          "const": 1,
+          "description": "Required integer 1: the spipy v1.0.0 configuration baseline. Independent of saved-state formats and package versions.",
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "start": {
+          "description": "First date to prepare, inclusive.",
+          "format": "date",
+          "title": "Start",
+          "type": "string"
+        },
+        "stop": {
+          "description": "Last date boundary, exclusive; a WY ends on October 1.",
+          "format": "date",
+          "title": "Stop",
+          "type": "string"
+        },
+        "reflectance_root": {
+          "description": "Shared archive input directory containing tile/year/VJ109GA.A*.h5.",
+          "title": "Reflectance Root",
+          "type": "string"
+        },
+        "missing_reflectance": {
+          "default": "error",
+          "description": "error stops planning when any tile/date has no local granule; allow records that planned gap as an unknown tile for interpolation and NRT history. Does not permit corrupt files, duplicate vintages, inaccessible archives or loss of a source after planning.",
+          "enum": [
+            "error",
+            "allow"
+          ],
+          "title": "Missing Reflectance",
+          "type": "string"
+        },
+        "output": {
+          "description": "New per-user scratch run directory; never use another operator's outputs.",
+          "title": "Output",
+          "type": "string"
+        },
+        "preparation": {
+          "additionalProperties": true,
+          "description": "Matched pipeline recipe: science_python, cloud_python, cloud_model, collection, observation_policy, concurrency/memory settings and explicit tiles[tile][WY] retrieval bindings; same interface as NRT cycle preparation.",
+          "title": "Preparation",
+          "type": "object"
+        },
+        "terrain": {
+          "additionalProperties": true,
+          "description": "Per-tile mapped dem, slope and aspect fields for daily terrain albedo; DEM metres, angles degrees, matching native grid.",
+          "title": "Terrain",
+          "type": "object"
+        },
+        "albedo_lut": {
+          "description": "Existing albedo LUT; daily albedo uses measured grain/dust, without temporal or spatial filling.",
+          "title": "Albedo Lut",
+          "type": "string"
+        },
+        "scheduler": {
+          "$ref": "#/$defs/HistoricalScheduler",
+          "description": "Date-array resources; cpus and memory include the cloud coordinator and concurrent single-worker tile retrievals."
+        }
+      },
+      "required": [
+        "config_type",
+        "schema_version",
+        "start",
+        "stop",
+        "reflectance_root",
+        "output",
+        "preparation",
+        "terrain",
+        "albedo_lut",
+        "scheduler"
+      ],
+      "title": "HistoricalRequest",
+      "type": "object"
+    }
+  },
+  "daily_request_guidance": {
+    "document_type": "spires_batch_daily_request_configuration_reference",
+    "documented_schema_version": 1,
+    "runnable_request": false,
+    "description": "Configuration reference for the baseline batch_request interface used by R0 and advanced batch stages. Copy examples/r0.json for R0 or examples/historical.json for the full matched historical pipeline. The authoritative batch-request schema is produced by spires-batch schema request.",
+    "sensor_platform_products": [
+      {
+        "sensor": "viirs",
+        "platform": "snpp",
+        "platform_aliases": [
+          "npp",
+          "suomi-npp",
+          "suominpp"
+        ],
+        "derived_product": "vnp09ga"
+      },
+      {
+        "sensor": "viirs",
+        "platform": "noaa20",
+        "platform_aliases": [
+          "noaa-20",
+          "jpss-1",
+          "jpss1"
+        ],
+        "derived_product": "vj109ga"
+      },
+      {
+        "sensor": "viirs",
+        "platform": "noaa21",
+        "platform_aliases": [
+          "noaa-21",
+          "jpss-2",
+          "jpss2"
+        ],
+        "derived_product": "vj209ga"
+      },
+      {
+        "sensor": "modis",
+        "platform": "terra",
+        "platform_aliases": [],
+        "derived_product": "mod09ga"
+      },
+      {
+        "sensor": "modis",
+        "platform": "aqua",
+        "platform_aliases": [],
+        "derived_product": "myd09ga"
+      }
+    ],
+    "request_fields": {
+      "artifact_type": {
+        "type": "string",
+        "required": false,
+        "default": "spires_batch_request",
+        "allowed_values": [
+          "spires_batch_request"
+        ],
+        "description": "Artifact discriminator. Omit it or use the only allowed value."
+      },
+      "schema_version": {
+        "type": "integer",
+        "required": true,
+        "allowed_values": [
+          1
+        ],
+        "description": "Required integer 1: spipy v1.0.0 configuration baseline; independent of saved-state formats and package versions."
+      },
+      "run": {
+        "type": "object",
+        "required": true,
+        "additional_fields_allowed": false,
+        "fields": {
+          "name": {
+            "type": "string",
+            "required": true,
+            "minimum_length": 1,
+            "maximum_length": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+            "description": "Human-readable run name used in immutable operational identities."
+          },
+          "sensor": {
+            "type": "string",
+            "required": true,
+            "allowed_values": [
+              "viirs",
+              "modis"
+            ],
+            "description": "Sensor family. Case, spaces, and underscores are normalized."
+          },
+          "platform": {
+            "type": "string",
+            "required": true,
+            "allowed_values_by_sensor": {
+              "viirs": [
+                "snpp",
+                "noaa20",
+                "noaa21"
+              ],
+              "modis": [
+                "terra",
+                "aqua"
+              ]
+            },
+            "description": "Satellite/platform. Common VIIRS aliases are accepted and normalized."
+          },
+          "product": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "allowed_values": [
+              "vnp09ga",
+              "vj109ga",
+              "vj209ga",
+              "mod09ga",
+              "myd09ga",
+              null
+            ],
+            "description": "Normally omit this field. It is derived from sensor/platform. If supplied, it must match that pair."
+          }
+        }
+      },
+      "selection": {
+        "type": "object",
+        "required": true,
+        "additional_fields_allowed": false,
+        "fields": {
+          "tiles": {
+            "type": "array[string]",
+            "required": false,
+            "default": [],
+            "item_pattern": "^h[0-9]{2}v[0-9]{2}$",
+            "unique_items": true,
+            "description": "Selected MODIS-grid tiles. Empty means no tile filter; operational requests should normally be explicit."
+          },
+          "water_years": {
+            "type": "array[integer]",
+            "required": false,
+            "default": [],
+            "minimum_item": 1900,
+            "maximum_item": 2200,
+            "unique_items": true,
+            "description": "Selected water years. Water year N runs from October 1 of N-1 through September 30 of N. For R0 builds these are target processing years, not source acquisition years; each artifact must belong to the selection. Omit this filter when the artifact list already defines the target years."
+          },
+          "dates": {
+            "type": "array[date]",
+            "required": false,
+            "default": [],
+            "format": "YYYY-MM-DD",
+            "unique_items": true,
+            "description": "Optional exact acquisition-date allowlist. Omit or leave empty to use all available dates. For R0 sources it further restricts each artifact's resolved source window; it does not replace that window."
+          }
+        }
+      },
+      "steps": {
+        "type": "array[string]",
+        "required": true,
+        "allowed_values": [
+          "build_r0",
+          "invert",
+          "albedo",
+          "interpolate"
+        ],
+        "required_order": [
+          "build_r0",
+          "invert",
+          "albedo",
+          "interpolate"
+        ],
+        "unique_items": true,
+        "description": "Explicit scientific stages. Select any supported ordered subset. interpolate is reserved but not implemented in schema version 1."
+      },
+      "inputs": {
+        "type": "object",
+        "required": true,
+        "additional_fields_allowed": false,
+        "description": "At least one explicit file, discovery root, or static context root is required.",
+        "fields": {
+          "files": {
+            "type": "array[object]",
+            "required": false,
+            "default": [],
+            "item_reference": "definitions.input_file"
+          },
+          "roots": {
+            "type": "array[object]",
+            "required": false,
+            "default": [],
+            "item_reference": "definitions.discovery_root"
+          },
+          "static_context_roots": {
+            "type": "array[object]",
+            "required": false,
+            "default": [],
+            "item_reference": "definitions.static_context_root",
+            "description": "Sensor-independent discovery of canonical ancillary and static mask files organized as one directory per hNNvNN tile."
+          }
+        }
+      },
+      "r0": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "required": false,
+        "default": null,
+        "additional_fields_allowed": false,
+        "description": "Required for inversion. Existing mode points to validated R0 files; build mode defines R0 output artifacts and requires build_r0 inputs.",
+        "fields": {
+          "mode": {
+            "type": "string",
+            "required": true,
+            "allowed_values": [
+              "existing",
+              "build"
+            ]
+          },
+          "recipe": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "allowed_values": [
+              "viirs_summer_composite",
+              "modis_summer_composite",
+              null
+            ],
+            "description": "Required only in build mode; must match the sensor. viirs_summer_composite and modis_summer_composite default to June 1 through September 30 (inclusive) of artifact.water_year - 1. Explicit artifact start_date/end_date override the window."
+          },
+          "artifacts": {
+            "type": "array[object]",
+            "required": true,
+            "minimum_items": 1,
+            "unique_by": "path",
+            "item_reference": "definitions.r0_artifact"
+          }
+        }
+      },
+      "science": {
+        "type": "object",
+        "required": false,
+        "additional_fields_allowed": false,
+        "description": "Only options for selected stages are attached to resolved tasks. Entire sections may be omitted to use defaults.",
+        "fields": {
+          "build_r0": {
+            "type": "object",
+            "required": false,
+            "default_reference": "definitions.build_r0_science.defaults",
+            "field_reference": "definitions.build_r0_science"
+          },
+          "invert": {
+            "type": "object",
+            "required": false,
+            "default_reference": "definitions.invert_science.defaults",
+            "field_reference": "definitions.invert_science"
+          },
+          "albedo": {
+            "type": "object",
+            "required": false,
+            "default_reference": "definitions.albedo_science.defaults",
+            "field_reference": "definitions.albedo_science"
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "required": true,
+        "additional_fields_allowed": false,
+        "fields": {
+          "root": {
+            "type": "path",
+            "required": true,
+            "description": "Root directory for scientific products. Relative paths resolve relative to the request file."
+          },
+          "product_contents": {
+            "type": "string",
+            "required": false,
+            "default": "full",
+            "allowed_values": [
+              "full",
+              "results_subset"
+            ],
+            "description": "full persists scene, background, ancillary, and results groups. results_subset stores compact results where the selected workflow permits it."
+          },
+          "existing_file_handling": {
+            "type": "string",
+            "required": false,
+            "default": "write_new_file",
+            "allowed_values": [
+              "write_new_file",
+              "update_atomically"
+            ],
+            "description": "update_atomically is supported only for standalone albedo enrichment of an existing full raw product."
+          },
+          "existing_output_policy": {
+            "type": "string",
+            "required": false,
+            "default": "error",
+            "allowed_values": [
+              "error",
+              "reuse_valid"
+            ],
+            "description": "error rejects an existing destination. reuse_valid reopens and validates a compatible existing output before treating it as complete."
+          }
+        }
+      },
+      "execution": {
+        "type": "object",
+        "required": false,
+        "additional_fields_allowed": false,
+        "fields": {
+          "profile": {
+            "type": "string",
+            "required": false,
+            "default": "blanca-snow",
+            "built_in_values": [
+              "blanca-snow",
+              "blanca-rittger",
+              "alpine"
+            ],
+            "description": "Legacy single-profile mode. Custom names are allowed only when execution.resources supplies both cluster and partition. Do not combine with explicit tile routing."
+          },
+          "max_concurrent_tasks": {
+            "type": "integer",
+            "required": false,
+            "default": 20,
+            "minimum": 1,
+            "description": "Legacy single-profile concurrency cap. Do not combine with explicit tile routing. When omitted in a policy-based request, use the selected job type concurrency."
+          },
+          "max_auto_retry_count": {
+            "type": "integer",
+            "required": false,
+            "default": 3,
+            "minimum": 0,
+            "description": "Maximum automatic retries after the initial attempt for eligible transient failures."
+          },
+          "resources": {
+            "type": "object",
+            "required": false,
+            "field_reference": "definitions.resource_overrides",
+            "description": "Explicit resource overrides on the selected job profile. Keep environment_name here. Node exclusions, exclusive and node-count directives come from the policy, not extra_directives."
+          },
+          "profiles": {
+            "type": "object keyed by profile name",
+            "required": false,
+            "default": {},
+            "value_reference": "definitions.execution_profile",
+            "description": "Named profiles available to explicit tile routing. Built-in names inherit their cluster and partition; custom names must set both."
+          },
+          "tile_profiles": {
+            "type": "object mapping hNNvNN tile to profile name",
+            "required": false,
+            "default": {},
+            "description": "Must exactly cover selection.tiles when explicit routing is enabled."
+          },
+          "coordinator_profile": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "description": "Required with explicit routing. Select a durable non-preemptable profile for the operational coordinator."
+          },
+          "staging": {
+            "type": "object",
+            "required": false,
+            "field_reference": "definitions.staging"
+          },
+          "policy": {
+            "type": "path",
+            "required": false,
+            "description": "Shared scheduler-policy JSON resolved relative to the configuration file."
+          },
+          "job_type": {
+            "type": "string",
+            "required": false,
+            "description": "Named job_types entry in execution.policy; required with a policy. Select one job type per batch request; do not combine with inline tile/stage profile routing."
+          },
+          "queue": {
+            "type": "string",
+            "required": false,
+            "description": "Named queue override from the same policy; sets cluster, partition, account and QoS together. Requires a job_type."
+          },
+          "policy_snapshot": {
+            "type": "object",
+            "required": false,
+            "description": "Generated immutable-plan provenance; do not author. Existing plans keep their resolved resources when the shared policy changes."
+          }
+        }
+      },
+      "preflight": {
+        "type": "object",
+        "required": false,
+        "additional_fields_allowed": false,
+        "fields": {
+          "metadata_check": {
+            "type": "string",
+            "required": false,
+            "default": "sample",
+            "allowed_values": [
+              "none",
+              "sample",
+              "all"
+            ],
+            "description": "none checks inventory only; sample checks deterministic representatives; all opens every resolved input header."
+          }
+        }
+      },
+      "config_type": {
+        "type": "string",
+        "required": true,
+        "allowed_values": [
+          "batch_request"
+        ],
+        "description": "Required public configuration kind. This is the current baseline, not a legacy algorithm."
+      }
+    },
+    "definitions": {
+      "input_file": {
+        "additional_fields_allowed": false,
+        "fields": {
+          "role": {
+            "type": "string",
+            "required": true,
+            "allowed_values": [
+              "reflectance",
+              "r0",
+              "r0_source",
+              "raw",
+              "interpolated",
+              "ancillary",
+              "lut",
+              "mask"
+            ]
+          },
+          "path": {
+            "type": "path",
+            "required": true,
+            "description": "Exact source path. Relative paths resolve relative to the request file."
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "Required for ancillary, lut, and mask roles. Supported semantic names are listed below."
+          },
+          "tile": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "pattern": "^h[0-9]{2}v[0-9]{2}$"
+          },
+          "date": {
+            "type": [
+              "date",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "format": "YYYY-MM-DD"
+          },
+          "water_year": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "required": false,
+            "default": null
+          },
+          "product": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "description": "Optional identity assertion. If the filename supplies a conflicting identity, preflight fails."
+          },
+          "metadata": {
+            "type": "object",
+            "required": false,
+            "default": {},
+            "additional_fields_allowed": true,
+            "description": "Free-form operator metadata copied into the resolved input record."
+          }
+        }
+      },
+      "discovery_root": {
+        "additional_fields_allowed": false,
+        "fields": {
+          "adapter": {
+            "type": "string",
+            "required": false,
+            "default": "curc",
+            "implemented_values": [
+              "curc"
+            ]
+          },
+          "role": {
+            "type": "string",
+            "required": true,
+            "allowed_values": [
+              "reflectance",
+              "r0",
+              "r0_source",
+              "raw",
+              "interpolated",
+              "ancillary",
+              "lut",
+              "mask"
+            ]
+          },
+          "path": {
+            "type": "path",
+            "required": true,
+            "description": "Directory searched recursively or non-recursively according to pattern."
+          },
+          "pattern": {
+            "type": "string",
+            "required": false,
+            "default": "**/*",
+            "description": "pathlib-style glob relative to path. NASA filename identities are parsed and filtered by run product and selection. r0_source patterns additionally support {tile} and {year}: expanded from artifact tiles (or selection.tiles) and all calendar years covered by the resolved source windows. Example: {tile}/{year}/VJ109GA.A*.{tile}.002.*.h5. Other placeholders and placeholders on other roles are rejected."
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "Required for ancillary, lut, and mask discovery roots."
+          },
+          "required": {
+            "type": "boolean",
+            "required": false,
+            "default": true,
+            "description": "If true, a missing root or a root with no selected files is a preflight error. If false, it is a warning."
+          }
+        }
+      },
+      "static_context_root": {
+        "additional_fields_allowed": false,
+        "fields": {
+          "adapter": {
+            "type": "string",
+            "required": false,
+            "default": "tiled_static_context",
+            "implemented_values": [
+              "tiled_static_context"
+            ]
+          },
+          "path": {
+            "type": "path",
+            "required": true,
+            "description": "Top-level directory containing one immediate hNNvNN directory per tile."
+          },
+          "pattern": {
+            "type": "string",
+            "required": false,
+            "default": "h??v??/*.tif",
+            "description": "pathlib-style glob relative to path. Only canonical static-context filenames are classified."
+          },
+          "required": {
+            "type": "boolean",
+            "required": false,
+            "default": true,
+            "description": "If true, a missing root or a selected tile with no canonical files is a preflight error."
+          }
+        }
+      },
+      "r0_artifact": {
+        "additional_fields_allowed": false,
+        "fields": {
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "description": "Defaults to the path stem when omitted."
+          },
+          "path": {
+            "type": "path",
+            "required": true,
+            "description": "Existing R0 path in existing mode or desired output path in build mode. Use a descriptive filename such as viirs_h08v05_r0_2025.nc, where 2025 is the source summer. Output paths are literal and must be updated when changing tile/year."
+          },
+          "tile": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "pattern": "^h[0-9]{2}v[0-9]{2}$"
+          },
+          "water_year": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "description": "Target processing water year (1900\u20132200), not the summer acquisition year. Required for build-mode recipe defaults unless both explicit date bounds are supplied. WY2026 defaults to summer 2025."
+          },
+          "start_date": {
+            "type": [
+              "date",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "format": "YYYY-MM-DD",
+            "description": "Optional override, supplied together with end_date. In build mode, omitting both resolves the recipe's previous-summer window from water_year. Existing mode does not infer dates."
+          },
+          "end_date": {
+            "type": [
+              "date",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "format": "YYYY-MM-DD",
+            "description": "Inclusive last source date; must accompany start_date and not precede it. Omitting both in build mode uses the recipe's previous-summer window."
+          }
+        }
+      },
+      "scene_preparation": {
+        "additional_fields_allowed": false,
+        "description": "Shared preparation options used independently under science.build_r0.preparation and science.invert.preparation.",
+        "fields": {
+          "bands": {
+            "type": [
+              "array[string]",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "unique_items": true,
+            "description": "Ordered bands. Omit for labeled R0 products; positional GeoTIFF R0 inputs require an explicit list."
+          },
+          "max_sensor_zenith": {
+            "type": "number",
+            "required": false,
+            "default": 65,
+            "minimum": 0,
+            "maximum": 90
+          },
+          "max_solar_zenith": {
+            "type": "number",
+            "required": false,
+            "default": 85,
+            "minimum": 0,
+            "maximum": 90
+          },
+          "min_obs_1km": {
+            "type": "integer",
+            "required": false,
+            "default": 1,
+            "minimum": 1
+          },
+          "min_obs_500m": {
+            "type": "integer",
+            "required": false,
+            "default": 1,
+            "minimum": 1
+          },
+          "water_mask_values": {
+            "type": "array[integer]",
+            "required": false,
+            "default": [
+              0,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ]
+          },
+          "mask_water_using_reflectance_qf": {
+            "type": "boolean",
+            "required": false,
+            "default": true
+          },
+          "mask_water_using_external_file": {
+            "type": "boolean",
+            "required": false,
+            "default": true
+          },
+          "mask_low_reflectance_for_inversion": {
+            "type": "boolean",
+            "required": false,
+            "default": false
+          },
+          "low_reflectance_threshold": {
+            "type": "number",
+            "required": false,
+            "default": 0.1,
+            "minimum": 0
+          },
+          "cloud_mask_var": {
+            "type": "string",
+            "required": false,
+            "default": "mask_cloud"
+          },
+          "cloud_shadow_mask_var": {
+            "type": "string",
+            "required": false,
+            "default": "mask_cloud_shadow"
+          },
+          "cloud_mask_source_policy": {
+            "type": [
+              "enum",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "allowed": [
+              "external_only",
+              "qa_only",
+              "qa_or_external",
+              "none"
+            ]
+          },
+          "cloud_mask_application_stage": {
+            "type": "enum",
+            "required": false,
+            "default": "pre_inversion",
+            "allowed": [
+              "pre_inversion",
+              "post_inversion"
+            ]
+          },
+          "water_mask_var": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "required": false,
+            "default": null
+          },
+          "ice_mask_var": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "required": false,
+            "default": null
+          },
+          "playa_mask_var": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "required": false,
+            "default": null
+          }
+        }
+      },
+      "clustering": {
+        "additional_fields_allowed": false,
+        "fields": {
+          "enabled": {
+            "type": "boolean",
+            "required": false,
+            "default": false
+          },
+          "features": {
+            "type": "array[string]",
+            "required": false,
+            "default": [
+              "reflectance",
+              "background",
+              "solar_zenith"
+            ],
+            "allowed_items": [
+              "reflectance",
+              "background",
+              "solar_zenith",
+              "cosine_illumination"
+            ],
+            "unique_items": true
+          },
+          "representative_method": {
+            "type": "string",
+            "required": false,
+            "default": "cluster_mean",
+            "allowed_values": [
+              "cluster_mean",
+              "first_pixel"
+            ]
+          },
+          "reflectance_tol": {
+            "type": [
+              "positive number",
+              "array[positive number]"
+            ],
+            "required": false,
+            "default": 0.02
+          },
+          "background_tol": {
+            "type": [
+              "positive number",
+              "array[positive number]"
+            ],
+            "required": false,
+            "default": 0.02
+          },
+          "solar_zenith_tol": {
+            "type": [
+              "positive number",
+              "array[positive number]"
+            ],
+            "required": false,
+            "default": 2
+          },
+          "cosine_illumination_tol": {
+            "type": [
+              "positive number",
+              "array[positive number]"
+            ],
+            "required": false,
+            "default": 0.02
+          }
+        }
+      },
+      "build_r0_science": {
+        "defaults": {
+          "max_sensor_zenith": 30,
+          "ndvi_tie_epsilon": 0.02,
+          "min_blue_reflectance": 0.1,
+          "show_progress": false
+        },
+        "fields": {
+          "preparation": {
+            "type": "object",
+            "required": false,
+            "field_reference": "definitions.scene_preparation"
+          },
+          "max_sensor_zenith": {
+            "type": "number",
+            "required": false,
+            "default": 30,
+            "minimum": 0,
+            "maximum": 90,
+            "description": "Additional R0 candidate view-angle threshold."
+          },
+          "ndvi_tie_epsilon": {
+            "type": "number",
+            "required": false,
+            "default": 0.02,
+            "minimum": 0
+          },
+          "min_blue_reflectance": {
+            "type": "number",
+            "required": false,
+            "default": 0.1,
+            "minimum": 0
+          },
+          "show_progress": {
+            "type": "boolean",
+            "required": false,
+            "default": false
+          }
+        }
+      },
+      "invert_science": {
+        "defaults": {
+          "algorithm": 6,
+          "max_eval": null,
+          "initial_grain_radius_um": 250,
+          "apply_valid_inversion_mask": true,
+          "n_workers": 1
+        },
+        "fields": {
+          "preparation": {
+            "type": "object",
+            "required": false,
+            "field_reference": "definitions.scene_preparation"
+          },
+          "clustering": {
+            "type": "object",
+            "required": false,
+            "field_reference": "definitions.clustering"
+          },
+          "algorithm": {
+            "type": "integer",
+            "required": false,
+            "default": 6,
+            "minimum": 1,
+            "maximum": 6
+          },
+          "max_eval": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "minimum": 1
+          },
+          "initial_grain_radius_um": {
+            "type": "positive number",
+            "required": false,
+            "default": 250
+          },
+          "apply_valid_inversion_mask": {
+            "type": "boolean",
+            "required": false,
+            "default": true
+          },
+          "n_workers": {
+            "type": "integer",
+            "required": false,
+            "default": 1,
+            "minimum": 1,
+            "description": "Workers used within one scientific task. Slurm array concurrency is controlled separately."
+          }
+        }
+      },
+      "albedo_science": {
+        "defaults": {
+          "apply_canopy_correction": false,
+          "apply_ice_adjustment": false,
+          "calculate_albedo": true,
+          "calculate_delta_vis": false,
+          "calculate_radiative_forcing": false,
+          "average_vertical_crown_radius": 4.644,
+          "average_horizontal_crown_radius": 1.72
+        },
+        "fields": {
+          "apply_canopy_correction": {
+            "type": "boolean",
+            "required": false,
+            "default": false,
+            "requires_named_inputs_when_true": [
+              "ancillary:canopy_fraction",
+              "ancillary:slope",
+              "ancillary:aspect"
+            ]
+          },
+          "canopy_correction_policy": {
+            "type": "string",
+            "required": false,
+            "choices": [
+              "modis_full_shade",
+              "viirs_canopy_weighted_shade"
+            ],
+            "description": "When canopy correction is enabled, omitted policies resolve from run.sensor. Explicit policies must match the sensor. Resolved tasks always contain a policy; legacy and retired research labels are rejected."
+          },
+          "apply_ice_adjustment": {
+            "type": "boolean",
+            "required": false,
+            "default": false,
+            "requires_named_input_when_true": "ancillary:ice_fraction"
+          },
+          "calculate_albedo": {
+            "type": "boolean",
+            "required": false,
+            "default": true,
+            "requires_named_inputs_when_true": [
+              "lut:albedo_lookup",
+              "ancillary:dem",
+              "ancillary:slope",
+              "ancillary:aspect"
+            ]
+          },
+          "calculate_delta_vis": {
+            "type": "boolean",
+            "required": false,
+            "default": false,
+            "requires_named_input_when_true": "lut:forcing_lookup"
+          },
+          "calculate_radiative_forcing": {
+            "type": "boolean",
+            "required": false,
+            "default": false,
+            "requires_named_input_when_true": "lut:forcing_lookup"
+          },
+          "average_vertical_crown_radius": {
+            "type": "positive number",
+            "required": false,
+            "default": 4.644
+          },
+          "average_horizontal_crown_radius": {
+            "type": "positive number",
+            "required": false,
+            "default": 1.72
+          }
+        },
+        "constraint": "At least one albedo/postprocessing operation must be true."
+      },
+      "execution_profile": {
+        "additional_fields_allowed": false,
+        "fields": {
+          "max_concurrent_tasks": {
+            "type": "integer",
+            "required": false,
+            "default": 20,
+            "minimum": 1,
+            "description": "Total concurrency cap distributed across tile arrays using this profile."
+          },
+          "resources": {
+            "type": "object",
+            "required": false,
+            "field_reference": "definitions.resource_overrides"
+          }
+        }
+      },
+      "resource_overrides": {
+        "additional_fields_allowed": false,
+        "fields": {
+          "cluster": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "required": false,
+            "default": null
+          },
+          "partition": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "required": false,
+            "default": null
+          },
+          "account": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "required": false,
+            "default": null
+          },
+          "qos": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "required": false,
+            "default": null
+          },
+          "time_limit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "effective_default": "04:00:00",
+            "description": "Slurm time limit, conventionally HH:MM:SS."
+          },
+          "cpus_per_task": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "effective_default": 1,
+            "minimum": 1
+          },
+          "memory": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "effective_default": "8G"
+          },
+          "environment_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "effective_default": "spipy14"
+          },
+          "extra_directives": {
+            "type": "array[string]",
+            "required": false,
+            "default": [],
+            "description": "Additional literal #SBATCH directive bodies. Use only site-approved directives."
+          }
+        }
+      },
+      "staging": {
+        "additional_fields_allowed": false,
+        "fields": {
+          "enabled": {
+            "type": "boolean",
+            "required": false,
+            "default": false
+          },
+          "root": {
+            "type": [
+              "path",
+              "null"
+            ],
+            "required": false,
+            "default": null,
+            "description": "Required when enabled is true. Must be visible to submit and compute nodes."
+          },
+          "verification": {
+            "type": "string",
+            "required": false,
+            "default": "stat",
+            "allowed_values": [
+              "stat",
+              "sha256"
+            ],
+            "description": "stat verifies size; sha256 is stricter and more expensive."
+          },
+          "reuse_valid": {
+            "type": "boolean",
+            "required": false,
+            "default": true,
+            "description": "Reuse an already staged file only after configured verification passes."
+          }
+        }
+      }
+    },
+    "supported_named_inputs": {
+      "lut": [
+        "inversion_lut",
+        "albedo_lookup",
+        "forcing_lookup"
+      ],
+      "ancillary": [
+        "dem",
+        "slope",
+        "aspect",
+        "skyview",
+        "canopy_fraction",
+        "ice_fraction"
+      ],
+      "mask": [
+        "cloud_mask",
+        "water_mask",
+        "ice_mask",
+        "playa_mask"
+      ]
+    },
+    "tiled_static_context": {
+      "ancillary": {
+        "*_elevation_*.tif or *_dem_*.tif": "dem",
+        "*_slope_*.tif": "slope",
+        "*_aspect_*_cw_from_north.tif": "aspect",
+        "*_skyview*.tif": "skyview",
+        "*_canopy_fraction*_0to1.tif": "canopy_fraction",
+        "*_ice_fraction*_0to1.tif": "ice_fraction"
+      },
+      "mask": {
+        "*_water*.tif": "water_mask",
+        "*_ice_mask*.tif": "ice_mask",
+        "*_playa_mask*.tif": "playa_mask"
+      },
+      "excluded": [
+        "daily cloud masks",
+        "R0 products",
+        "legacy percentage fractions",
+        "counterclockwise-from-south aspect files",
+        "STC files",
+        "unrecognized filenames"
+      ]
+    },
+    "built_in_resource_profiles": {
+      "blanca-snow": {
+        "cluster": "blanca",
+        "partition": "blanca-snow"
+      },
+      "blanca-rittger": {
+        "cluster": "blanca",
+        "partition": "blanca-rittger"
+      },
+      "alpine": {
+        "cluster": "alpine",
+        "partition": "acpu"
+      }
+    },
+    "cross_field_rules": [
+      "Unknown fields are rejected everywhere in a runnable request.",
+      "Relative paths resolve relative to the request file.",
+      "steps must be unique and ordered build_r0, invert, albedo, interpolate.",
+      "The batch-request interface does not execute interpolation; use the dedicated interpolation interface or a unified workflow job.",
+      "build_r0 requires r0.mode=build, a sensor-appropriate recipe, and r0_source inputs.",
+      "invert requires reflectance inputs, an r0 section, and a LUT named inversion_lut.",
+      "standalone albedo requires raw inputs.",
+      "Selected albedo operations require their named LUT and ancillary inputs.",
+      "A tiled static context root advertises supported ancillary and static-mask names during schema validation; discovery and preflight verify actual per-tile cardinality.",
+      "update_atomically is supported only for standalone albedo on an existing raw product.",
+      "A custom execution profile must supply both resources.cluster and resources.partition.",
+      "Explicit tile routing requires profiles, tile_profiles, and coordinator_profile; tile_profiles must exactly cover selection.tiles.",
+      "All routed profiles in one operational request must use the same Slurm cluster and environment.",
+      "Legacy profile, max_concurrent_tasks, and resources fields cannot be combined with explicit tile routing.",
+      "Staging root is required when staging is enabled.",
+      "Input filename identities must agree with explicitly declared tile, date, water_year, and product.",
+      "R0 start_date and end_date must be supplied together.",
+      "For a complete water year, dates=[] means all discovered files in the selected water year; it does not assert that every calendar date exists.",
+      "R0 build date bounds default from recipe and artifact.water_year; otherwise both bounds are required. Only available sources within the resolved window and optional selection.dates are selected. Preflight reports source-file count, date coverage, and missing requested dates; gaps warn, while no selected sources is an error."
+    ]
+  },
+  "interfaces": {
+    "workflow_scheduler": {
+      "source": "spires_batch.workflow.plan/render",
+      "fields": {
+        "policy": {
+          "type": [
+            "path",
+            "object"
+          ],
+          "required": true,
+          "description": "Shared scheduler policy path or complete inline policy object. Frozen into the plan. Child requests inherit it unless they explicitly select another policy."
+        },
+        "python": {
+          "type": "path",
+          "required": false,
+          "description": "Science interpreter used by rendered workflow jobs.",
+          "default": "planning interpreter"
+        },
+        "partition": {
+          "type": "string",
+          "required": false,
+          "description": "Slurm partition.",
+          "default": "blanca-snow"
+        },
+        "account": {
+          "type": "string",
+          "required": false,
+          "description": "Authorized Slurm account.",
+          "default": "blanca-snow"
+        },
+        "cpus": {
+          "type": "integer",
+          "required": false,
+          "description": "CPUs for individual job allocations. Scientific arrays use their child execution/scheduler resources; coordinator resources are separate.",
+          "default": 1
+        },
+        "memory": {
+          "type": "string",
+          "required": false,
+          "description": "Slurm memory size; 0 requires exclusive=true. Named profiles supply defaults.",
+          "default": "8G"
+        },
+        "time": {
+          "type": "string",
+          "required": false,
+          "description": "Slurm walltime.",
+          "default": "04:00:00"
+        },
+        "job_type": {
+          "type": "string",
+          "required": false,
+          "description": "Named job_types entry in execution.policy; required with a policy. Select one job type per batch request; do not combine with inline tile/stage profile routing."
+        },
+        "queue": {
+          "type": "string",
+          "required": false,
+          "description": "Named queue override from the same policy; sets cluster, partition, account and QoS together. Requires a job_type."
+        },
+        "cluster": {
+          "type": "string",
+          "required": false,
+          "description": "Slurm cluster; defaults from the selected queue, or blanca for explicit-resource configurations."
+        },
+        "qos": {
+          "type": "string",
+          "required": false,
+          "description": "Explicit authorized QoS override; normally select a named queue instead."
+        },
+        "exclusive": {
+          "type": "boolean",
+          "required": false,
+          "description": "Reserve an exclusive node; false unless the profile or request enables it."
+        }
+      },
+      "notes": [
+        "Unified workflows preserve managed batch arrays, historical date arrays and per-stage interpolation arrays. Named jobs advance after successful scheduler and scientific verification. Initialization, registration and NRT use individual allocations.",
+        "jobs.NAME.job_type and jobs.NAME.queue select per-job defaults; scheduler resource fields override defaults, then jobs.NAME.resources overrides those. The policy snapshot and resolved allocations are saved in the workflow plan."
+      ]
+    },
+    "scheduler_policy": {
+      "source": "spires_batch.scheduler_policy.load_policy",
+      "fields": {
+        "config_type": {
+          "type": "string",
+          "required": true,
+          "allowed_values": [
+            "scheduler_policy"
+          ],
+          "description": "Required baseline configuration kind; never an algorithm-selection switch."
+        },
+        "schema_version": {
+          "type": "integer",
+          "required": true,
+          "allowed_values": [
+            1
+          ],
+          "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+        },
+        "exclude_nodes": {
+          "type": "array[string]",
+          "required": true,
+          "description": "Verified site exclusion list. Do not substitute an empty list for the usual operational exclusions."
+        },
+        "queues": {
+          "type": "map[string,scheduler_queue]",
+          "required": false,
+          "description": "Named cluster/partition/account/QoS combinations; required when using named job profiles."
+        },
+        "job_types": {
+          "type": "map[string,scheduler_job_type]",
+          "required": false,
+          "description": "Shared per-job defaults and measurement evidence; explicitly selected by job_type."
+        }
+      },
+      "notes": []
+    },
+    "acquire": {
+      "source": "spires_batch.workflow.execute_job -> acquisition.acquire",
+      "fields": {
+        "config_type": {
+          "type": "string",
+          "required": true,
+          "allowed_values": [
+            "acquisition"
+          ],
+          "description": "Required baseline configuration kind; never an algorithm-selection switch."
+        },
+        "schema_version": {
+          "type": "integer",
+          "required": true,
+          "allowed_values": [
+            1
+          ],
+          "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+        },
+        "stream_root": {
+          "type": "path",
+          "required": true,
+          "description": "Already registered NRT stream."
+        },
+        "through": {
+          "type": "ISO date",
+          "required": true,
+          "description": "Inclusive requested availability."
+        },
+        "collection": {
+          "type": "string",
+          "required": false,
+          "description": "Native filename collection.",
+          "default": "002"
+        }
+      },
+      "notes": [
+        "Workflow acquire downloads; standalone nrt acquire needs --download.",
+        "Not a generic unregistered historical archive downloader."
+      ]
+    },
+    "mapped_field": {
+      "source": "spires_interpolation.raster_io.read_mapped_fields",
+      "fields": {
+        "path": {
+          "type": "path",
+          "required": true,
+          "description": "HDF5/NetCDF source file."
+        },
+        "dataset": {
+          "type": "string",
+          "required": true,
+          "description": "Dataset name or slash-separated HDF5 group path."
+        },
+        "index": {
+          "type": "integer",
+          "required": false,
+          "description": "Optional leading-axis selection, zero based."
+        },
+        "band": {
+          "type": "integer",
+          "required": false,
+          "description": "Optional trailing parameter-axis selection, zero based."
+        },
+        "axis": {
+          "type": "x|y",
+          "required": false,
+          "description": "Read one-dimensional native axis and broadcast over a raster window. Do not combine with other selection transforms."
+        },
+        "bitwise_and": {
+          "type": "integer",
+          "required": false,
+          "description": "Apply an integer bit mask after reading a non-axis field."
+        },
+        "archive_file": {
+          "type": "object",
+          "required": false,
+          "description": "Controller-owned historical file identity (bytes, mtime_ns; may include path). Not a manual override."
+        }
+      },
+      "notes": []
+    },
+    "interpolation": {
+      "source": "spires_batch.interpolation.plan",
+      "fields": {
+        "config_type": {
+          "type": "string",
+          "required": true,
+          "allowed_values": [
+            "interpolation"
+          ],
+          "description": "Required baseline configuration kind; never an algorithm-selection switch."
+        },
+        "schema_version": {
+          "type": "integer",
+          "required": true,
+          "allowed_values": [
+            1
+          ],
+          "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+        },
+        "algorithm": {
+          "type": "string",
+          "required": false,
+          "description": "Evaluated sensor recipe; not solver ID.",
+          "default": "viirs_snow",
+          "allowed_values": [
+            "viirs_snow"
+          ]
+        },
+        "history_start": {
+          "type": "ISO date",
+          "required": true,
+          "description": "Beginning of consecutive historical input/state sequence."
+        },
+        "start": {
+          "type": "ISO date",
+          "required": true,
+          "description": "Inclusive target start. Initial historical requests begin October 1."
+        },
+        "stop": {
+          "type": "ISO date",
+          "required": true,
+          "description": "Exclusive target stop."
+        },
+        "available_through": {
+          "type": "ISO date",
+          "required": true,
+          "description": "Inclusive input availability; final issues require seven look-ahead days."
+        },
+        "shape": {
+          "type": "array[integer]",
+          "required": true,
+          "description": "Actual native [rows, columns]; do not assume the generic example's shape."
+        },
+        "stripe_rows": {
+          "type": "integer",
+          "required": false,
+          "description": "Positive processing stripe height; part of checkpoint layout.",
+          "default": 20
+        },
+        "source_stream": {
+          "type": "string",
+          "required": false,
+          "description": "Input stream provenance.",
+          "default": "standard",
+          "allowed_values": [
+            "standard",
+            "nrt",
+            "mixed"
+          ]
+        },
+        "tiles": {
+          "type": "map[tile,tile_context]",
+          "required": true,
+          "description": "Complete donor domain; each value follows interpolation_tile."
+        },
+        "output": {
+          "type": "path",
+          "required": true,
+          "description": "Distinct working/output generation root."
+        },
+        "snow_library": {
+          "type": "path",
+          "required": true,
+          "description": "Explicitly built snow-fraction native library."
+        },
+        "spatial_library": {
+          "type": "path",
+          "required": true,
+          "description": "Explicitly built OpenMP spatial library."
+        },
+        "albedo_lut": {
+          "type": "path",
+          "required": true,
+          "description": "Validated albedo LUT; checksum recorded."
+        },
+        "scheduler": {
+          "type": "object",
+          "required": true,
+          "description": "See interpolation_scheduler; all base fields required."
+        },
+        "asset_provenance": {
+          "type": "object",
+          "required": true,
+          "description": "Versioned scientific evidence. Arbitrary descriptive metadata permitted; observation_policy is used for compatibility/NRT handoff."
+        },
+        "seed": {
+          "type": "map[tile,path]",
+          "required": false,
+          "description": "Controller-selected compatible checkpoint for every tile; absent for initial historical run."
+        },
+        "seed_plan": {
+          "type": "path",
+          "required": false,
+          "description": "Original historical plan provenance for current-format state; never a compatibility bypass or a legacy-algorithm selector."
+        },
+        "stream_root": {
+          "type": "path",
+          "required": false,
+          "description": "Controller-assigned stream root during incremental operation."
+        }
+      },
+      "notes": [
+        "history_start <= start < stop <= available_through + one day.",
+        "Field paths resolve relative to request JSON; every calendar date must be present, with null only for a verified missing observation.",
+        "Controller-written state_context/state_identity are generated artifacts, not accepted initial request fields."
+      ]
+    },
+    "interpolation_scheduler": {
+      "source": "spires_batch.interpolation.stage_resources/plan",
+      "fields": {
+        "policy": {
+          "type": "path",
+          "required": false,
+          "description": "Shared scheduler-policy JSON resolved relative to the configuration file."
+        },
+        "job_type": {
+          "type": "string",
+          "required": false,
+          "description": "Named job_types entry in execution.policy; required with a policy. Select one job type per batch request; do not combine with inline tile/stage profile routing."
+        },
+        "queue": {
+          "type": "string",
+          "required": false,
+          "description": "Named queue override from the same policy; sets cluster, partition, account and QoS together. Requires a job_type."
+        },
+        "cluster": {
+          "type": "string",
+          "required": false,
+          "description": "Slurm cluster; defaults from the selected queue, or blanca for explicit-resource configurations."
+        },
+        "partition": {
+          "type": "string",
+          "required": false,
+          "description": "Explicit partition override; normally select a named queue instead."
+        },
+        "account": {
+          "type": "string",
+          "required": false,
+          "description": "Explicit authorized account override; normally select a named queue instead."
+        },
+        "qos": {
+          "type": "string",
+          "required": false,
+          "description": "Explicit authorized QoS override; normally select a named queue instead."
+        },
+        "cpus": {
+          "type": "positive integer",
+          "required": false,
+          "description": "CPUs per task; overrides the selected job profile."
+        },
+        "memory": {
+          "type": "Slurm memory string",
+          "required": false,
+          "description": "Total memory per task, not per CPU. 0 means all node memory and requires exclusive=true; interpolation requires a bounded size."
+        },
+        "time": {
+          "type": "Slurm walltime string",
+          "required": false,
+          "description": "Per-task walltime; overrides the selected profile."
+        },
+        "concurrency": {
+          "type": "positive integer",
+          "required": false,
+          "description": "Maximum simultaneous array tasks, not threads within a task. Does not create concurrent updates to one NRT stream."
+        },
+        "exclusive": {
+          "type": "boolean",
+          "required": false,
+          "description": "Reserve an exclusive node; false unless the profile or request enables it."
+        },
+        "stages": {
+          "type": "map[stage,object]",
+          "required": false,
+          "description": "Overrides for screen, spatial, properties and export. Each accepts job_type, queue and the resource fields above (not policy).",
+          "default": {}
+        }
+      },
+      "notes": [
+        "Stage profile defaults replace base profile defaults. Explicit base resource fields override profile defaults, and explicit stage fields win last. A base queue override applies to every stage unless a stage selects its own queue.",
+        "Every stage uses one cluster; cluster/QoS/exclusive directives are emitted in generated Slurm scripts."
+      ]
+    },
+    "interpolation_tile": {
+      "source": "spires_batch.interpolation.plan; spires_interpolation.raster_io",
+      "fields": {
+        "daily": {
+          "type": "map[ISO date,object|null]",
+          "required": true,
+          "description": "Exactly all prepared_daily fields per nonmissing date, each mapped_field."
+        },
+        "terrain": {
+          "type": "object",
+          "required": true,
+          "description": "Exactly x, y, dem, slope, aspect, canopy_fraction, each mapped_field. Axes are projected metres; elevations integer metres; geometry degrees."
+        },
+        "bright_soil": {
+          "type": "map[WY,mapped_field]",
+          "required": true,
+          "description": "Annual bright-soil Boolean masks covering every observation WY, including replay prefix."
+        },
+        "agriculture": {
+          "type": "mapped_field",
+          "required": true,
+          "description": "Agricultural Boolean mask."
+        },
+        "coastal": {
+          "type": "mapped_field",
+          "required": true,
+          "description": "Explicit Boolean coastal mask controlling missing climatology treatment."
+        },
+        "frequency": {
+          "type": "array[mapped_field]",
+          "required": true,
+          "description": "Exactly 12 monthly snow frequencies, January through December."
+        }
+      },
+      "notes": []
+    },
+    "prepared_daily": {
+      "source": "spires_interpolation.raster_io.DAILY_FIELDS",
+      "fields": {
+        "state": {
+          "type": "mapped_field",
+          "required": true,
+          "description": "0 unknown, 1 observed snow-free, 2 snow."
+        },
+        "canopy_adjusted_fsca": {
+          "type": "mapped_field",
+          "required": true,
+          "description": "Ground/canopy-adjusted snow fraction, 0\u20131."
+        },
+        "raw_snow_fraction": {
+          "type": "mapped_field",
+          "required": true,
+          "description": "Original inversion snow fraction, 0\u20131."
+        },
+        "sensor_zenith": {
+          "type": "mapped_field",
+          "required": true,
+          "description": "View zenith in physical degrees."
+        },
+        "screening_conditions": {
+          "type": "mapped_field",
+          "required": true,
+          "description": "Packed cloud/SWIR conditions; see algorithm documentation."
+        },
+        "cloud_adjacency": {
+          "type": "mapped_field",
+          "required": true,
+          "description": "Observation-matched QA adjacency."
+        },
+        "context": {
+          "type": "mapped_field",
+          "required": true,
+          "description": "Incomplete cloud-neighbor context flag."
+        },
+        "grain_radius": {
+          "type": "mapped_field",
+          "required": true,
+          "description": "Snow grain radius in micrometres."
+        },
+        "dust": {
+          "type": "mapped_field",
+          "required": true,
+          "description": "Dust concentration in ppm."
+        },
+        "screening_flags": {
+          "type": "mapped_field",
+          "required": true,
+          "description": "Packed retrieval eligibility bits."
+        },
+        "solar_zenith": {
+          "type": "mapped_field",
+          "required": true,
+          "description": "Solar zenith in degrees."
+        },
+        "solar_azimuth": {
+          "type": "mapped_field",
+          "required": true,
+          "description": "Solar azimuth in degrees clockwise from north."
+        }
+      },
+      "notes": []
+    },
+    "nrt_cycle": {
+      "source": "spires_batch.pipeline.cycle/prepare_date",
+      "fields": {
+        "config_type": {
+          "type": "string",
+          "required": true,
+          "allowed_values": [
+            "nrt_cycle"
+          ],
+          "description": "Required baseline configuration kind; never an algorithm-selection switch."
+        },
+        "schema_version": {
+          "type": "integer",
+          "required": true,
+          "allowed_values": [
+            1
+          ],
+          "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+        },
+        "stream_root": {
+          "type": "path",
+          "required": true,
+          "description": "Registered real historical stream; do not invent an empty history."
+        },
+        "science_python": {
+          "type": "path",
+          "required": true,
+          "description": "Interpreter with coordinated science packages for snow retrieval; the cloud package is not required here."
+        },
+        "cloud_python": {
+          "type": "path",
+          "required": true,
+          "description": "Standalone cloud interpreter for both observation-matched preparation and cloud inference; no SPIReS packages required."
+        },
+        "cloud_model": {
+          "type": "path",
+          "required": true,
+          "description": "Selected matched-cloud model manifest."
+        },
+        "collection": {
+          "type": "string",
+          "required": false,
+          "description": "Collection for selected native sources.",
+          "default": "002"
+        },
+        "observation_policy": {
+          "type": "object",
+          "required": true,
+          "description": "Must exactly match historical asset_provenance.observation_policy; cloud_model_sha256 must equal the manifest bytes' SHA256. Additional policy fields are scientific identity, not arbitrary runtime overrides."
+        },
+        "tiles": {
+          "type": "map[tile,map[WY,retrieval_recipe]]",
+          "required": true,
+          "description": "Every tile in the registered domain; retain previous WY recipes for replacements."
+        },
+        "annual_bright_soil": {
+          "type": "map[tile,map[WY,mapped_field]]",
+          "required": false,
+          "description": "Append-only new annual mask bindings.",
+          "default": {}
+        },
+        "seed_plan": {
+          "type": "path",
+          "required": false,
+          "description": "Original historical-plan provenance for current scientific state; never a numerical compatibility bypass."
+        },
+        "through": {
+          "type": "ISO date",
+          "required": false,
+          "description": "Required in a universal nrt job. Standalone cycle takes --through instead; a JSON value alone does not select its date."
+        },
+        "retrieval_concurrency": {
+          "type": "positive integer",
+          "required": false,
+          "description": "Concurrent tile/date subprocesses after whole-domain cloud inference. Defaults to all nonmissing tiles. Each subprocess runs one inversion worker with numerical-library threads limited to one. Request at least this many CPUs per task; smaller allocations fail rather than silently serialize. A smaller explicit value permits queued tile retrievals. This applies to historical prepare_date as well as NRT.",
+          "default": "number of nonmissing tiles"
+        },
+        "retrieval_memory_gib": {
+          "type": "positive integer",
+          "required": false,
+          "description": "Alternative per-worker memory budget, not an RSS limit. Mutually exclusive with preparation_memory_gib. When neither is specified, defaults to 6 GiB per concurrent tile plus 2 GiB coordinator headroom. Cloud and subsequent interpolation may require more. Slurm memory/CPU checks use allocation environment variables when available; outside Slurm, the caller must enforce reservations.",
+          "default": 6
+        },
+        "preparation_memory_gib": {
+          "type": "positive integer",
+          "required": false,
+          "description": "Direct total allocation budget in GiB for one date's cloud preparation, concurrent retrievals and coordinator. No additional per-tile multiplication or headroom is added. Mutually exclusive with retrieval_memory_gib. Set the Slurm --mem request to this value or greater; JSON checks an existing allocation, it does not submit or resize jobs. The five-tile example uses 16. Later interpolation may need a separately sized allocation."
+        },
+        "scheduler": {
+          "type": "scheduler_selection",
+          "required": false,
+          "description": "Optional shared resource profile. Supplies preparation concurrency/memory defaults and archives resolved configuration; does not submit, resize an allocation or change the stream interpolation recipe."
+        }
+      },
+      "notes": [
+        "Run inside an allocation. Even without --execute, acquisition, matched clouds and retrieval run.",
+        "Use absolute deployed interpreter/model/recipe paths for standalone cycle. Universal workflow resolves recognized path fields relative to its/request JSON.",
+        "No automatic bootstrap, cron installation, schema migration or full-history replay.",
+        "With scheduler.job_type, preparation defaults come from the profile before explicit recipe overrides. Ensure the existing allocation also covers the registered interpolation settings."
+      ]
+    },
+    "retrieval_recipe": {
+      "source": "spires_batch.retrieval.retrieve",
+      "fields": {
+        "lut": {
+          "type": "path",
+          "required": true,
+          "description": "Reflectance LUT in evaluated band order I1/I2/I3/M2/M4/M8/M11."
+        },
+        "background_available_through": {
+          "type": "ISO date",
+          "required": true,
+          "description": "Must precede every processed observation."
+        },
+        "preparation": {
+          "type": "object",
+          "required": true,
+          "description": "Scene preparation options; see retrieval_preparation. Must use post_inversion clouds."
+        },
+        "axes": {
+          "type": "object",
+          "required": true,
+          "description": "x and y mapped_field bindings for the exact native grid."
+        },
+        "ancillary": {
+          "type": "object",
+          "required": true,
+          "description": "Mapped canopy_fraction, slope, aspect, ice_fraction required by retained retrieval."
+        },
+        "background": {
+          "type": "object",
+          "required": true,
+          "description": "baseline mapped_field with trailing band axis; optionally screened plus index as a pair."
+        },
+        "source": {
+          "type": "source_record",
+          "required": false,
+          "description": "Required by direct retrieve; filled from inventory by prepare_date."
+        },
+        "clouds": {
+          "type": "map[tile,object]",
+          "required": false,
+          "description": "Each value contains cloud and context GeoTIFF paths for the same-day domain; coordinator supplies it."
+        },
+        "prepared_context": {
+          "type": "string",
+          "required": false,
+          "description": "day_context digest for the complete same-day source inventory; coordinator supplies it."
+        }
+      },
+      "notes": [
+        "Source, clouds and prepared_context are mandatory when calling retrieve directly.",
+        "Solver 6, max_eval=200 and initial radius=250 micrometres are fixed by this worker; generic daily tuning fields are not accepted alternatives."
+      ]
+    },
+    "retained_prepare": {
+      "source": "spires_batch.inputs.prepare_retained",
+      "fields": {
+        "config_type": {
+          "type": "string",
+          "required": true,
+          "allowed_values": [
+            "prepared_observation"
+          ],
+          "description": "Required baseline configuration kind; never an algorithm-selection switch."
+        },
+        "schema_version": {
+          "type": "integer",
+          "required": true,
+          "allowed_values": [
+            1
+          ],
+          "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+        },
+        "date": {
+          "type": "ISO date",
+          "required": true,
+          "description": "Must equal native source acquisition date."
+        },
+        "tile": {
+          "type": "string",
+          "required": true,
+          "description": "Must equal source tile."
+        },
+        "shape": {
+          "type": "array[integer]",
+          "required": true,
+          "description": "Actual native rows/columns."
+        },
+        "fields": {
+          "type": "object",
+          "required": true,
+          "description": "Required raw_snow_fraction, canopy_adjusted_fsca, screening_flags, qa_qf1, qa_qf7, sensor_zenith, grain_radius, dust, solar_zenith, solar_azimuth mapped fields; additionally exactly one of swir_flags or swir_score, or spectral reconstruction."
+        },
+        "axes": {
+          "type": "object",
+          "required": true,
+          "description": "x and y mapped_field bindings."
+        },
+        "clouds": {
+          "type": "map[tile,object]",
+          "required": true,
+          "description": "cloud/context paths, including available neighboring tiles."
+        },
+        "source": {
+          "type": "source_record",
+          "required": true,
+          "description": "Exact original native source vintage."
+        },
+        "prepared_context": {
+          "type": "string",
+          "required": true,
+          "description": "Complete same-day source context digest."
+        },
+        "spectral": {
+          "type": "object",
+          "required": false,
+          "description": "Original spectral reconstruction evidence, see spectral_reconstruction."
+        },
+        "output": {
+          "type": "path",
+          "required": false,
+          "description": "Required by universal prepare jobs; standalone nrt prepare uses --output."
+        }
+      },
+      "notes": []
+    },
+    "spectral_reconstruction": {
+      "source": "spires_batch.inputs.reconstruct_swir",
+      "fields": {
+        "bands": {
+          "type": "array[string]",
+          "required": true,
+          "description": "Original fitted band order."
+        },
+        "lut": {
+          "type": "path",
+          "required": true,
+          "description": "Original fitted reflectance LUT."
+        },
+        "shade": {
+          "type": "mapped_field",
+          "required": true,
+          "description": "Original fitted shade fraction."
+        },
+        "sse": {
+          "type": "mapped_field",
+          "required": true,
+          "description": "Original spectral sum of squared errors; reconstructed fit must agree."
+        },
+        "background": {
+          "type": "mapped_field",
+          "required": true,
+          "description": "Original baseline background spectrum."
+        },
+        "screened_background": {
+          "type": "mapped_field",
+          "required": false,
+          "description": "Alternative original background, paired with screen_used."
+        },
+        "screen_used": {
+          "type": "mapped_field",
+          "required": false,
+          "description": "Boolean per-pixel alternative background selection, paired with screened_background."
+        }
+      },
+      "notes": []
+    },
+    "source_record": {
+      "source": "spires_batch.nrt.source_record",
+      "fields": {
+        "path": {
+          "type": "path",
+          "required": true,
+          "description": "Native source path."
+        },
+        "bytes": {
+          "type": "integer",
+          "required": true,
+          "description": "File size from stat; not user-estimated."
+        },
+        "mtime_ns": {
+          "type": "integer",
+          "required": true,
+          "description": "File modification time in nanoseconds."
+        },
+        "product": {
+          "type": "string",
+          "required": true,
+          "description": "VJ109GA or VJ109GA_NRT."
+        },
+        "date": {
+          "type": "ISO date",
+          "required": true,
+          "description": "Derived acquisition date."
+        },
+        "tile": {
+          "type": "string",
+          "required": true,
+          "description": "Derived native tile."
+        },
+        "collection": {
+          "type": "string",
+          "required": true,
+          "description": "Derived filename collection."
+        },
+        "processing": {
+          "type": "string",
+          "required": true,
+          "description": "Derived processing timestamp."
+        },
+        "source_stream": {
+          "type": "string",
+          "required": true,
+          "description": "standard or nrt, derived from product."
+        },
+        "prepared": {
+          "type": "object",
+          "required": false,
+          "description": "Generated prepared_daily bindings on retrieval receipt."
+        },
+        "prepared_context": {
+          "type": "string",
+          "required": false,
+          "description": "Generated matched-domain observation digest."
+        }
+      },
+      "notes": [
+        "Create with source_record rather than hand-editing stat fields. Acquisition/archive controllers may attach additional provenance such as cmr_updated or origin; those are not deployment knobs."
+      ]
+    },
+    "nrt_storage": {
+      "source": "spires_batch.nrt_storage.DEFAULTS/configure",
+      "fields": {
+        "config_type": {
+          "type": "string",
+          "required": true,
+          "allowed_values": [
+            "nrt_storage"
+          ],
+          "description": "Required baseline configuration kind; never an algorithm-selection switch."
+        },
+        "schema_version": {
+          "type": "integer",
+          "required": true,
+          "allowed_values": [
+            1
+          ],
+          "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+        },
+        "working_days": {
+          "type": "integer",
+          "required": false,
+          "description": "Bounded working inventory retention; must be at least 66 days.",
+          "default": 90
+        },
+        "daily_days": {
+          "type": "integer",
+          "required": false,
+          "description": "Daily recovery generation retention.",
+          "default": 7
+        },
+        "monthly_months": {
+          "type": "integer",
+          "required": false,
+          "description": "Monthly recovery checkpoint retention.",
+          "default": 12
+        },
+        "success_grace_days": {
+          "type": "integer",
+          "required": false,
+          "description": "Grace before completed workspace cleanup.",
+          "default": 7
+        },
+        "failed_grace_days": {
+          "type": "integer",
+          "required": false,
+          "description": "Grace before failed workspace cleanup.",
+          "default": 14
+        },
+        "unresolved_warning_days": {
+          "type": "integer",
+          "required": false,
+          "description": "Age at which unresolved NRT-to-standard dates warn.",
+          "default": 30
+        },
+        "warning_bytes": {
+          "type": "object",
+          "required": false,
+          "description": "Category-to-byte warning thresholds; warnings are not transfer permission or a hard byte cap.",
+          "default": {}
+        },
+        "growth_warning_bytes": {
+          "type": "integer",
+          "required": false,
+          "description": "Inventory growth warning threshold; 0 disables this warning.",
+          "default": 0
+        },
+        "archive_root": {
+          "type": "path",
+          "required": false,
+          "description": "Durable archive; default STREAM_ROOT/archive. Cannot change in place once published. Must not overlap mutable workspaces."
+        }
+      },
+      "notes": []
+    },
+    "historical_download": {
+      "source": "earthdata-downloads/scripts/generate_viirs_download_script.py",
+      "fields": {
+        "product": {
+          "type": "string",
+          "required": true,
+          "description": "Standard VNP09GA, VJ109GA or VJ209GA."
+        },
+        "version": {
+          "type": "string",
+          "required": true,
+          "description": "Three-digit collection such as 002."
+        },
+        "tiles": {
+          "type": "array[string]",
+          "required": true,
+          "description": "Nonempty unique tile IDs."
+        },
+        "start_date": {
+          "type": "ISO date",
+          "required": true,
+          "description": "Inclusive query start."
+        },
+        "end_date": {
+          "type": "ISO date",
+          "required": true,
+          "description": "Inclusive query stop."
+        },
+        "archive_root": {
+          "type": "absolute path",
+          "required": true,
+          "description": "Existing product input directory; files organized by tile/year."
+        },
+        "script_root": {
+          "type": "absolute path",
+          "required": true,
+          "description": "Fresh output directory for coverage report and interactive download scripts."
+        }
+      },
+      "notes": [
+        "Standalone external acquisition utility, not a universal workflow job kind.",
+        "Default command only inspects local presence; --query writes scripts after CMR lookup, never downloads/submits."
+      ]
+    },
+    "historical_preparation": {
+      "source": "spires_batch.historical.HistoricalRequest / pipeline.prepare_date",
+      "fields": {},
+      "notes": [
+        "See schemas.historical for every top-level field and scheduler option. Nested preparation is a recipe fragment, not a standalone nrt_cycle config: it has no config_type/schema_version header and uses science_python, cloud_python, cloud_model, collection, observation_policy, retrieval_concurrency, retrieval_memory_gib, preparation_memory_gib and tiles. stream_root, through and annual_bright_soil are not historical preparation options.",
+        "Tile/WY retrieval bindings follow interfaces.retrieval_recipe. terrain uses mapped_field bindings for dem (metres), slope and aspect (degrees). Daily albedo is evaluated only for state=2 and screening_flags=0; no interpolation is performed.",
+        "missing_reflectance defaults to error: missing local tile/dates stop planning. Explicit allow records each absent tile/date and search pattern in missing_sources, writes a null source inventory entry, and permits a missing-observation receipt. Receipt assembly verifies the saved plan and writes null daily mappings, expanded by interpolation into unknown state and NaN scientific fields. No fake reflectance or empty raster is written. These gaps remain null in NRT history and can be revisited. The planner does not query upstream availability; the operator authorizes local gaps. Duplicate vintages, corrupt existing files, inaccessible archive roots and sources lost or newly appearing after planning still fail. Dates use start inclusive and stop exclusive."
+      ]
+    },
+    "scheduler_selection": {
+      "source": "spires_batch.scheduler_policy.resolve_scheduler",
+      "fields": {
+        "policy": {
+          "type": "path",
+          "required": false,
+          "description": "Shared scheduler-policy JSON resolved relative to the configuration file."
+        },
+        "job_type": {
+          "type": "string",
+          "required": false,
+          "description": "Named job_types entry in execution.policy; required with a policy. Select one job type per batch request; do not combine with inline tile/stage profile routing."
+        },
+        "queue": {
+          "type": "string",
+          "required": false,
+          "description": "Named queue override from the same policy; sets cluster, partition, account and QoS together. Requires a job_type."
+        },
+        "cluster": {
+          "type": "string",
+          "required": false,
+          "description": "Slurm cluster; defaults from the selected queue, or blanca for explicit-resource configurations."
+        },
+        "partition": {
+          "type": "string",
+          "required": false,
+          "description": "Explicit partition override; normally select a named queue instead."
+        },
+        "account": {
+          "type": "string",
+          "required": false,
+          "description": "Explicit authorized account override; normally select a named queue instead."
+        },
+        "qos": {
+          "type": "string",
+          "required": false,
+          "description": "Explicit authorized QoS override; normally select a named queue instead."
+        },
+        "cpus": {
+          "type": "positive integer",
+          "required": false,
+          "description": "CPUs per task; overrides the selected job profile."
+        },
+        "memory": {
+          "type": "Slurm memory string",
+          "required": false,
+          "description": "Total memory per task, not per CPU. 0 means all node memory and requires exclusive=true; interpolation requires a bounded size."
+        },
+        "time": {
+          "type": "Slurm walltime string",
+          "required": false,
+          "description": "Per-task walltime; overrides the selected profile."
+        },
+        "concurrency": {
+          "type": "positive integer",
+          "required": false,
+          "description": "Maximum simultaneous array tasks, not threads within a task. Does not create concurrent updates to one NRT stream."
+        },
+        "exclusive": {
+          "type": "boolean",
+          "required": false,
+          "description": "Reserve an exclusive node; false unless the profile or request enables it."
+        }
+      },
+      "notes": [
+        "Profile defaults are resolved before planning. Explicit resource fields override profile defaults. Plans store resolved resources and a snapshot; policy edits do not resize submitted jobs.",
+        "snapshot is generated plan metadata, not a field to author. Named workflows use job_type/queue beside each jobs entry and resource overrides under jobs.NAME.resources."
+      ]
+    },
+    "scheduler_queue": {
+      "source": "spires_batch.scheduler_policy.QUEUE_FIELDS",
+      "fields": {
+        "cluster": {
+          "type": "string",
+          "required": true,
+          "description": "Single scheduler token for the named queue; no comma-separated automatic fallback."
+        },
+        "partition": {
+          "type": "string",
+          "required": true,
+          "description": "Single scheduler token for the named queue; no comma-separated automatic fallback."
+        },
+        "account": {
+          "type": "string",
+          "required": true,
+          "description": "Single scheduler token for the named queue; no comma-separated automatic fallback."
+        },
+        "qos": {
+          "type": "string",
+          "required": true,
+          "description": "Single scheduler token for the named queue; no comma-separated automatic fallback."
+        }
+      },
+      "notes": [
+        "The supplied queues are blanca-snow, blanca-rittger and preemptable. preemptable uses cluster/partition blanca, account blanca-snow and QoS preemptable; verify each operator's account authorization. Shared exclusions apply to every queue. No automatic overflow or redistribution is implied."
+      ]
+    },
+    "scheduler_job_type": {
+      "source": "spires_batch.scheduler_policy.profile_resources/preparation_defaults",
+      "fields": {
+        "cpus": {
+          "type": "positive integer",
+          "required": true,
+          "description": "CPUs per task; overrides the selected job profile."
+        },
+        "memory": {
+          "type": "Slurm memory string",
+          "required": true,
+          "description": "Total memory per task, not per CPU. 0 means all node memory and requires exclusive=true; interpolation requires a bounded size."
+        },
+        "time": {
+          "type": "Slurm walltime string",
+          "required": true,
+          "description": "Per-task walltime; overrides the selected profile."
+        },
+        "concurrency": {
+          "type": "positive integer",
+          "required": true,
+          "description": "Maximum simultaneous array tasks, not threads within a task. Does not create concurrent updates to one NRT stream."
+        },
+        "exclusive": {
+          "type": "boolean",
+          "required": false,
+          "description": "Reserve an exclusive node; false unless the profile or request enables it."
+        },
+        "queue": {
+          "type": "string",
+          "required": true,
+          "description": "Default queue name from policy.queues."
+        },
+        "description": {
+          "type": "string",
+          "required": false,
+          "description": "Optional human-readable explanation; does not affect execution."
+        },
+        "unit": {
+          "type": "string",
+          "required": false,
+          "description": "What one task processes: tile/date, whole domain/date, stripe, or export."
+        },
+        "status": {
+          "type": "string",
+          "required": false,
+          "description": "Evidence maturity, such as measured, operator_baseline, or starting_budget; documentation only."
+        },
+        "evidence": {
+          "type": "array[string]",
+          "required": false,
+          "description": "Measurements, campaign/job identifiers, dates and limitations supporting the reservation."
+        },
+        "preparation": {
+          "type": "object",
+          "required": false,
+          "description": "Defaults for matched daily/NRT preparation: retrieval_concurrency and either preparation_memory_gib or retrieval_memory_gib. Explicit recipe settings override these."
+        },
+        "max_tiles": {
+          "type": "positive integer",
+          "required": false,
+          "description": "Maximum domain size supported by this preparation profile. Larger domains must select or define a suitable profile."
+        }
+      },
+      "notes": [
+        "Raw tile inversion and full matched preparation are different work units; a multi-tile preparation request must cover cloud inference and coordinator overhead, not just one inversion.",
+        "R0 uses memory=0 and exclusive=true on blanca-snow; CPU count does not assert algorithmic scaling."
+      ]
+    },
+    "retrieval_preparation": {
+      "source": "spires_io.viirs.prepare_viirs_scene_for_inversion signature",
+      "fields": {
+        "bands": {
+          "description": "Ordered bands. Omit for labeled R0 products; positional GeoTIFF R0 inputs require an explicit list.",
+          "required": false,
+          "default": null
+        },
+        "lut_file": {
+          "description": "Optional LUT used to infer band selection; the retained worker explicitly fixes its evaluated bands.",
+          "required": false,
+          "default": null
+        },
+        "cloud_mask_source": {
+          "description": "External cloud source; the retained coordinator overrides this with its matched corrected cloud.",
+          "required": false,
+          "default": null
+        },
+        "cloud_mask_var": {
+          "description": "Dataset variable for an external cloud mask.",
+          "required": false,
+          "default": "mask_cloud"
+        },
+        "cloud_shadow_mask_var": {
+          "description": "Dataset variable for an external cloud-shadow mask.",
+          "required": false,
+          "default": "mask_cloud_shadow"
+        },
+        "cloud_mask_source_policy": {
+          "description": "How external/native QA cloud evidence is combined; see supported enum.",
+          "required": false,
+          "default": null
+        },
+        "cloud_mask_application_stage": {
+          "description": "Pre- versus post-inversion cloud application. Retained VIIRS retrieval requires post_inversion.",
+          "required": false,
+          "default": "pre_inversion"
+        },
+        "water_mask_source": {
+          "description": "Optional external water source path.",
+          "required": false,
+          "default": null
+        },
+        "water_mask_var": {
+          "description": "Optional external-water dataset variable.",
+          "required": false,
+          "default": null
+        },
+        "ice_mask_source": {
+          "description": "Optional external ice source path.",
+          "required": false,
+          "default": null
+        },
+        "ice_mask_var": {
+          "description": "Optional external-ice dataset variable.",
+          "required": false,
+          "default": null
+        },
+        "playa_mask_source": {
+          "description": "Optional external playa source path.",
+          "required": false,
+          "default": null
+        },
+        "playa_mask_var": {
+          "description": "Optional external-playa dataset variable.",
+          "required": false,
+          "default": null
+        },
+        "keep_intermediate_reflectance": {
+          "description": "Retain intermediate reflectance arrays if true.",
+          "required": false,
+          "default": false
+        },
+        "keep_r0_masks": {
+          "description": "Retain R0 masks; the retained worker forces true.",
+          "required": false,
+          "default": false
+        },
+        "max_sensor_zenith": {
+          "description": "Additional R0 candidate view-angle threshold.",
+          "required": false,
+          "default": 65.0
+        },
+        "max_solar_zenith": {
+          "description": "Maximum valid solar zenith angle in physical degrees.",
+          "required": false,
+          "default": 85.0
+        },
+        "min_obs_1km": {
+          "description": "Minimum M-band observation count required by VIIRS preparation.",
+          "required": false,
+          "default": 1
+        },
+        "min_obs_500m": {
+          "description": "Minimum I-band observation count required by VIIRS preparation.",
+          "required": false,
+          "default": 1
+        },
+        "water_mask_values": {
+          "description": "Land/water classification values considered water.",
+          "required": false,
+          "default": [
+            0,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ]
+        },
+        "mask_water_using_reflectance_qf": {
+          "description": "Use native reflectance QA to identify water.",
+          "required": false,
+          "default": true
+        },
+        "mask_water_using_external_file": {
+          "description": "Use an externally supplied water layer where bound.",
+          "required": false,
+          "default": true
+        },
+        "mask_low_reflectance_for_inversion": {
+          "description": "Enable the optional low-reflectance inversion exclusion.",
+          "required": false,
+          "default": false
+        },
+        "low_reflectance_threshold": {
+          "description": "Reflectance cutoff if low-reflectance masking is enabled.",
+          "required": false,
+          "default": 0.1
+        }
+      },
+      "notes": [
+        "JSON recipes use path strings for external sources, not Python Dataset objects.",
+        "source and logger are API arguments, not recipe fields. Retained worker forces evaluated bands, keep_r0_masks=true and its cloud_mask_source; cloud_mask_application_stage must be post_inversion."
+      ]
+    }
+  },
+  "fixed_scientific_recipe_not_user_options": {
+    "name": "viirs_snow",
+    "sensor": "viirs",
+    "platform": "noaa20",
+    "observation_schema": 2,
+    "checkpoint_schema": 2,
+    "screening_version": 1,
+    "onset_version": 1,
+    "snow_interpolation_version": 1,
+    "property_interpolation_version": 1,
+    "albedo_version": 1,
+    "snow_fraction_minimum": 0.04,
+    "bright_soil_snow_fraction_minimum": 0.1,
+    "agricultural_snow_fraction_minimum": 0.15,
+    "cloud_risk_snow_fraction_minimum": 0.25,
+    "positive_swir_residual_maximum": 0.05,
+    "onset_base_threshold": 0.2,
+    "onset_frequency_scale": 0.25,
+    "rare_snow_frequency_maximum": 0.01,
+    "onset_canopy_cap": 0.25,
+    "preferred_view_zenith_degrees": 30.0,
+    "maximum_view_zenith_degrees": 65.0,
+    "snow_donor_days": 45,
+    "property_donor_days": 21,
+    "final_issue_delay_days": 7,
+    "replacement_history_days": 14,
+    "spatial_radius_m": 160000.0,
+    "spatial_scale_m": 40000.0,
+    "elevation_scale_m": 100.0,
+    "grain_minimum_donors": 11,
+    "dust_minimum_donors": 3,
+    "donor_canopy_maximum": 0.3,
+    "grain_observation_snow_fraction_minimum": 0.6,
+    "dust_observation_snow_fraction_minimum": 0.4,
+    "grain_fallback_um": 250.0,
+    "dust_fallback_ppm": 10.0
+  },
+  "safety": [
+    "All public configurations require config_type and schema_version=1: the spipy v1.0.0 baseline, not the retired development interpolation. Old/missing headers are rejected; no automatic configuration migration exists. Saved-plan/checkpoint formats and scientific component versions are separate contracts.",
+    "Planning a universal workflow does not download or compute; nrt cycle without --execute DOES acquire, prepare clouds and retrieve before stopping at the revision plan.",
+    "JSON has no comments. Do not paste this reference's description/type/default wrappers into a runnable request.",
+    "Scientific recipe constants are not user-adjustable JSON options. Only evaluated NOAA-20 viirs_snow interpolation is enabled.",
+    "R0 loads every summer scene for a tile/year into RAM; zarr_path, zarr_mode and chunks are rejected.",
+    "Full-history NRT replay stops with status 3 and a transfer-size report instead of silently staging all history.",
+    "Use exclusive full-node blanca-snow allocations for high-memory R0; other work uses blanca-snow/blanca-rittger and approved preemptable overflow with the verified exclusion list.",
+    "Runtime dictionary parsers do not all reject unknown keys. This reference documents consumed keys, not a promise of complete machine validation."
+  ]
+}

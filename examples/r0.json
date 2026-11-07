@@ -1,0 +1,112 @@
+{
+  "config_type": "batch_request",
+  "schema_version": 1,
+  "artifact_type": "spires_batch_request",
+  "run": {
+    "name": "noaa20-wy2026-summer2025-r0",
+    "sensor": "viirs",
+    "platform": "noaa20"
+  },
+  "selection": {
+    "tiles": [
+      "h08v04",
+      "h08v05",
+      "h09v04",
+      "h09v05",
+      "h10v04"
+    ],
+    "water_years": []
+  },
+  "steps": [
+    "build_r0"
+  ],
+  "inputs": {
+    "roots": [
+      {
+        "adapter": "curc",
+        "role": "r0_source",
+        "path": "/pl/active/rittger_ops/vj109ga.002/input",
+        "pattern": "{tile}/{year}/VJ109GA.A*.{tile}.002.*.h5",
+        "required": true
+      }
+    ]
+  },
+  "r0": {
+    "mode": "build",
+    "recipe": "viirs_summer_composite",
+    "artifacts": [
+      {
+        "id": "h08v04-wy2026-summer2025",
+        "path": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0/h08v04/viirs_h08v04_r0_2025.nc",
+        "tile": "h08v04",
+        "water_year": 2026
+      },
+      {
+        "id": "h08v05-wy2026-summer2025",
+        "path": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0/h08v05/viirs_h08v05_r0_2025.nc",
+        "tile": "h08v05",
+        "water_year": 2026
+      },
+      {
+        "id": "h09v04-wy2026-summer2025",
+        "path": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0/h09v04/viirs_h09v04_r0_2025.nc",
+        "tile": "h09v04",
+        "water_year": 2026
+      },
+      {
+        "id": "h09v05-wy2026-summer2025",
+        "path": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0/h09v05/viirs_h09v05_r0_2025.nc",
+        "tile": "h09v05",
+        "water_year": 2026
+      },
+      {
+        "id": "h10v04-wy2026-summer2025",
+        "path": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0/h10v04/viirs_h10v04_r0_2025.nc",
+        "tile": "h10v04",
+        "water_year": 2026
+      }
+    ]
+  },
+  "science": {
+    "build_r0": {
+      "max_sensor_zenith": 30,
+      "ndvi_tie_epsilon": 0.02,
+      "min_blue_reflectance": 0.1,
+      "show_progress": false,
+      "preparation": {
+        "bands": [
+          "I1",
+          "I2",
+          "I3",
+          "M2",
+          "M4",
+          "M8",
+          "M11"
+        ]
+      }
+    }
+  },
+  "output": {
+    "root": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0",
+    "product_contents": "full",
+    "existing_file_handling": "write_new_file",
+    "existing_output_policy": "error"
+  },
+  "execution": {
+    "max_auto_retry_count": 3,
+    "staging": {
+      "enabled": true,
+      "verification": "stat",
+      "reuse_valid": true,
+      "root": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/r0-input-cache"
+    },
+    "job_type": "r0",
+    "resources": {
+      "environment_name": "spipy14"
+    },
+    "policy": "scheduler_policy.json"
+  },
+  "preflight": {
+    "metadata_check": "sample"
+  }
+}

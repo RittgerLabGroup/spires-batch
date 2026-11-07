@@ -1,0 +1,204 @@
+{
+  "config_type": "initialization",
+  "schema_version": 1,
+  "sensor": "viirs",
+  "platform": "noaa20",
+  "domain": "five-tiles-wy2026-REPLACE_USER-unified",
+  "tiles": [
+    "h08v04",
+    "h08v05",
+    "h09v04",
+    "h09v05",
+    "h10v04"
+  ],
+  "water_years": [
+    2026
+  ],
+  "asset_version": "v1",
+  "storage": {
+    "durable_root": "/pl/active/rittger_ops/spipy",
+    "scratch_root": "/scratch/alpine/REPLACE_USER/spipy",
+    "reflectance_roots": {
+      "VJ109GA.002": "/pl/active/rittger_ops/vj109ga.002",
+      "VNP09GA.002": "/pl/active/rittger_ops/vnp09ga.002"
+    }
+  },
+  "assets": [
+    {
+      "id": "viirs-reflectance",
+      "kind": "lut",
+      "relative_path": "luts/viirs-reflectance.nc"
+    },
+    {
+      "id": "cloud-manifest",
+      "kind": "cloud_model",
+      "relative_path": "cloud-models/matched/manifest.json"
+    },
+    {
+      "id": "cloud-stage1",
+      "kind": "cloud_model",
+      "relative_path": "cloud-models/matched/stage1.joblib"
+    },
+    {
+      "id": "cloud-stage2",
+      "kind": "cloud_model",
+      "relative_path": "cloud-models/matched/stage2.pt"
+    },
+    {
+      "id": "h08v04-context",
+      "kind": "ancillary",
+      "tile": "h08v04",
+      "relative_path": "ancillary/h08v04/v1/context.h5"
+    },
+    {
+      "id": "h08v05-context",
+      "kind": "ancillary",
+      "tile": "h08v05",
+      "relative_path": "ancillary/h08v05/v1/context.h5"
+    },
+    {
+      "id": "h09v04-context",
+      "kind": "ancillary",
+      "tile": "h09v04",
+      "relative_path": "ancillary/h09v04/v1/context.h5"
+    },
+    {
+      "id": "h09v05-context",
+      "kind": "ancillary",
+      "tile": "h09v05",
+      "relative_path": "ancillary/h09v05/v1/context.h5"
+    },
+    {
+      "id": "h10v04-context",
+      "kind": "ancillary",
+      "tile": "h10v04",
+      "relative_path": "ancillary/h10v04/v1/context.h5"
+    },
+    {
+      "id": "albedo",
+      "kind": "lut",
+      "relative_path": "luts/albedo.nc"
+    },
+    {
+      "id": "h08v04-water",
+      "kind": "ancillary",
+      "relative_path": "ancillary/h08v04/v1/water.tif",
+      "tile": "h08v04"
+    },
+    {
+      "id": "h08v04-screening-wy2026",
+      "kind": "ancillary",
+      "relative_path": "ancillary/h08v04/v1/screening-WY2026.h5",
+      "tile": "h08v04"
+    },
+    {
+      "id": "h08v04-snow-frequency-excluding-wy2026",
+      "kind": "climatology",
+      "relative_path": "climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+      "tile": "h08v04"
+    },
+    {
+      "id": "h08v04-screened-background-summer2025",
+      "kind": "ancillary",
+      "relative_path": "ancillary/h08v04/v1/screened-background-summer2025.h5",
+      "tile": "h08v04"
+    },
+    {
+      "id": "h08v05-water",
+      "kind": "ancillary",
+      "relative_path": "ancillary/h08v05/v1/water.tif",
+      "tile": "h08v05"
+    },
+    {
+      "id": "h08v05-screening-wy2026",
+      "kind": "ancillary",
+      "relative_path": "ancillary/h08v05/v1/screening-WY2026.h5",
+      "tile": "h08v05"
+    },
+    {
+      "id": "h08v05-snow-frequency-excluding-wy2026",
+      "kind": "climatology",
+      "relative_path": "climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+      "tile": "h08v05"
+    },
+    {
+      "id": "h08v05-screened-background-summer2025",
+      "kind": "ancillary",
+      "relative_path": "ancillary/h08v05/v1/screened-background-summer2025.h5",
+      "tile": "h08v05"
+    },
+    {
+      "id": "h09v04-water",
+      "kind": "ancillary",
+      "relative_path": "ancillary/h09v04/v1/water.tif",
+      "tile": "h09v04"
+    },
+    {
+      "id": "h09v04-screening-wy2026",
+      "kind": "ancillary",
+      "relative_path": "ancillary/h09v04/v1/screening-WY2026.h5",
+      "tile": "h09v04"
+    },
+    {
+      "id": "h09v04-snow-frequency-excluding-wy2026",
+      "kind": "climatology",
+      "relative_path": "climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+      "tile": "h09v04"
+    },
+    {
+      "id": "h09v04-screened-background-summer2025",
+      "kind": "ancillary",
+      "relative_path": "ancillary/h09v04/v1/screened-background-summer2025.h5",
+      "tile": "h09v04"
+    },
+    {
+      "id": "h09v05-water",
+      "kind": "ancillary",
+      "relative_path": "ancillary/h09v05/v1/water.tif",
+      "tile": "h09v05"
+    },
+    {
+      "id": "h09v05-screening-wy2026",
+      "kind": "ancillary",
+      "relative_path": "ancillary/h09v05/v1/screening-WY2026.h5",
+      "tile": "h09v05"
+    },
+    {
+      "id": "h09v05-snow-frequency-excluding-wy2026",
+      "kind": "climatology",
+      "relative_path": "climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+      "tile": "h09v05"
+    },
+    {
+      "id": "h09v05-screened-background-summer2025",
+      "kind": "ancillary",
+      "relative_path": "ancillary/h09v05/v1/screened-background-summer2025.h5",
+      "tile": "h09v05"
+    },
+    {
+      "id": "h10v04-water",
+      "kind": "ancillary",
+      "relative_path": "ancillary/h10v04/v1/water.tif",
+      "tile": "h10v04"
+    },
+    {
+      "id": "h10v04-screening-wy2026",
+      "kind": "ancillary",
+      "relative_path": "ancillary/h10v04/v1/screening-WY2026.h5",
+      "tile": "h10v04"
+    },
+    {
+      "id": "h10v04-snow-frequency-excluding-wy2026",
+      "kind": "climatology",
+      "relative_path": "climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+      "tile": "h10v04"
+    },
+    {
+      "id": "h10v04-screened-background-summer2025",
+      "kind": "ancillary",
+      "relative_path": "ancillary/h10v04/v1/screened-background-summer2025.h5",
+      "tile": "h10v04"
+    }
+  ],
+  "stage_assets": false
+}

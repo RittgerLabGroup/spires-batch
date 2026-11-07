@@ -1,0 +1,2032 @@
+{
+  "config_type": "workflow",
+  "schema_version": 1,
+  "mode": "nrt",
+  "sensor": "viirs",
+  "platform": "noaa20",
+  "selection": {
+    "tiles": [
+      "h08v04",
+      "h08v05",
+      "h09v04",
+      "h09v05",
+      "h10v04"
+    ]
+  },
+  "output": "${scratch}/work/noaa20/five-tiles/WY2026/unified",
+  "log_root": "${scratch}/work/noaa20/five-tiles/WY2026/unified/logs",
+  "max_auto_retry_count": 3,
+  "scheduler": {
+    "policy": {
+      "config_type": "scheduler_policy",
+      "schema_version": 1,
+      "exclude_nodes": [
+        "bhpc-c7-u7-16",
+        "bnode0505",
+        "bnode0506",
+        "bhpc-c5-u7-20",
+        "bhpc-c7-u7-4",
+        "bhpc-c7-u7-14",
+        "bhpc-c7-u19-16",
+        "bhpc-c7-u7-15",
+        "bhpc-c7-u7-11",
+        "bhpc-c7-u19-4",
+        "bhpc-c7-u19-7",
+        "bhpc-c5-u7-22",
+        "bhpc-c5-u7-14",
+        "bhpc-c7-u7-10",
+        "bgpu-mktg1"
+      ],
+      "queues": {
+        "blanca-snow": {
+          "cluster": "blanca",
+          "partition": "blanca-snow",
+          "account": "blanca-snow",
+          "qos": "blanca-snow"
+        },
+        "blanca-rittger": {
+          "cluster": "blanca",
+          "partition": "blanca-rittger",
+          "account": "blanca-rittger",
+          "qos": "blanca-rittger"
+        },
+        "preemptable": {
+          "cluster": "blanca",
+          "partition": "blanca",
+          "account": "blanca-snow",
+          "qos": "preemptable"
+        }
+      },
+      "job_types": {
+        "r0": {
+          "queue": "blanca-snow",
+          "cpus": 1,
+          "memory": "0",
+          "time": "08:00:00",
+          "concurrency": 1,
+          "unit": "One tile / summer; exclusive full node",
+          "status": "measured",
+          "evidence": [
+            "WY2026 five-tile campaign: 122 summer scenes per tile, maintained in-memory construction.",
+            "Request all node memory and exclusive access; one CPU requested does not mean the rest of the node is shared. Additional compute threads have not been benchmarked."
+          ],
+          "exclusive": true
+        },
+        "tile_inversion": {
+          "queue": "blanca-rittger",
+          "cpus": 1,
+          "memory": "6G",
+          "time": "04:00:00",
+          "concurrency": 20,
+          "unit": "One tile / date spectral inversion worker",
+          "status": "operator_baseline",
+          "evidence": [
+            "Operator baseline: one worker and 6 GiB per tile/date.",
+            "This is not the budget for a complete multi-tile cloud/preparation job."
+          ]
+        },
+        "daily_single_tile": {
+          "queue": "blanca-rittger",
+          "cpus": 1,
+          "memory": "8G",
+          "time": "04:00:00",
+          "concurrency": 4,
+          "unit": "One date with one tile, clouds, retrieval and daily albedo",
+          "status": "starting_budget",
+          "evidence": [
+            "6 GiB worker baseline plus 2 GiB coordinator headroom; validate a pilot with the complete runner."
+          ],
+          "max_tiles": 1,
+          "preparation": {
+            "retrieval_concurrency": 1,
+            "preparation_memory_gib": 8
+          }
+        },
+        "daily_five_tiles": {
+          "queue": "blanca-rittger",
+          "cpus": 5,
+          "memory": "16G",
+          "time": "04:00:00",
+          "concurrency": 4,
+          "unit": "One date across up to five tiles, one retrieval worker per tile",
+          "status": "measured",
+          "evidence": [
+            "Five-tile 16 GiB trial and historical preparation completed; observed preparation peak was below 10 GiB.",
+            "The current runner adds daily albedo; validate the complete runner before treating that measurement as its guarantee."
+          ],
+          "max_tiles": 5,
+          "preparation": {
+            "retrieval_concurrency": 5,
+            "preparation_memory_gib": 16
+          }
+        },
+        "nrt_five_tiles": {
+          "queue": "blanca-rittger",
+          "cpus": 5,
+          "memory": "16G",
+          "time": "12:00:00",
+          "concurrency": 1,
+          "unit": "One NRT cycle over up to five tiles; serialized updates to one stream",
+          "status": "starting_budget",
+          "evidence": [
+            "Preparation uses the five-tile measured budget; complete cycle time/memory still needs validation.",
+            "The allocation must also cover the interpolation settings registered with the stream. No cron or Slurm job is created by selecting this profile."
+          ],
+          "max_tiles": 5,
+          "preparation": {
+            "retrieval_concurrency": 5,
+            "preparation_memory_gib": 16
+          }
+        },
+        "interpolation_screen": {
+          "queue": "blanca-rittger",
+          "cpus": 1,
+          "memory": "6G",
+          "time": "08:00:00",
+          "concurrency": 16,
+          "unit": "One tile / row stripe over the historical interval",
+          "status": "measured",
+          "evidence": [
+            "600 screening tasks completed in the five-tile WY2026 campaign with this per-task allocation."
+          ]
+        },
+        "interpolation_spatial": {
+          "queue": "blanca-rittger",
+          "cpus": 4,
+          "memory": "8G",
+          "time": "12:00:00",
+          "concurrency": 8,
+          "unit": "One date across the full five-tile donor domain",
+          "status": "measured",
+          "evidence": [
+            "2026-11-06: 76 completed spatial tasks had a maximum sampled MaxRSS of 1.30 GiB, median 0.75 GiB.",
+            "Four CPUs support the multithreaded spatial kernel; 8 GiB retains headroom. Full winter/spring coverage remains to be checked.",
+            "Campaign array 29341812 was changed from 24 GiB / concurrency 4 to 8 GiB / concurrency 8, split manually across blanca-snow and blanca-rittger. This profile selects one queue; it does not reproduce that split automatically."
+          ]
+        },
+        "interpolation_properties": {
+          "queue": "blanca-rittger",
+          "cpus": 1,
+          "memory": "8G",
+          "time": "12:00:00",
+          "concurrency": 12,
+          "unit": "One tile / row stripe over the historical interval",
+          "status": "starting_budget",
+          "evidence": [
+            "Retain until the property-completion pilot has measured CPU, peak memory and runtime."
+          ]
+        },
+        "interpolation_export": {
+          "queue": "blanca-rittger",
+          "cpus": 1,
+          "memory": "8G",
+          "time": "12:00:00",
+          "concurrency": 2,
+          "unit": "One tile product export",
+          "status": "starting_budget",
+          "evidence": [
+            "Retain until export has measured CPU, peak memory and runtime."
+          ]
+        }
+      }
+    },
+    "python": "${science_python}"
+  },
+  "coordinator": {
+    "cluster": "blanca",
+    "partition": "blanca-snow",
+    "account": "blanca-snow",
+    "qos": "blanca-snow",
+    "cpus": 1,
+    "memory": "4G",
+    "time": "01:00:00"
+  },
+  "jobs": {
+    "initialize": {
+      "kind": "initialize",
+      "resources": {
+        "memory": "8G",
+        "time": "02:00:00"
+      },
+      "request": {
+        "config_type": "initialization",
+        "schema_version": 1,
+        "sensor": "viirs",
+        "platform": "noaa20",
+        "domain": "five-tiles-wy2026-REPLACE_USER-unified",
+        "tiles": [
+          "h08v04",
+          "h08v05",
+          "h09v04",
+          "h09v05",
+          "h10v04"
+        ],
+        "water_years": [
+          2026
+        ],
+        "asset_version": "v1",
+        "storage": {
+          "durable_root": "/pl/active/rittger_ops/spipy",
+          "scratch_root": "${scratch}",
+          "reflectance_roots": {
+            "VJ109GA.002": "/pl/active/rittger_ops/vj109ga.002",
+            "VNP09GA.002": "/pl/active/rittger_ops/vnp09ga.002"
+          }
+        },
+        "assets": [
+          {
+            "id": "viirs-reflectance",
+            "kind": "lut",
+            "relative_path": "luts/viirs-reflectance.nc"
+          },
+          {
+            "id": "cloud-manifest",
+            "kind": "cloud_model",
+            "relative_path": "cloud-models/matched/manifest.json"
+          },
+          {
+            "id": "cloud-stage1",
+            "kind": "cloud_model",
+            "relative_path": "cloud-models/matched/stage1.joblib"
+          },
+          {
+            "id": "cloud-stage2",
+            "kind": "cloud_model",
+            "relative_path": "cloud-models/matched/stage2.pt"
+          },
+          {
+            "id": "h08v04-context",
+            "kind": "ancillary",
+            "tile": "h08v04",
+            "relative_path": "ancillary/h08v04/v1/context.h5"
+          },
+          {
+            "id": "h08v05-context",
+            "kind": "ancillary",
+            "tile": "h08v05",
+            "relative_path": "ancillary/h08v05/v1/context.h5"
+          },
+          {
+            "id": "h09v04-context",
+            "kind": "ancillary",
+            "tile": "h09v04",
+            "relative_path": "ancillary/h09v04/v1/context.h5"
+          },
+          {
+            "id": "h09v05-context",
+            "kind": "ancillary",
+            "tile": "h09v05",
+            "relative_path": "ancillary/h09v05/v1/context.h5"
+          },
+          {
+            "id": "h10v04-context",
+            "kind": "ancillary",
+            "tile": "h10v04",
+            "relative_path": "ancillary/h10v04/v1/context.h5"
+          },
+          {
+            "id": "albedo",
+            "kind": "lut",
+            "relative_path": "luts/albedo.nc"
+          },
+          {
+            "id": "h08v04-water",
+            "kind": "ancillary",
+            "relative_path": "ancillary/h08v04/v1/water.tif",
+            "tile": "h08v04"
+          },
+          {
+            "id": "h08v04-screening-wy2026",
+            "kind": "ancillary",
+            "relative_path": "ancillary/h08v04/v1/screening-WY2026.h5",
+            "tile": "h08v04"
+          },
+          {
+            "id": "h08v04-snow-frequency-excluding-wy2026",
+            "kind": "climatology",
+            "relative_path": "climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+            "tile": "h08v04"
+          },
+          {
+            "id": "h08v04-screened-background-summer2025",
+            "kind": "ancillary",
+            "relative_path": "ancillary/h08v04/v1/screened-background-summer2025.h5",
+            "tile": "h08v04"
+          },
+          {
+            "id": "h08v05-water",
+            "kind": "ancillary",
+            "relative_path": "ancillary/h08v05/v1/water.tif",
+            "tile": "h08v05"
+          },
+          {
+            "id": "h08v05-screening-wy2026",
+            "kind": "ancillary",
+            "relative_path": "ancillary/h08v05/v1/screening-WY2026.h5",
+            "tile": "h08v05"
+          },
+          {
+            "id": "h08v05-snow-frequency-excluding-wy2026",
+            "kind": "climatology",
+            "relative_path": "climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+            "tile": "h08v05"
+          },
+          {
+            "id": "h08v05-screened-background-summer2025",
+            "kind": "ancillary",
+            "relative_path": "ancillary/h08v05/v1/screened-background-summer2025.h5",
+            "tile": "h08v05"
+          },
+          {
+            "id": "h09v04-water",
+            "kind": "ancillary",
+            "relative_path": "ancillary/h09v04/v1/water.tif",
+            "tile": "h09v04"
+          },
+          {
+            "id": "h09v04-screening-wy2026",
+            "kind": "ancillary",
+            "relative_path": "ancillary/h09v04/v1/screening-WY2026.h5",
+            "tile": "h09v04"
+          },
+          {
+            "id": "h09v04-snow-frequency-excluding-wy2026",
+            "kind": "climatology",
+            "relative_path": "climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+            "tile": "h09v04"
+          },
+          {
+            "id": "h09v04-screened-background-summer2025",
+            "kind": "ancillary",
+            "relative_path": "ancillary/h09v04/v1/screened-background-summer2025.h5",
+            "tile": "h09v04"
+          },
+          {
+            "id": "h09v05-water",
+            "kind": "ancillary",
+            "relative_path": "ancillary/h09v05/v1/water.tif",
+            "tile": "h09v05"
+          },
+          {
+            "id": "h09v05-screening-wy2026",
+            "kind": "ancillary",
+            "relative_path": "ancillary/h09v05/v1/screening-WY2026.h5",
+            "tile": "h09v05"
+          },
+          {
+            "id": "h09v05-snow-frequency-excluding-wy2026",
+            "kind": "climatology",
+            "relative_path": "climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+            "tile": "h09v05"
+          },
+          {
+            "id": "h09v05-screened-background-summer2025",
+            "kind": "ancillary",
+            "relative_path": "ancillary/h09v05/v1/screened-background-summer2025.h5",
+            "tile": "h09v05"
+          },
+          {
+            "id": "h10v04-water",
+            "kind": "ancillary",
+            "relative_path": "ancillary/h10v04/v1/water.tif",
+            "tile": "h10v04"
+          },
+          {
+            "id": "h10v04-screening-wy2026",
+            "kind": "ancillary",
+            "relative_path": "ancillary/h10v04/v1/screening-WY2026.h5",
+            "tile": "h10v04"
+          },
+          {
+            "id": "h10v04-snow-frequency-excluding-wy2026",
+            "kind": "climatology",
+            "relative_path": "climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+            "tile": "h10v04"
+          },
+          {
+            "id": "h10v04-screened-background-summer2025",
+            "kind": "ancillary",
+            "relative_path": "ancillary/h10v04/v1/screened-background-summer2025.h5",
+            "tile": "h10v04"
+          }
+        ],
+        "stage_assets": true
+      }
+    },
+    "background": {
+      "kind": "daily",
+      "depends_on": [
+        "initialize"
+      ],
+      "job_type": "r0",
+      "request": {
+        "config_type": "batch_request",
+        "schema_version": 1,
+        "artifact_type": "spires_batch_request",
+        "run": {
+          "name": "noaa20-wy2026-summer2025-r0",
+          "sensor": "viirs",
+          "platform": "noaa20"
+        },
+        "selection": {
+          "tiles": [
+            "h08v04",
+            "h08v05",
+            "h09v04",
+            "h09v05",
+            "h10v04"
+          ],
+          "water_years": []
+        },
+        "steps": [
+          "build_r0"
+        ],
+        "inputs": {
+          "roots": [
+            {
+              "adapter": "curc",
+              "role": "r0_source",
+              "path": "/pl/active/rittger_ops/vj109ga.002/input",
+              "pattern": "{tile}/{year}/VJ109GA.A*.{tile}.002.*.h5",
+              "required": true
+            }
+          ]
+        },
+        "r0": {
+          "mode": "build",
+          "recipe": "viirs_summer_composite",
+          "artifacts": [
+            {
+              "id": "h08v04-wy2026-summer2025",
+              "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h08v04/viirs_h08v04_r0_2025.nc",
+              "tile": "h08v04",
+              "water_year": 2026
+            },
+            {
+              "id": "h08v05-wy2026-summer2025",
+              "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h08v05/viirs_h08v05_r0_2025.nc",
+              "tile": "h08v05",
+              "water_year": 2026
+            },
+            {
+              "id": "h09v04-wy2026-summer2025",
+              "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h09v04/viirs_h09v04_r0_2025.nc",
+              "tile": "h09v04",
+              "water_year": 2026
+            },
+            {
+              "id": "h09v05-wy2026-summer2025",
+              "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h09v05/viirs_h09v05_r0_2025.nc",
+              "tile": "h09v05",
+              "water_year": 2026
+            },
+            {
+              "id": "h10v04-wy2026-summer2025",
+              "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h10v04/viirs_h10v04_r0_2025.nc",
+              "tile": "h10v04",
+              "water_year": 2026
+            }
+          ]
+        },
+        "science": {
+          "build_r0": {
+            "max_sensor_zenith": 30,
+            "ndvi_tie_epsilon": 0.02,
+            "min_blue_reflectance": 0.1,
+            "show_progress": false,
+            "preparation": {
+              "bands": [
+                "I1",
+                "I2",
+                "I3",
+                "M2",
+                "M4",
+                "M8",
+                "M11"
+              ]
+            }
+          }
+        },
+        "output": {
+          "root": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0",
+          "product_contents": "full",
+          "existing_file_handling": "write_new_file",
+          "existing_output_policy": "error"
+        },
+        "execution": {
+          "max_auto_retry_count": 3,
+          "staging": {
+            "enabled": true,
+            "verification": "stat",
+            "reuse_valid": true,
+            "root": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0-input-cache"
+          },
+          "job_type": "r0",
+          "resources": {
+            "environment_name": "spipy14"
+          }
+        },
+        "preflight": {
+          "metadata_check": "sample"
+        }
+      }
+    },
+    "historical": {
+      "kind": "historical",
+      "depends_on": [
+        "background"
+      ],
+      "job_type": "daily_five_tiles",
+      "request": {
+        "config_type": "historical",
+        "schema_version": 1,
+        "start": "2025-10-01",
+        "stop": "2026-05-12",
+        "reflectance_root": "/pl/active/rittger_ops/vj109ga.002/input",
+        "missing_reflectance": "error",
+        "output": "${scratch}/work/noaa20/five-tiles/WY2026/unified/historical",
+        "preparation": {
+          "science_python": "${science_python}",
+          "cloud_python": "${cloud_python}",
+          "cloud_model": "${scratch}/cache/assets/cloud-models/matched/manifest.json",
+          "collection": "002",
+          "observation_policy": {
+            "cloud_model_sha256": "673989ac8f81b5eb55dc2fa766ef9009bfb4f0c5c8f199cb6fba8b2343b680a8"
+          },
+          "tiles": {
+            "h08v04": {
+              "2026": {
+                "lut": "${scratch}/cache/assets/luts/viirs-reflectance.nc",
+                "background_available_through": "2025-09-30",
+                "preparation": {
+                  "cloud_mask_application_stage": "post_inversion",
+                  "cloud_mask_source_policy": "external_only",
+                  "low_reflectance_threshold": 0.1,
+                  "mask_low_reflectance_for_inversion": true,
+                  "mask_water_using_external_file": true,
+                  "mask_water_using_reflectance_qf": false,
+                  "max_sensor_zenith": 65,
+                  "max_solar_zenith": 85,
+                  "min_obs_1km": 1,
+                  "min_obs_500m": 1,
+                  "water_mask_values": [
+                    0,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7
+                  ],
+                  "water_mask_source": "${scratch}/cache/assets/ancillary/h08v04/v1/water.tif"
+                },
+                "axes": {
+                  "x": {
+                    "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h08v04/viirs_h08v04_r0_2025.nc",
+                    "dataset": "x",
+                    "axis": "x"
+                  },
+                  "y": {
+                    "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h08v04/viirs_h08v04_r0_2025.nc",
+                    "dataset": "y",
+                    "axis": "y"
+                  }
+                },
+                "ancillary": {
+                  "canopy_fraction": {
+                    "path": "${scratch}/cache/assets/ancillary/h08v04/v1/context.h5",
+                    "dataset": "canopy_fraction"
+                  },
+                  "slope": {
+                    "path": "${scratch}/cache/assets/ancillary/h08v04/v1/context.h5",
+                    "dataset": "slope"
+                  },
+                  "aspect": {
+                    "path": "${scratch}/cache/assets/ancillary/h08v04/v1/context.h5",
+                    "dataset": "aspect"
+                  },
+                  "ice_fraction": {
+                    "path": "${scratch}/cache/assets/ancillary/h08v04/v1/context.h5",
+                    "dataset": "ice_fraction"
+                  }
+                },
+                "background": {
+                  "baseline": {
+                    "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h08v04/viirs_h08v04_r0_2025.nc",
+                    "dataset": "r0_reflectance"
+                  },
+                  "screened": {
+                    "path": "${scratch}/cache/assets/ancillary/h08v04/v1/screened-background-summer2025.h5",
+                    "dataset": "screened_reflectance"
+                  },
+                  "index": {
+                    "path": "${scratch}/cache/assets/ancillary/h08v04/v1/screened-background-summer2025.h5",
+                    "dataset": "source_index"
+                  }
+                }
+              }
+            },
+            "h08v05": {
+              "2026": {
+                "lut": "${scratch}/cache/assets/luts/viirs-reflectance.nc",
+                "background_available_through": "2025-09-30",
+                "preparation": {
+                  "cloud_mask_application_stage": "post_inversion",
+                  "cloud_mask_source_policy": "external_only",
+                  "low_reflectance_threshold": 0.1,
+                  "mask_low_reflectance_for_inversion": true,
+                  "mask_water_using_external_file": true,
+                  "mask_water_using_reflectance_qf": false,
+                  "max_sensor_zenith": 65,
+                  "max_solar_zenith": 85,
+                  "min_obs_1km": 1,
+                  "min_obs_500m": 1,
+                  "water_mask_values": [
+                    0,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7
+                  ],
+                  "water_mask_source": "${scratch}/cache/assets/ancillary/h08v05/v1/water.tif"
+                },
+                "axes": {
+                  "x": {
+                    "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h08v05/viirs_h08v05_r0_2025.nc",
+                    "dataset": "x",
+                    "axis": "x"
+                  },
+                  "y": {
+                    "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h08v05/viirs_h08v05_r0_2025.nc",
+                    "dataset": "y",
+                    "axis": "y"
+                  }
+                },
+                "ancillary": {
+                  "canopy_fraction": {
+                    "path": "${scratch}/cache/assets/ancillary/h08v05/v1/context.h5",
+                    "dataset": "canopy_fraction"
+                  },
+                  "slope": {
+                    "path": "${scratch}/cache/assets/ancillary/h08v05/v1/context.h5",
+                    "dataset": "slope"
+                  },
+                  "aspect": {
+                    "path": "${scratch}/cache/assets/ancillary/h08v05/v1/context.h5",
+                    "dataset": "aspect"
+                  },
+                  "ice_fraction": {
+                    "path": "${scratch}/cache/assets/ancillary/h08v05/v1/context.h5",
+                    "dataset": "ice_fraction"
+                  }
+                },
+                "background": {
+                  "baseline": {
+                    "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h08v05/viirs_h08v05_r0_2025.nc",
+                    "dataset": "r0_reflectance"
+                  },
+                  "screened": {
+                    "path": "${scratch}/cache/assets/ancillary/h08v05/v1/screened-background-summer2025.h5",
+                    "dataset": "screened_reflectance"
+                  },
+                  "index": {
+                    "path": "${scratch}/cache/assets/ancillary/h08v05/v1/screened-background-summer2025.h5",
+                    "dataset": "source_index"
+                  }
+                }
+              }
+            },
+            "h09v04": {
+              "2026": {
+                "lut": "${scratch}/cache/assets/luts/viirs-reflectance.nc",
+                "background_available_through": "2025-09-30",
+                "preparation": {
+                  "cloud_mask_application_stage": "post_inversion",
+                  "cloud_mask_source_policy": "external_only",
+                  "low_reflectance_threshold": 0.1,
+                  "mask_low_reflectance_for_inversion": true,
+                  "mask_water_using_external_file": true,
+                  "mask_water_using_reflectance_qf": false,
+                  "max_sensor_zenith": 65,
+                  "max_solar_zenith": 85,
+                  "min_obs_1km": 1,
+                  "min_obs_500m": 1,
+                  "water_mask_values": [
+                    0,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7
+                  ],
+                  "water_mask_source": "${scratch}/cache/assets/ancillary/h09v04/v1/water.tif"
+                },
+                "axes": {
+                  "x": {
+                    "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h09v04/viirs_h09v04_r0_2025.nc",
+                    "dataset": "x",
+                    "axis": "x"
+                  },
+                  "y": {
+                    "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h09v04/viirs_h09v04_r0_2025.nc",
+                    "dataset": "y",
+                    "axis": "y"
+                  }
+                },
+                "ancillary": {
+                  "canopy_fraction": {
+                    "path": "${scratch}/cache/assets/ancillary/h09v04/v1/context.h5",
+                    "dataset": "canopy_fraction"
+                  },
+                  "slope": {
+                    "path": "${scratch}/cache/assets/ancillary/h09v04/v1/context.h5",
+                    "dataset": "slope"
+                  },
+                  "aspect": {
+                    "path": "${scratch}/cache/assets/ancillary/h09v04/v1/context.h5",
+                    "dataset": "aspect"
+                  },
+                  "ice_fraction": {
+                    "path": "${scratch}/cache/assets/ancillary/h09v04/v1/context.h5",
+                    "dataset": "ice_fraction"
+                  }
+                },
+                "background": {
+                  "baseline": {
+                    "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h09v04/viirs_h09v04_r0_2025.nc",
+                    "dataset": "r0_reflectance"
+                  },
+                  "screened": {
+                    "path": "${scratch}/cache/assets/ancillary/h09v04/v1/screened-background-summer2025.h5",
+                    "dataset": "screened_reflectance"
+                  },
+                  "index": {
+                    "path": "${scratch}/cache/assets/ancillary/h09v04/v1/screened-background-summer2025.h5",
+                    "dataset": "source_index"
+                  }
+                }
+              }
+            },
+            "h09v05": {
+              "2026": {
+                "lut": "${scratch}/cache/assets/luts/viirs-reflectance.nc",
+                "background_available_through": "2025-09-30",
+                "preparation": {
+                  "cloud_mask_application_stage": "post_inversion",
+                  "cloud_mask_source_policy": "external_only",
+                  "low_reflectance_threshold": 0.1,
+                  "mask_low_reflectance_for_inversion": true,
+                  "mask_water_using_external_file": true,
+                  "mask_water_using_reflectance_qf": false,
+                  "max_sensor_zenith": 65,
+                  "max_solar_zenith": 85,
+                  "min_obs_1km": 1,
+                  "min_obs_500m": 1,
+                  "water_mask_values": [
+                    0,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7
+                  ],
+                  "water_mask_source": "${scratch}/cache/assets/ancillary/h09v05/v1/water.tif"
+                },
+                "axes": {
+                  "x": {
+                    "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h09v05/viirs_h09v05_r0_2025.nc",
+                    "dataset": "x",
+                    "axis": "x"
+                  },
+                  "y": {
+                    "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h09v05/viirs_h09v05_r0_2025.nc",
+                    "dataset": "y",
+                    "axis": "y"
+                  }
+                },
+                "ancillary": {
+                  "canopy_fraction": {
+                    "path": "${scratch}/cache/assets/ancillary/h09v05/v1/context.h5",
+                    "dataset": "canopy_fraction"
+                  },
+                  "slope": {
+                    "path": "${scratch}/cache/assets/ancillary/h09v05/v1/context.h5",
+                    "dataset": "slope"
+                  },
+                  "aspect": {
+                    "path": "${scratch}/cache/assets/ancillary/h09v05/v1/context.h5",
+                    "dataset": "aspect"
+                  },
+                  "ice_fraction": {
+                    "path": "${scratch}/cache/assets/ancillary/h09v05/v1/context.h5",
+                    "dataset": "ice_fraction"
+                  }
+                },
+                "background": {
+                  "baseline": {
+                    "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h09v05/viirs_h09v05_r0_2025.nc",
+                    "dataset": "r0_reflectance"
+                  },
+                  "screened": {
+                    "path": "${scratch}/cache/assets/ancillary/h09v05/v1/screened-background-summer2025.h5",
+                    "dataset": "screened_reflectance"
+                  },
+                  "index": {
+                    "path": "${scratch}/cache/assets/ancillary/h09v05/v1/screened-background-summer2025.h5",
+                    "dataset": "source_index"
+                  }
+                }
+              }
+            },
+            "h10v04": {
+              "2026": {
+                "lut": "${scratch}/cache/assets/luts/viirs-reflectance.nc",
+                "background_available_through": "2025-09-30",
+                "preparation": {
+                  "cloud_mask_application_stage": "post_inversion",
+                  "cloud_mask_source_policy": "external_only",
+                  "low_reflectance_threshold": 0.1,
+                  "mask_low_reflectance_for_inversion": true,
+                  "mask_water_using_external_file": true,
+                  "mask_water_using_reflectance_qf": false,
+                  "max_sensor_zenith": 65,
+                  "max_solar_zenith": 85,
+                  "min_obs_1km": 1,
+                  "min_obs_500m": 1,
+                  "water_mask_values": [
+                    0,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7
+                  ],
+                  "water_mask_source": "${scratch}/cache/assets/ancillary/h10v04/v1/water.tif"
+                },
+                "axes": {
+                  "x": {
+                    "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h10v04/viirs_h10v04_r0_2025.nc",
+                    "dataset": "x",
+                    "axis": "x"
+                  },
+                  "y": {
+                    "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h10v04/viirs_h10v04_r0_2025.nc",
+                    "dataset": "y",
+                    "axis": "y"
+                  }
+                },
+                "ancillary": {
+                  "canopy_fraction": {
+                    "path": "${scratch}/cache/assets/ancillary/h10v04/v1/context.h5",
+                    "dataset": "canopy_fraction"
+                  },
+                  "slope": {
+                    "path": "${scratch}/cache/assets/ancillary/h10v04/v1/context.h5",
+                    "dataset": "slope"
+                  },
+                  "aspect": {
+                    "path": "${scratch}/cache/assets/ancillary/h10v04/v1/context.h5",
+                    "dataset": "aspect"
+                  },
+                  "ice_fraction": {
+                    "path": "${scratch}/cache/assets/ancillary/h10v04/v1/context.h5",
+                    "dataset": "ice_fraction"
+                  }
+                },
+                "background": {
+                  "baseline": {
+                    "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h10v04/viirs_h10v04_r0_2025.nc",
+                    "dataset": "r0_reflectance"
+                  },
+                  "screened": {
+                    "path": "${scratch}/cache/assets/ancillary/h10v04/v1/screened-background-summer2025.h5",
+                    "dataset": "screened_reflectance"
+                  },
+                  "index": {
+                    "path": "${scratch}/cache/assets/ancillary/h10v04/v1/screened-background-summer2025.h5",
+                    "dataset": "source_index"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "terrain": {
+          "h08v04": {
+            "dem": {
+              "path": "${scratch}/cache/assets/ancillary/h08v04/v1/context.h5",
+              "dataset": "dem"
+            },
+            "slope": {
+              "path": "${scratch}/cache/assets/ancillary/h08v04/v1/context.h5",
+              "dataset": "slope"
+            },
+            "aspect": {
+              "path": "${scratch}/cache/assets/ancillary/h08v04/v1/context.h5",
+              "dataset": "aspect"
+            }
+          },
+          "h08v05": {
+            "dem": {
+              "path": "${scratch}/cache/assets/ancillary/h08v05/v1/context.h5",
+              "dataset": "dem"
+            },
+            "slope": {
+              "path": "${scratch}/cache/assets/ancillary/h08v05/v1/context.h5",
+              "dataset": "slope"
+            },
+            "aspect": {
+              "path": "${scratch}/cache/assets/ancillary/h08v05/v1/context.h5",
+              "dataset": "aspect"
+            }
+          },
+          "h09v04": {
+            "dem": {
+              "path": "${scratch}/cache/assets/ancillary/h09v04/v1/context.h5",
+              "dataset": "dem"
+            },
+            "slope": {
+              "path": "${scratch}/cache/assets/ancillary/h09v04/v1/context.h5",
+              "dataset": "slope"
+            },
+            "aspect": {
+              "path": "${scratch}/cache/assets/ancillary/h09v04/v1/context.h5",
+              "dataset": "aspect"
+            }
+          },
+          "h09v05": {
+            "dem": {
+              "path": "${scratch}/cache/assets/ancillary/h09v05/v1/context.h5",
+              "dataset": "dem"
+            },
+            "slope": {
+              "path": "${scratch}/cache/assets/ancillary/h09v05/v1/context.h5",
+              "dataset": "slope"
+            },
+            "aspect": {
+              "path": "${scratch}/cache/assets/ancillary/h09v05/v1/context.h5",
+              "dataset": "aspect"
+            }
+          },
+          "h10v04": {
+            "dem": {
+              "path": "${scratch}/cache/assets/ancillary/h10v04/v1/context.h5",
+              "dataset": "dem"
+            },
+            "slope": {
+              "path": "${scratch}/cache/assets/ancillary/h10v04/v1/context.h5",
+              "dataset": "slope"
+            },
+            "aspect": {
+              "path": "${scratch}/cache/assets/ancillary/h10v04/v1/context.h5",
+              "dataset": "aspect"
+            }
+          }
+        },
+        "albedo_lut": "${scratch}/cache/assets/luts/albedo.nc",
+        "scheduler": {
+          "job_type": "daily_five_tiles"
+        }
+      }
+    },
+    "interpolate": {
+      "kind": "interpolation",
+      "depends_on": [
+        "historical"
+      ],
+      "historical_job": "historical",
+      "request": {
+        "config_type": "interpolation",
+        "schema_version": 1,
+        "algorithm": "viirs_snow",
+        "history_start": "2025-10-01",
+        "start": "2025-10-01",
+        "stop": "2026-05-12",
+        "available_through": "2026-05-11",
+        "shape": [
+          2400,
+          2400
+        ],
+        "stripe_rows": 20,
+        "source_stream": "standard",
+        "output": "${scratch}/work/noaa20/five-tiles/WY2026/unified/interpolation",
+        "snow_library": "/projects/REPLACE_USER/spipy-native/snow_fraction.so",
+        "spatial_library": "/projects/REPLACE_USER/spipy-native/spatial.so",
+        "albedo_lut": "${scratch}/cache/assets/luts/albedo.nc",
+        "asset_provenance": {
+          "policy": "viirs_snow",
+          "observation_policy": {
+            "cloud_model_sha256": "673989ac8f81b5eb55dc2fa766ef9009bfb4f0c5c8f199cb6fba8b2343b680a8"
+          },
+          "asset_manifest": "/projects/ropa5718/SPIReS-Organization/archive/operations-onboarding-five-tiles-wy2026/scientific-asset-publication.json",
+          "note": "Real prepared observations only. Assemble daily mappings from receipts; retain this donor domain and scientific context at NRT handoff."
+        },
+        "scheduler": {
+          "job_type": "interpolation_screen",
+          "stages": {
+            "spatial": {
+              "job_type": "interpolation_spatial"
+            },
+            "properties": {
+              "job_type": "interpolation_properties"
+            },
+            "export": {
+              "job_type": "interpolation_export"
+            }
+          }
+        },
+        "tiles": {
+          "h08v04": {
+            "daily": {},
+            "terrain": {
+              "x": {
+                "path": "${scratch}/cache/assets/r0/noaa20/h08v04/summer-2025/r0.nc",
+                "dataset": "x",
+                "axis": "x"
+              },
+              "y": {
+                "path": "${scratch}/cache/assets/r0/noaa20/h08v04/summer-2025/r0.nc",
+                "dataset": "y",
+                "axis": "y"
+              },
+              "dem": {
+                "path": "${scratch}/cache/assets/ancillary/h08v04/v1/context.h5",
+                "dataset": "dem"
+              },
+              "slope": {
+                "path": "${scratch}/cache/assets/ancillary/h08v04/v1/context.h5",
+                "dataset": "slope"
+              },
+              "aspect": {
+                "path": "${scratch}/cache/assets/ancillary/h08v04/v1/context.h5",
+                "dataset": "aspect"
+              },
+              "canopy_fraction": {
+                "path": "${scratch}/cache/assets/ancillary/h08v04/v1/context.h5",
+                "dataset": "canopy_fraction"
+              }
+            },
+            "bright_soil": {
+              "2026": {
+                "path": "${scratch}/cache/assets/ancillary/h08v04/v1/screening-WY2026.h5",
+                "dataset": "bright_soil"
+              }
+            },
+            "agriculture": {
+              "path": "${scratch}/cache/assets/ancillary/h08v04/v1/screening-WY2026.h5",
+              "dataset": "agriculture"
+            },
+            "coastal": {
+              "path": "${scratch}/cache/assets/ancillary/h08v04/v1/screening-WY2026.h5",
+              "dataset": "coastal"
+            },
+            "frequency": [
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 0
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 1
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 2
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 3
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 4
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 5
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 6
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 7
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 8
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 9
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 10
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 11
+              }
+            ]
+          },
+          "h08v05": {
+            "daily": {},
+            "terrain": {
+              "x": {
+                "path": "${scratch}/cache/assets/r0/noaa20/h08v05/summer-2025/r0.nc",
+                "dataset": "x",
+                "axis": "x"
+              },
+              "y": {
+                "path": "${scratch}/cache/assets/r0/noaa20/h08v05/summer-2025/r0.nc",
+                "dataset": "y",
+                "axis": "y"
+              },
+              "dem": {
+                "path": "${scratch}/cache/assets/ancillary/h08v05/v1/context.h5",
+                "dataset": "dem"
+              },
+              "slope": {
+                "path": "${scratch}/cache/assets/ancillary/h08v05/v1/context.h5",
+                "dataset": "slope"
+              },
+              "aspect": {
+                "path": "${scratch}/cache/assets/ancillary/h08v05/v1/context.h5",
+                "dataset": "aspect"
+              },
+              "canopy_fraction": {
+                "path": "${scratch}/cache/assets/ancillary/h08v05/v1/context.h5",
+                "dataset": "canopy_fraction"
+              }
+            },
+            "bright_soil": {
+              "2026": {
+                "path": "${scratch}/cache/assets/ancillary/h08v05/v1/screening-WY2026.h5",
+                "dataset": "bright_soil"
+              }
+            },
+            "agriculture": {
+              "path": "${scratch}/cache/assets/ancillary/h08v05/v1/screening-WY2026.h5",
+              "dataset": "agriculture"
+            },
+            "coastal": {
+              "path": "${scratch}/cache/assets/ancillary/h08v05/v1/screening-WY2026.h5",
+              "dataset": "coastal"
+            },
+            "frequency": [
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 0
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 1
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 2
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 3
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 4
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 5
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 6
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 7
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 8
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 9
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 10
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 11
+              }
+            ]
+          },
+          "h09v04": {
+            "daily": {},
+            "terrain": {
+              "x": {
+                "path": "${scratch}/cache/assets/r0/noaa20/h09v04/summer-2025/r0.nc",
+                "dataset": "x",
+                "axis": "x"
+              },
+              "y": {
+                "path": "${scratch}/cache/assets/r0/noaa20/h09v04/summer-2025/r0.nc",
+                "dataset": "y",
+                "axis": "y"
+              },
+              "dem": {
+                "path": "${scratch}/cache/assets/ancillary/h09v04/v1/context.h5",
+                "dataset": "dem"
+              },
+              "slope": {
+                "path": "${scratch}/cache/assets/ancillary/h09v04/v1/context.h5",
+                "dataset": "slope"
+              },
+              "aspect": {
+                "path": "${scratch}/cache/assets/ancillary/h09v04/v1/context.h5",
+                "dataset": "aspect"
+              },
+              "canopy_fraction": {
+                "path": "${scratch}/cache/assets/ancillary/h09v04/v1/context.h5",
+                "dataset": "canopy_fraction"
+              }
+            },
+            "bright_soil": {
+              "2026": {
+                "path": "${scratch}/cache/assets/ancillary/h09v04/v1/screening-WY2026.h5",
+                "dataset": "bright_soil"
+              }
+            },
+            "agriculture": {
+              "path": "${scratch}/cache/assets/ancillary/h09v04/v1/screening-WY2026.h5",
+              "dataset": "agriculture"
+            },
+            "coastal": {
+              "path": "${scratch}/cache/assets/ancillary/h09v04/v1/screening-WY2026.h5",
+              "dataset": "coastal"
+            },
+            "frequency": [
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 0
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 1
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 2
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 3
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 4
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 5
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 6
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 7
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 8
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 9
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 10
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 11
+              }
+            ]
+          },
+          "h09v05": {
+            "daily": {},
+            "terrain": {
+              "x": {
+                "path": "${scratch}/cache/assets/r0/noaa20/h09v05/summer-2025/r0.nc",
+                "dataset": "x",
+                "axis": "x"
+              },
+              "y": {
+                "path": "${scratch}/cache/assets/r0/noaa20/h09v05/summer-2025/r0.nc",
+                "dataset": "y",
+                "axis": "y"
+              },
+              "dem": {
+                "path": "${scratch}/cache/assets/ancillary/h09v05/v1/context.h5",
+                "dataset": "dem"
+              },
+              "slope": {
+                "path": "${scratch}/cache/assets/ancillary/h09v05/v1/context.h5",
+                "dataset": "slope"
+              },
+              "aspect": {
+                "path": "${scratch}/cache/assets/ancillary/h09v05/v1/context.h5",
+                "dataset": "aspect"
+              },
+              "canopy_fraction": {
+                "path": "${scratch}/cache/assets/ancillary/h09v05/v1/context.h5",
+                "dataset": "canopy_fraction"
+              }
+            },
+            "bright_soil": {
+              "2026": {
+                "path": "${scratch}/cache/assets/ancillary/h09v05/v1/screening-WY2026.h5",
+                "dataset": "bright_soil"
+              }
+            },
+            "agriculture": {
+              "path": "${scratch}/cache/assets/ancillary/h09v05/v1/screening-WY2026.h5",
+              "dataset": "agriculture"
+            },
+            "coastal": {
+              "path": "${scratch}/cache/assets/ancillary/h09v05/v1/screening-WY2026.h5",
+              "dataset": "coastal"
+            },
+            "frequency": [
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 0
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 1
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 2
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 3
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 4
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 5
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 6
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 7
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 8
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 9
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 10
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 11
+              }
+            ]
+          },
+          "h10v04": {
+            "daily": {},
+            "terrain": {
+              "x": {
+                "path": "${scratch}/cache/assets/r0/noaa20/h10v04/summer-2025/r0.nc",
+                "dataset": "x",
+                "axis": "x"
+              },
+              "y": {
+                "path": "${scratch}/cache/assets/r0/noaa20/h10v04/summer-2025/r0.nc",
+                "dataset": "y",
+                "axis": "y"
+              },
+              "dem": {
+                "path": "${scratch}/cache/assets/ancillary/h10v04/v1/context.h5",
+                "dataset": "dem"
+              },
+              "slope": {
+                "path": "${scratch}/cache/assets/ancillary/h10v04/v1/context.h5",
+                "dataset": "slope"
+              },
+              "aspect": {
+                "path": "${scratch}/cache/assets/ancillary/h10v04/v1/context.h5",
+                "dataset": "aspect"
+              },
+              "canopy_fraction": {
+                "path": "${scratch}/cache/assets/ancillary/h10v04/v1/context.h5",
+                "dataset": "canopy_fraction"
+              }
+            },
+            "bright_soil": {
+              "2026": {
+                "path": "${scratch}/cache/assets/ancillary/h10v04/v1/screening-WY2026.h5",
+                "dataset": "bright_soil"
+              }
+            },
+            "agriculture": {
+              "path": "${scratch}/cache/assets/ancillary/h10v04/v1/screening-WY2026.h5",
+              "dataset": "agriculture"
+            },
+            "coastal": {
+              "path": "${scratch}/cache/assets/ancillary/h10v04/v1/screening-WY2026.h5",
+              "dataset": "coastal"
+            },
+            "frequency": [
+              {
+                "path": "${scratch}/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 0
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 1
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 2
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 3
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 4
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 5
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 6
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 7
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 8
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 9
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 10
+              },
+              {
+                "path": "${scratch}/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+                "dataset": "snow_frequency",
+                "index": 11
+              }
+            ]
+          }
+        }
+      }
+    },
+    "register": {
+      "kind": "register",
+      "depends_on": [
+        "interpolate"
+      ],
+      "resources": {
+        "memory": "16G",
+        "time": "12:00:00"
+      },
+      "request": {
+        "interpolation_job": "interpolate",
+        "stream_root": "${scratch}/streams/noaa20/five-tiles-wy2026-unified",
+        "storage": {
+          "config_type": "nrt_storage",
+          "schema_version": 1,
+          "archive_root": "/pl/active/rittger_ops/spipy/state/REPLACE_USER/noaa20/five-tiles-wy2026-unified/archive",
+          "working_days": 90,
+          "daily_days": 7,
+          "monthly_months": 12,
+          "success_grace_days": 7,
+          "failed_grace_days": 14,
+          "unresolved_warning_days": 30,
+          "warning_bytes": {},
+          "growth_warning_bytes": 0
+        }
+      }
+    },
+    "continue_nrt": {
+      "kind": "nrt",
+      "depends_on": [
+        "register"
+      ],
+      "job_type": "nrt_five_tiles",
+      "request": {
+        "config_type": "nrt_cycle",
+        "schema_version": 1,
+        "stream_root": "${scratch}/streams/noaa20/five-tiles-wy2026-unified",
+        "science_python": "${science_python}",
+        "cloud_python": "${cloud_python}",
+        "cloud_model": "${scratch}/cache/assets/cloud-models/matched/manifest.json",
+        "collection": "002",
+        "observation_policy": {
+          "cloud_model_sha256": "673989ac8f81b5eb55dc2fa766ef9009bfb4f0c5c8f199cb6fba8b2343b680a8"
+        },
+        "tiles": {
+          "h08v04": {
+            "2026": {
+              "lut": "${scratch}/cache/assets/luts/viirs-reflectance.nc",
+              "background_available_through": "2025-09-30",
+              "preparation": {
+                "cloud_mask_application_stage": "post_inversion",
+                "cloud_mask_source_policy": "external_only",
+                "low_reflectance_threshold": 0.1,
+                "mask_low_reflectance_for_inversion": true,
+                "mask_water_using_external_file": true,
+                "mask_water_using_reflectance_qf": false,
+                "max_sensor_zenith": 65,
+                "max_solar_zenith": 85,
+                "min_obs_1km": 1,
+                "min_obs_500m": 1,
+                "water_mask_values": [
+                  0,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "water_mask_source": "${scratch}/cache/assets/ancillary/h08v04/v1/water.tif"
+              },
+              "axes": {
+                "x": {
+                  "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h08v04/viirs_h08v04_r0_2025.nc",
+                  "dataset": "x",
+                  "axis": "x"
+                },
+                "y": {
+                  "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h08v04/viirs_h08v04_r0_2025.nc",
+                  "dataset": "y",
+                  "axis": "y"
+                }
+              },
+              "ancillary": {
+                "canopy_fraction": {
+                  "path": "${scratch}/cache/assets/ancillary/h08v04/v1/context.h5",
+                  "dataset": "canopy_fraction"
+                },
+                "slope": {
+                  "path": "${scratch}/cache/assets/ancillary/h08v04/v1/context.h5",
+                  "dataset": "slope"
+                },
+                "aspect": {
+                  "path": "${scratch}/cache/assets/ancillary/h08v04/v1/context.h5",
+                  "dataset": "aspect"
+                },
+                "ice_fraction": {
+                  "path": "${scratch}/cache/assets/ancillary/h08v04/v1/context.h5",
+                  "dataset": "ice_fraction"
+                }
+              },
+              "background": {
+                "baseline": {
+                  "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h08v04/viirs_h08v04_r0_2025.nc",
+                  "dataset": "r0_reflectance"
+                },
+                "screened": {
+                  "path": "${scratch}/cache/assets/ancillary/h08v04/v1/screened-background-summer2025.h5",
+                  "dataset": "screened_reflectance"
+                },
+                "index": {
+                  "path": "${scratch}/cache/assets/ancillary/h08v04/v1/screened-background-summer2025.h5",
+                  "dataset": "source_index"
+                }
+              }
+            }
+          },
+          "h08v05": {
+            "2026": {
+              "lut": "${scratch}/cache/assets/luts/viirs-reflectance.nc",
+              "background_available_through": "2025-09-30",
+              "preparation": {
+                "cloud_mask_application_stage": "post_inversion",
+                "cloud_mask_source_policy": "external_only",
+                "low_reflectance_threshold": 0.1,
+                "mask_low_reflectance_for_inversion": true,
+                "mask_water_using_external_file": true,
+                "mask_water_using_reflectance_qf": false,
+                "max_sensor_zenith": 65,
+                "max_solar_zenith": 85,
+                "min_obs_1km": 1,
+                "min_obs_500m": 1,
+                "water_mask_values": [
+                  0,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "water_mask_source": "${scratch}/cache/assets/ancillary/h08v05/v1/water.tif"
+              },
+              "axes": {
+                "x": {
+                  "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h08v05/viirs_h08v05_r0_2025.nc",
+                  "dataset": "x",
+                  "axis": "x"
+                },
+                "y": {
+                  "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h08v05/viirs_h08v05_r0_2025.nc",
+                  "dataset": "y",
+                  "axis": "y"
+                }
+              },
+              "ancillary": {
+                "canopy_fraction": {
+                  "path": "${scratch}/cache/assets/ancillary/h08v05/v1/context.h5",
+                  "dataset": "canopy_fraction"
+                },
+                "slope": {
+                  "path": "${scratch}/cache/assets/ancillary/h08v05/v1/context.h5",
+                  "dataset": "slope"
+                },
+                "aspect": {
+                  "path": "${scratch}/cache/assets/ancillary/h08v05/v1/context.h5",
+                  "dataset": "aspect"
+                },
+                "ice_fraction": {
+                  "path": "${scratch}/cache/assets/ancillary/h08v05/v1/context.h5",
+                  "dataset": "ice_fraction"
+                }
+              },
+              "background": {
+                "baseline": {
+                  "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h08v05/viirs_h08v05_r0_2025.nc",
+                  "dataset": "r0_reflectance"
+                },
+                "screened": {
+                  "path": "${scratch}/cache/assets/ancillary/h08v05/v1/screened-background-summer2025.h5",
+                  "dataset": "screened_reflectance"
+                },
+                "index": {
+                  "path": "${scratch}/cache/assets/ancillary/h08v05/v1/screened-background-summer2025.h5",
+                  "dataset": "source_index"
+                }
+              }
+            }
+          },
+          "h09v04": {
+            "2026": {
+              "lut": "${scratch}/cache/assets/luts/viirs-reflectance.nc",
+              "background_available_through": "2025-09-30",
+              "preparation": {
+                "cloud_mask_application_stage": "post_inversion",
+                "cloud_mask_source_policy": "external_only",
+                "low_reflectance_threshold": 0.1,
+                "mask_low_reflectance_for_inversion": true,
+                "mask_water_using_external_file": true,
+                "mask_water_using_reflectance_qf": false,
+                "max_sensor_zenith": 65,
+                "max_solar_zenith": 85,
+                "min_obs_1km": 1,
+                "min_obs_500m": 1,
+                "water_mask_values": [
+                  0,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "water_mask_source": "${scratch}/cache/assets/ancillary/h09v04/v1/water.tif"
+              },
+              "axes": {
+                "x": {
+                  "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h09v04/viirs_h09v04_r0_2025.nc",
+                  "dataset": "x",
+                  "axis": "x"
+                },
+                "y": {
+                  "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h09v04/viirs_h09v04_r0_2025.nc",
+                  "dataset": "y",
+                  "axis": "y"
+                }
+              },
+              "ancillary": {
+                "canopy_fraction": {
+                  "path": "${scratch}/cache/assets/ancillary/h09v04/v1/context.h5",
+                  "dataset": "canopy_fraction"
+                },
+                "slope": {
+                  "path": "${scratch}/cache/assets/ancillary/h09v04/v1/context.h5",
+                  "dataset": "slope"
+                },
+                "aspect": {
+                  "path": "${scratch}/cache/assets/ancillary/h09v04/v1/context.h5",
+                  "dataset": "aspect"
+                },
+                "ice_fraction": {
+                  "path": "${scratch}/cache/assets/ancillary/h09v04/v1/context.h5",
+                  "dataset": "ice_fraction"
+                }
+              },
+              "background": {
+                "baseline": {
+                  "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h09v04/viirs_h09v04_r0_2025.nc",
+                  "dataset": "r0_reflectance"
+                },
+                "screened": {
+                  "path": "${scratch}/cache/assets/ancillary/h09v04/v1/screened-background-summer2025.h5",
+                  "dataset": "screened_reflectance"
+                },
+                "index": {
+                  "path": "${scratch}/cache/assets/ancillary/h09v04/v1/screened-background-summer2025.h5",
+                  "dataset": "source_index"
+                }
+              }
+            }
+          },
+          "h09v05": {
+            "2026": {
+              "lut": "${scratch}/cache/assets/luts/viirs-reflectance.nc",
+              "background_available_through": "2025-09-30",
+              "preparation": {
+                "cloud_mask_application_stage": "post_inversion",
+                "cloud_mask_source_policy": "external_only",
+                "low_reflectance_threshold": 0.1,
+                "mask_low_reflectance_for_inversion": true,
+                "mask_water_using_external_file": true,
+                "mask_water_using_reflectance_qf": false,
+                "max_sensor_zenith": 65,
+                "max_solar_zenith": 85,
+                "min_obs_1km": 1,
+                "min_obs_500m": 1,
+                "water_mask_values": [
+                  0,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "water_mask_source": "${scratch}/cache/assets/ancillary/h09v05/v1/water.tif"
+              },
+              "axes": {
+                "x": {
+                  "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h09v05/viirs_h09v05_r0_2025.nc",
+                  "dataset": "x",
+                  "axis": "x"
+                },
+                "y": {
+                  "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h09v05/viirs_h09v05_r0_2025.nc",
+                  "dataset": "y",
+                  "axis": "y"
+                }
+              },
+              "ancillary": {
+                "canopy_fraction": {
+                  "path": "${scratch}/cache/assets/ancillary/h09v05/v1/context.h5",
+                  "dataset": "canopy_fraction"
+                },
+                "slope": {
+                  "path": "${scratch}/cache/assets/ancillary/h09v05/v1/context.h5",
+                  "dataset": "slope"
+                },
+                "aspect": {
+                  "path": "${scratch}/cache/assets/ancillary/h09v05/v1/context.h5",
+                  "dataset": "aspect"
+                },
+                "ice_fraction": {
+                  "path": "${scratch}/cache/assets/ancillary/h09v05/v1/context.h5",
+                  "dataset": "ice_fraction"
+                }
+              },
+              "background": {
+                "baseline": {
+                  "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h09v05/viirs_h09v05_r0_2025.nc",
+                  "dataset": "r0_reflectance"
+                },
+                "screened": {
+                  "path": "${scratch}/cache/assets/ancillary/h09v05/v1/screened-background-summer2025.h5",
+                  "dataset": "screened_reflectance"
+                },
+                "index": {
+                  "path": "${scratch}/cache/assets/ancillary/h09v05/v1/screened-background-summer2025.h5",
+                  "dataset": "source_index"
+                }
+              }
+            }
+          },
+          "h10v04": {
+            "2026": {
+              "lut": "${scratch}/cache/assets/luts/viirs-reflectance.nc",
+              "background_available_through": "2025-09-30",
+              "preparation": {
+                "cloud_mask_application_stage": "post_inversion",
+                "cloud_mask_source_policy": "external_only",
+                "low_reflectance_threshold": 0.1,
+                "mask_low_reflectance_for_inversion": true,
+                "mask_water_using_external_file": true,
+                "mask_water_using_reflectance_qf": false,
+                "max_sensor_zenith": 65,
+                "max_solar_zenith": 85,
+                "min_obs_1km": 1,
+                "min_obs_500m": 1,
+                "water_mask_values": [
+                  0,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "water_mask_source": "${scratch}/cache/assets/ancillary/h10v04/v1/water.tif"
+              },
+              "axes": {
+                "x": {
+                  "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h10v04/viirs_h10v04_r0_2025.nc",
+                  "dataset": "x",
+                  "axis": "x"
+                },
+                "y": {
+                  "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h10v04/viirs_h10v04_r0_2025.nc",
+                  "dataset": "y",
+                  "axis": "y"
+                }
+              },
+              "ancillary": {
+                "canopy_fraction": {
+                  "path": "${scratch}/cache/assets/ancillary/h10v04/v1/context.h5",
+                  "dataset": "canopy_fraction"
+                },
+                "slope": {
+                  "path": "${scratch}/cache/assets/ancillary/h10v04/v1/context.h5",
+                  "dataset": "slope"
+                },
+                "aspect": {
+                  "path": "${scratch}/cache/assets/ancillary/h10v04/v1/context.h5",
+                  "dataset": "aspect"
+                },
+                "ice_fraction": {
+                  "path": "${scratch}/cache/assets/ancillary/h10v04/v1/context.h5",
+                  "dataset": "ice_fraction"
+                }
+              },
+              "background": {
+                "baseline": {
+                  "path": "${scratch}/work/noaa20/five-tiles/WY2026/unified/r0/h10v04/viirs_h10v04_r0_2025.nc",
+                  "dataset": "r0_reflectance"
+                },
+                "screened": {
+                  "path": "${scratch}/cache/assets/ancillary/h10v04/v1/screened-background-summer2025.h5",
+                  "dataset": "screened_reflectance"
+                },
+                "index": {
+                  "path": "${scratch}/cache/assets/ancillary/h10v04/v1/screened-background-summer2025.h5",
+                  "dataset": "source_index"
+                }
+              }
+            }
+          }
+        },
+        "annual_bright_soil": {
+          "h08v04": {
+            "2026": {
+              "path": "${scratch}/cache/assets/ancillary/h08v04/v1/screening-WY2026.h5",
+              "dataset": "bright_soil"
+            }
+          },
+          "h08v05": {
+            "2026": {
+              "path": "${scratch}/cache/assets/ancillary/h08v05/v1/screening-WY2026.h5",
+              "dataset": "bright_soil"
+            }
+          },
+          "h09v04": {
+            "2026": {
+              "path": "${scratch}/cache/assets/ancillary/h09v04/v1/screening-WY2026.h5",
+              "dataset": "bright_soil"
+            }
+          },
+          "h09v05": {
+            "2026": {
+              "path": "${scratch}/cache/assets/ancillary/h09v05/v1/screening-WY2026.h5",
+              "dataset": "bright_soil"
+            }
+          },
+          "h10v04": {
+            "2026": {
+              "path": "${scratch}/cache/assets/ancillary/h10v04/v1/screening-WY2026.h5",
+              "dataset": "bright_soil"
+            }
+          }
+        },
+        "scheduler": {
+          "job_type": "nrt_five_tiles"
+        },
+        "through": "2026-05-18"
+      }
+    }
+  },
+  "variables": {
+    "scratch": "/scratch/alpine/REPLACE_USER/spipy",
+    "science_python": "/projects/REPLACE_USER/envs/spipy14/bin/python",
+    "cloud_python": "/projects/REPLACE_USER/envs/viirs-cloudmask-batch/bin/python"
+  }
+}

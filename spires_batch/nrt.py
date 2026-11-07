@@ -239,6 +239,22 @@ def _bootstrap(historical_plan, inventory, root):
                             dict(file=file_record(paths[issue]), index=i)
                         )
     template = copy.deepcopy(r)
+    from .configuration import CONFIG_SCHEMA_VERSION
+    from .serialization import write_immutable_json
+
+    template.update(config_type="interpolation", schema_version=CONFIG_SCHEMA_VERSION)
+    scheduler_policy = {
+        **template["scheduler"]["snapshot"],
+        "config_type": "scheduler_policy",
+        "schema_version": CONFIG_SCHEMA_VERSION,
+    }
+    policy_path = Path(root) / "policies" / (digest(scheduler_policy) + ".json")
+    if policy_path.exists():
+        if json.loads(policy_path.read_text()) != scheduler_policy:
+            raise ValueError("Registered scheduler policy changed")
+    else:
+        write_immutable_json(policy_path, scheduler_policy)
+    template["scheduler"]["policy"] = str(policy_path.resolve())
     template.pop("state_identity")
     template.pop("state_context", None)
     template.pop("seed", None)
@@ -670,7 +686,7 @@ def _main(argv=None):
     )
     q.add_argument(
         "--seed-plan",
-        help="Original plan provenance for a legacy stream; does not rebuild history",
+        help="Original historical-plan provenance; never bypasses scientific compatibility checks",
     )
     f = sub.add_parser("finish")
     f.add_argument("update")

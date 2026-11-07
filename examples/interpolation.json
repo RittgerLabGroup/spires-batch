@@ -1,0 +1,579 @@
+{
+  "config_type": "interpolation",
+  "schema_version": 1,
+  "algorithm": "viirs_snow",
+  "history_start": "2025-10-01",
+  "start": "2025-10-01",
+  "stop": "2026-05-12",
+  "available_through": "2026-05-11",
+  "shape": [
+    2400,
+    2400
+  ],
+  "stripe_rows": 20,
+  "source_stream": "standard",
+  "output": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/interpolation",
+  "snow_library": "/projects/REPLACE_USER/spipy-native/snow_fraction.so",
+  "spatial_library": "/projects/REPLACE_USER/spipy-native/spatial.so",
+  "albedo_lut": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/luts/albedo.nc",
+  "asset_provenance": {
+    "policy": "viirs_snow",
+    "observation_policy": {
+      "cloud_model_sha256": "673989ac8f81b5eb55dc2fa766ef9009bfb4f0c5c8f199cb6fba8b2343b680a8"
+    },
+    "asset_manifest": "/projects/ropa5718/SPIReS-Organization/archive/operations-onboarding-five-tiles-wy2026/scientific-asset-publication.json",
+    "note": "Real prepared observations only. Assemble daily mappings from receipts; retain this donor domain and scientific context at NRT handoff."
+  },
+  "scheduler": {
+    "job_type": "interpolation_screen",
+    "stages": {
+      "spatial": {
+        "job_type": "interpolation_spatial"
+      },
+      "properties": {
+        "job_type": "interpolation_properties"
+      },
+      "export": {
+        "job_type": "interpolation_export"
+      }
+    },
+    "policy": "scheduler_policy.json"
+  },
+  "tiles": {
+    "h08v04": {
+      "daily": {},
+      "terrain": {
+        "x": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/r0/noaa20/h08v04/summer-2025/r0.nc",
+          "dataset": "x",
+          "axis": "x"
+        },
+        "y": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/r0/noaa20/h08v04/summer-2025/r0.nc",
+          "dataset": "y",
+          "axis": "y"
+        },
+        "dem": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v04/v1/context.h5",
+          "dataset": "dem"
+        },
+        "slope": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v04/v1/context.h5",
+          "dataset": "slope"
+        },
+        "aspect": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v04/v1/context.h5",
+          "dataset": "aspect"
+        },
+        "canopy_fraction": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v04/v1/context.h5",
+          "dataset": "canopy_fraction"
+        }
+      },
+      "bright_soil": {
+        "2026": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v04/v1/screening-WY2026.h5",
+          "dataset": "bright_soil"
+        }
+      },
+      "agriculture": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v04/v1/screening-WY2026.h5",
+        "dataset": "agriculture"
+      },
+      "coastal": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v04/v1/screening-WY2026.h5",
+        "dataset": "coastal"
+      },
+      "frequency": [
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 0
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 1
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 2
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 3
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 4
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 5
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 6
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 7
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 8
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 9
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 10
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 11
+        }
+      ]
+    },
+    "h08v05": {
+      "daily": {},
+      "terrain": {
+        "x": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/r0/noaa20/h08v05/summer-2025/r0.nc",
+          "dataset": "x",
+          "axis": "x"
+        },
+        "y": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/r0/noaa20/h08v05/summer-2025/r0.nc",
+          "dataset": "y",
+          "axis": "y"
+        },
+        "dem": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v05/v1/context.h5",
+          "dataset": "dem"
+        },
+        "slope": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v05/v1/context.h5",
+          "dataset": "slope"
+        },
+        "aspect": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v05/v1/context.h5",
+          "dataset": "aspect"
+        },
+        "canopy_fraction": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v05/v1/context.h5",
+          "dataset": "canopy_fraction"
+        }
+      },
+      "bright_soil": {
+        "2026": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v05/v1/screening-WY2026.h5",
+          "dataset": "bright_soil"
+        }
+      },
+      "agriculture": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v05/v1/screening-WY2026.h5",
+        "dataset": "agriculture"
+      },
+      "coastal": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h08v05/v1/screening-WY2026.h5",
+        "dataset": "coastal"
+      },
+      "frequency": [
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 0
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 1
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 2
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 3
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 4
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 5
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 6
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 7
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 8
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 9
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 10
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h08v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 11
+        }
+      ]
+    },
+    "h09v04": {
+      "daily": {},
+      "terrain": {
+        "x": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/r0/noaa20/h09v04/summer-2025/r0.nc",
+          "dataset": "x",
+          "axis": "x"
+        },
+        "y": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/r0/noaa20/h09v04/summer-2025/r0.nc",
+          "dataset": "y",
+          "axis": "y"
+        },
+        "dem": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v04/v1/context.h5",
+          "dataset": "dem"
+        },
+        "slope": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v04/v1/context.h5",
+          "dataset": "slope"
+        },
+        "aspect": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v04/v1/context.h5",
+          "dataset": "aspect"
+        },
+        "canopy_fraction": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v04/v1/context.h5",
+          "dataset": "canopy_fraction"
+        }
+      },
+      "bright_soil": {
+        "2026": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v04/v1/screening-WY2026.h5",
+          "dataset": "bright_soil"
+        }
+      },
+      "agriculture": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v04/v1/screening-WY2026.h5",
+        "dataset": "agriculture"
+      },
+      "coastal": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v04/v1/screening-WY2026.h5",
+        "dataset": "coastal"
+      },
+      "frequency": [
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 0
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 1
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 2
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 3
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 4
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 5
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 6
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 7
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 8
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 9
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 10
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 11
+        }
+      ]
+    },
+    "h09v05": {
+      "daily": {},
+      "terrain": {
+        "x": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/r0/noaa20/h09v05/summer-2025/r0.nc",
+          "dataset": "x",
+          "axis": "x"
+        },
+        "y": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/r0/noaa20/h09v05/summer-2025/r0.nc",
+          "dataset": "y",
+          "axis": "y"
+        },
+        "dem": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v05/v1/context.h5",
+          "dataset": "dem"
+        },
+        "slope": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v05/v1/context.h5",
+          "dataset": "slope"
+        },
+        "aspect": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v05/v1/context.h5",
+          "dataset": "aspect"
+        },
+        "canopy_fraction": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v05/v1/context.h5",
+          "dataset": "canopy_fraction"
+        }
+      },
+      "bright_soil": {
+        "2026": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v05/v1/screening-WY2026.h5",
+          "dataset": "bright_soil"
+        }
+      },
+      "agriculture": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v05/v1/screening-WY2026.h5",
+        "dataset": "agriculture"
+      },
+      "coastal": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h09v05/v1/screening-WY2026.h5",
+        "dataset": "coastal"
+      },
+      "frequency": [
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 0
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 1
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 2
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 3
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 4
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 5
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 6
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 7
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 8
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 9
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 10
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h09v05/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 11
+        }
+      ]
+    },
+    "h10v04": {
+      "daily": {},
+      "terrain": {
+        "x": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/r0/noaa20/h10v04/summer-2025/r0.nc",
+          "dataset": "x",
+          "axis": "x"
+        },
+        "y": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/r0/noaa20/h10v04/summer-2025/r0.nc",
+          "dataset": "y",
+          "axis": "y"
+        },
+        "dem": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h10v04/v1/context.h5",
+          "dataset": "dem"
+        },
+        "slope": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h10v04/v1/context.h5",
+          "dataset": "slope"
+        },
+        "aspect": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h10v04/v1/context.h5",
+          "dataset": "aspect"
+        },
+        "canopy_fraction": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h10v04/v1/context.h5",
+          "dataset": "canopy_fraction"
+        }
+      },
+      "bright_soil": {
+        "2026": {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h10v04/v1/screening-WY2026.h5",
+          "dataset": "bright_soil"
+        }
+      },
+      "agriculture": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h10v04/v1/screening-WY2026.h5",
+        "dataset": "agriculture"
+      },
+      "coastal": {
+        "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/ancillary/h10v04/v1/screening-WY2026.h5",
+        "dataset": "coastal"
+      },
+      "frequency": [
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 0
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 1
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 2
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 3
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 4
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 5
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 6
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 7
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 8
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 9
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 10
+        },
+        {
+          "path": "/scratch/alpine/REPLACE_USER/spipy/cache/assets/climatology/h10v04/v1/snow-frequency-excluding-WY2026.h5",
+          "dataset": "snow_frequency",
+          "index": 11
+        }
+      ]
+    }
+  }
+}

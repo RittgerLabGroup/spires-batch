@@ -14,6 +14,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .models import R0Config, RunConfig, SelectionConfig, StagingVerification
+from .configuration import PublicConfiguration
 from .staging import StagingAction, execute_actions
 
 
@@ -86,9 +87,9 @@ class Asset(BaseModel):
         return self
 
 
-class Initialization(BaseModel):
+class Initialization(PublicConfiguration):
     model_config = ConfigDict(extra="forbid")
-    schema_version: Literal[1] = 1
+    config_type: Literal["initialization"]
     sensor: str = "viirs"
     platform: str = "noaa20"
     domain: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")

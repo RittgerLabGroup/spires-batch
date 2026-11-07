@@ -5,11 +5,13 @@ assets. No scheduler submission or live cron modification occurs implicitly.
 """
 
 import copy
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
 import subprocess
 import hashlib
+from .configuration import require_configuration
 from .nrt import (
     current,
     choose_sources,
@@ -21,8 +23,68 @@ from .nrt import (
 from .interpolation import digest, load_plan, execute, implementations
 
 
-def invoke(python, code, *args):
-    subprocess.run([python, "-c", code, *map(str, args)], check=True)
+def invoke(python, code, *args, env=None, log=None):
+    from .workflow_logging import task_log
+
+    if log is None:
+        subprocess.run([python, "-c", code, *map(str, args)], check=True, env=env)
+        return
+    with task_log(**log) as handle:
+        subprocess.run([python, "-u", "-c", code, *map(str, args)], check=True, env=env,
+                       stdout=handle, stderr=subprocess.STDOUT)
+
+
+def retrieval_concurrency(config, tile_count):
+    """Check CPU and total preparation-memory reservations for one date.
+
+    Default to all available tiles, with 6 GiB each and 2 GiB coordinator
+    headroom, unless preparation_memory_gib supplies a direct total budget.
+    Fail before staging/preparation rather than silently serialize an
+    undersized Slurm allocation. Memory budgets are reservations, not RSS limits.
+    """
+    concurrency = config.get("retrieval_concurrency", max(1, tile_count))
+    memory_gib = config.get("retrieval_memory_gib", 6)
+    if "preparation_memory_gib" in config and "retrieval_memory_gib" in config:
+        raise ValueError(
+            "Choose preparation_memory_gib (total) or retrieval_memory_gib "
+            "(per tile), not both"
+        )
+    for name, value in (
+        ("retrieval_concurrency", concurrency),
+        ("retrieval_memory_gib", memory_gib),
+    ):
+        if type(value) is not int or value < 1:
+            raise ValueError(f"{name} must be a positive integer")
+    if "preparation_memory_gib" in config:
+        total_gib = config["preparation_memory_gib"]
+        if type(total_gib) is not int or total_gib < 1:
+            raise ValueError("preparation_memory_gib must be a positive integer")
+    if tile_count == 0:
+        return 1
+    concurrency = min(concurrency, max(1, tile_count))
+    cpus = os.environ.get("SLURM_CPUS_PER_TASK")
+    if cpus is not None and int(cpus) < concurrency:
+        raise ValueError(
+            f"Retrieval requires --cpus-per-task={concurrency} or greater; "
+            "reduce retrieval_concurrency explicitly to run fewer tiles at once"
+        )
+    memory_mb = os.environ.get("SLURM_MEM_PER_NODE")
+    if memory_mb is None and cpus is not None:
+        per_cpu = os.environ.get("SLURM_MEM_PER_CPU")
+        if per_cpu is not None:
+            memory_mb = int(per_cpu) * int(cpus)
+    required_gib = config.get("preparation_memory_gib", concurrency * memory_gib + 2)
+    budget_description = (
+        "total date-preparation budget, including coordinator and cloud inference"
+        if "preparation_memory_gib" in config
+        else f"{concurrency} tiles at {memory_gib} GiB plus 2 GiB headroom"
+    )
+    if memory_mb is not None and 0 < int(memory_mb) < required_gib * 1024:
+        raise ValueError(
+            f"Preparation requires --mem={required_gib}G or greater "
+            f"({budget_description})"
+        )
+    return concurrency
 
 
 def prepare_date(config, inventory, day, directory):
@@ -30,6 +92,9 @@ def prepare_date(config, inventory, day, directory):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     tiles = sorted(config["tiles"])
+    concurrency = retrieval_concurrency(
+        config, sum(inventory.get(tile + "/" + day) is not None for tile in tiles)
+    )
     context = day_context(inventory, tiles, day)
     year = int(day[:4]) + (int(day[5:7]) >= 10)
     for tile in tiles:
@@ -45,7 +110,6 @@ def prepare_date(config, inventory, day, directory):
     )
     output.mkdir(parents=True, exist_ok=True)
     inputs = {}
-    receipts = []
     for tile in tiles:
         source = inventory.get(tile + "/" + day)
         if source is None:
@@ -57,6 +121,7 @@ def prepare_date(config, inventory, day, directory):
                 "import sys; from viirs_cloudmask_batch.matched import prepare_matched; prepare_matched(sys.argv[1],sys.argv[2])",
                 source["path"],
                 matched,
+                log=dict(directory=directory, stage="reflectance", tile=tile, day=day),
             )
         inputs[tile] = str(matched)
     if not inputs:
@@ -68,6 +133,7 @@ def prepare_date(config, inventory, day, directory):
         output / "cloud-inputs.json",
         output / "cloud",
         config["cloud_model"],
+        log=dict(directory=directory, stage="cloud", day=day),
     )
     clouds = {
         t: dict(
@@ -76,7 +142,16 @@ def prepare_date(config, inventory, day, directory):
         )
         for t in inputs
     }
-    for tile in inputs:
+    retrieval_env = dict(os.environ)
+    retrieval_env.update(
+        OMP_NUM_THREADS="1",
+        OPENBLAS_NUM_THREADS="1",
+        MKL_NUM_THREADS="1",
+        NUMEXPR_NUM_THREADS="1",
+        VECLIB_MAXIMUM_THREADS="1",
+    )
+
+    def prepare_tile(tile):
         try:
             r = copy.deepcopy(config["tiles"][tile][str(year)])
         except KeyError:
@@ -95,17 +170,22 @@ def prepare_date(config, inventory, day, directory):
             request,
             output / (tile + "_prepared.h5"),
             receipt,
+            env=retrieval_env,
+            log=dict(directory=directory, stage="retrieval", tile=tile, day=day),
         )
-        receipts.append(json.loads(receipt.read_text()))
-    return receipts
+        return json.loads(receipt.read_text())
+
+    with ThreadPoolExecutor(max_workers=concurrency) as executor:
+        return list(executor.map(prepare_tile, inputs))
 
 
-def _cycle(config, through, directory, *, run=False):
+def _cycle(config, through, directory, *, run=False, resolved=None):
     """Prepare one versioned daily update; optionally execute in this allocation."""
     if not os.environ.get("SLURM_JOB_ID"):
         raise RuntimeError("The full native-grid cycle belongs in a compute allocation")
     config_path = Path(config).resolve()
-    config = json.loads(config_path.read_text())
+    config = resolved if resolved is not None else json.loads(config_path.read_text())
+    require_configuration(config, "nrt_cycle")
     root = config["stream_root"]
     directory = Path(directory).resolve()
     annual = config.get("annual_bright_soil", {})
@@ -193,11 +273,24 @@ def _cycle(config, through, directory, *, run=False):
     )
     if update.get("status") == "unchanged" or not run:
         return update
-    p = load_plan(update["plan"])
-    for stage in p["stage_order"]:
-        for i in range(len(p["tasks"][stage])):
-            execute(update["plan"], stage, i)
-    return finish(directory / "revision/update.json")
+    return _execute_revision(directory / "revision/update.json", root, through)
+
+
+def _execute_revision(path, root, through):
+    update = json.loads(Path(path).read_text())
+    identity = update.pop("identity")
+    if digest(update) != identity or update["root"] != str(Path(root).resolve()) or update["through"] != through:
+        raise ValueError("Saved NRT revision differs from the requested update")
+    generation, _, _ = current(root)
+    if generation["request"] == dict(update=identity):
+        return finish(path)
+    if generation["generation"] != update["expected_parent"]:
+        raise ValueError("Another NRT revision committed; automatic retry cannot replace it")
+    plan = load_plan(update["plan"])
+    for stage in plan["stage_order"]:
+        for index in range(len(plan["tasks"][stage])):
+            execute(update["plan"], stage, index)
+    return finish(path)
 
 
 def cycle(config, through, directory, *, run=False):
@@ -212,14 +305,29 @@ def cycle(config, through, directory, *, run=False):
     )
 
     config_path = Path(config).resolve()
-    root = json.loads(config_path.read_text())["stream_root"]
+    configuration = json.loads(config_path.read_text())
+    require_configuration(configuration, "nrt_cycle")
+    from .scheduler_policy import resolve_cycle_policy
+
+    configuration = resolve_cycle_policy(configuration, config_path.parent)
+    root = configuration["stream_root"]
     with storage_lock(root):
         register_workspace(root, directory, "running")
         try:
             from .nrt_storage import archive_configuration
 
             archive_configuration(root, config_path)
-            result = _cycle(config_path, through, directory, run=run)
+            if "scheduler" in configuration:
+                from .nrt_storage import atomic_json
+
+                resolved_path = Path(directory) / "resolved-cycle.json"
+                if resolved_path.exists() and json.loads(resolved_path.read_text()) != configuration:
+                    raise ValueError("NRT workspace configuration changed; cannot retry")
+                atomic_json(resolved_path, configuration)
+                archive_configuration(root, resolved_path)
+            revision = Path(directory) / "revision/update.json"
+            result = (_execute_revision(revision, root, through) if run and revision.exists() else
+                      _cycle(config_path, through, directory, run=run, resolved=configuration))
             if run or result.get("status") == "unchanged":
                 archive_workspace_metadata(root, directory)
                 workspace_state(root, directory, "complete")

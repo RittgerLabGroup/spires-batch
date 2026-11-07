@@ -1,6 +1,0 @@
-# Sphinx doc build dependencies for spires-lut (narrative-only scaffold).
-sphinx>=4.0
-pydata-sphinx-theme
-myst-parser
-sphinx-markdown-tables
-setuptools-scm
