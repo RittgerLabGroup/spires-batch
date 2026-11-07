@@ -54,7 +54,7 @@
       "repository": "https://github.com/RittgerLabGroup/spires-interpolation.git"
     },
     "spires-batch": {
-      "commit": "0b36e29672f5f2073f6fd6db956efe30dc50d01e",
+      "commit": "9551998ddc4665a08755f9fd75432a5f8d75a27d",
       "groups": [
         "runtime"
       ],
