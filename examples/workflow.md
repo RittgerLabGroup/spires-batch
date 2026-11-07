@@ -22,6 +22,8 @@ Review `jobs` in order:
 1. `initialize` registers existing non-R0 assets and stages those files to scratch.
 2. `background` builds fresh summer-2025 R0 for WY2026, one exclusive full-memory blanca-snow
    task at a time. Historical and NRT baseline/axis bindings point to these files.
+   Its controller creates the output/reservation directory and stages the planned
+   summer inputs inside its allocation before submitting R0 workers.
 3. `historical` processes dates concurrently, with five concurrent tile retrievals
    per date. Its stop date is exclusive.
 4. `interpolate` assembles those receipts automatically, then runs the stage arrays.

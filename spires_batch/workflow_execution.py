@@ -390,9 +390,13 @@ def _daily(plan_path, record, directory, state, name, work):
         write_new(work / "request.json", record["jobs"][name]["request"])
         if main(["plan", str(work / "request.json"), "--output", str(work / "scientific-plan.json")]):
             raise ValueError("Batch scientific preflight failed")
+        state_root = Path(record["jobs"][name]["request"]["output"]["root"])
+        state_root.mkdir(parents=True, exist_ok=True)
+        if main(["stage", str(work / "scientific-plan.json"), "--execute"]):
+            raise ValueError("Batch input staging failed")
         current["operation_started"] = True
         _save(directory, state)
-        launch = start_operational_run(work / "scientific-plan.json", state_root=record["jobs"][name]["request"]["output"]["root"], output_directory=operation)
+        launch = start_operational_run(work / "scientific-plan.json", state_root=state_root, output_directory=operation)
         current["observed_coordinator"] = launch.coordinator_job_id
         _schedule(plan_path, record, directory, state, name, parents=[launch.coordinator_job_id])
         return False
