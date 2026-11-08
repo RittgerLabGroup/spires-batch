@@ -7,21 +7,53 @@ not an executable configuration. JSON does not support comments, so explicit
 `description`, `type`, `required`, `default`, enum and constraint entries explain
 each option. Do not copy those documentation wrappers into a submission JSON.
 
-## One release baseline
+## Configuration versions
 
-All standalone spires-batch configurations require both `config_type` and the
-integer `schema_version: 1`. The type identifies the interface, not an algorithm:
+All standalone spires-batch configurations require both `config_type` and an
+integer `schema_version`. All configuration kinds use draft version **1**, with
+inclusive calendar date bounds. The type identifies the interface:
 `batch_request` (including R0), `historical`, `interpolation`, `workflow`,
 `initialization`, `nrt_cycle`, `nrt_storage`, or `scheduler_policy`. Advanced
 workflow requests also use `acquisition` and `prepared_observation`.
 
-Version 1 is the first public spipy release contract, not the retired development
-interpolation. Missing headers, wrong types and development version 2 are rejected;
-there are no aliases, implicit upgrades or selectable old scientific pipelines.
+Version 1 is still an unpublished draft. The inclusive `stop` convention is part
+of that draft, without a public schema version bump. Missing headers, wrong types
+and unsupported configurations are rejected, with no implicit upgrades.
 The improved in-memory R0, observation-pointer-matched VIIRS inputs, selected
 canopy adjustment and evaluated interpolation together define the baseline.
-A future feature may deliberately introduce a new public configuration version;
-it need not change in lockstep with a package patch release.
+Configuration versions need not change in lockstep with package versions.
+
+## Inclusive calendar dates
+
+All calendar date bounds include the named day: `start`, `history_start`, `stop`,
+`start_date`, `end_date`, `available_through`, and CLI `--through`, `--start` and
+`--stop`. Equal start and stop dates select a single day. Historical and
+interpolation requests reject reversed ranges. A water year starts October 1
+and ends September 30, both inclusive.
+Integer array slices retain normal Python indexing; they are not calendar dates.
+
+For eight complete **WY2026** interpolation products, configure:
+
+| Configuration | `start` | `stop` | `available_through` |
+| --- | --- | --- | --- |
+| Historical preparation | `2025-10-01` | `2026-10-07` | — |
+| Interpolation | `2025-10-01` | `2026-09-30` | `2026-10-07` |
+
+Use `history_start: "2025-10-01"` and `output_issues: "all_issues"` for that
+interpolation request. All eight NetCDFs end September 30. October 1–7 supplies
+future context only; preparation needs the corresponding next-WY retrieval assets
+and interpolation needs its annual mask. Look-ahead is explicit, not added
+automatically. With availability only through September 30, the final issue ends
+September 23. NRT `through` remains inclusive and its generated interpolation
+request uses `stop = available_through = through`.
+
+To preserve an earlier draft historical/interpolation request's date coverage
+when its `stop` was exclusive, **subtract one day from that `stop` and regenerate
+the plan**. Keep `schema_version: 1` and leave all other dates unchanged. Do the
+same for those nested requests inside a workflow. Saved interpolation plans
+whose tasks do not cover the inclusive interval are rejected by new workers.
+Keep archived manifests
+and frozen runtimes as provenance; do not edit their dates or version headers.
 
 Nested recipe fragments (for example `historical.preparation`, a tile's retrieval
 assets, or inline scheduler resources) are not independent configurations and do

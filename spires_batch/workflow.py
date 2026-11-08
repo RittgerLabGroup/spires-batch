@@ -556,7 +556,7 @@ def _main(argv=None):
     cycle = commands.add_parser("cycle", help="Submit only an NRT job from the unified JSON against existing history")
     cycle.add_argument("config")
     cycle.add_argument("--job", required=True)
-    cycle.add_argument("--through", required=True)
+    cycle.add_argument("--through", required=True, help="Last processing date, inclusive")
     cycle.add_argument("--output", required=True, help="New immutable cycle workflow plan filename")
     arguments = parser.parse_args(argv)
     if arguments.command == "schema":

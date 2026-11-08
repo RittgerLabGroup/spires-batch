@@ -11,8 +11,8 @@ bind equivalent validated existing assets. Check the science/cloud interpreters,
 cloud model, LUTs, R0, terrain and tile/WY ancillary bindings. Keep the five-tile
 domain for this example.
 
-`start` is inclusive and `stop` exclusive. The example spans October 1,
-2025 through May 11, 2026. A full WY2026 uses `stop: "2026-10-01"`, but only
+`start` and `stop` are inclusive (`schema_version: 1`). The example spans October 1,
+2025 through May 11, 2026. A full WY2026 uses `stop: "2026-09-30"`, but only
 after downloading the remaining reflectance and verifying annual assets.
 Missing downloads are not equivalent to genuinely missing observations.
 The optional private earthdata-downloads utility can help populate the archive.
@@ -49,6 +49,11 @@ was authorized by that exact plan. NRT registration preserves these inventory
 entries as missing, so later acquisition can revisit them. This option controls
 historical observation processing; it does not change R0 summer-coverage rules,
 ancillary requirements or the full-history replay stop.
+
+For full-WY interpolation files with all issues ending September 30, prepare
+through October 7 inclusive, then set interpolation `stop` to September 30 and
+`available_through` to October 7. Include retrieval assets and an annual mask for
+the next WY's seven context days. See [date conventions](../docs/reference/configuration/reading.md#inclusive-calendar-dates).
 
 Choose fresh output paths. Keep `scheduler_policy.json` beside the request.
 The five-tile profile requests five CPUs and 16 GiB per date; pilot your current

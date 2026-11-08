@@ -7,7 +7,8 @@ observation or downgrade a standard product. Unresolved NRT dates remain on the
 acquisition list even after seven days; a delayed standard replacement is not lost.
 Missing days are explicit calendar entries, not gaps in the state sequence.
 
-First/final describe 0/7 days of temporal context. They are independent of whether
+The eight issues describe 0–7 days of temporal context (first through final).
+They are independent of whether
 reflectance came from NRT or standard processing. A standard replacement rebuilds
 the same-day cloud context and retrievals across the configured donor domain. Snow
 state and properties replay from seven days before the earliest changed observation
@@ -21,6 +22,8 @@ Use completed historical output, including export, with the rewindable checkpoin
 format. Supply an inventory JSON mapping `tile/YYYY-MM-DD`
 to `source_record(path)` records, or null for an explicitly missing observation.
 The inventory must match the prepared observations used by the historical plan.
+Historical output must extend through `available_through` (`stop` is that same
+inclusive date), so the cumulative first issue has complete date coverage at handoff.
 The command name `bootstrap` refers only to this one-time stream registration:
 it adopts existing products and checkpoints without recomputing or resampling
 them. It is not repeated at a water-year boundary. Plans from an older controller
@@ -32,7 +35,26 @@ spires-batch nrt status --root /products/noaa20-nrt
 ```
 
 The stream publishes one domain-wide current.json pointer containing a ledger and
-all tile checkpoints. Consumers resolve that pointer once. The ledger's `products`
+all tile checkpoints and cumulative tile/WY NetCDFs. Consumers resolve that pointer
+once. Artifact names are `product_<tile>_WY<year>_<issue>` and files are
+`<tile>_WY<year>_<issue>.nc`. With `output_issues: all_issues` in the registered
+interpolation configuration, all eight files contain all variables. With
+`first_and_final_only`, only the first and final files are written. The setting is
+inherited by subsequent updates. Enabling missing intermediate history in an
+existing first/final stream requires a historical replay and new bootstrap.
+
+Each cumulative product begins at October 1 (or the historical output start) and
+ends at the earlier of September 30 and current availability minus its issue age.
+Thus during a water year, first is one day longer than second and seven days
+longer than final. Selected issues with no mature dates have empty time axes.
+Replacement observations revise affected dates in the new generation while old
+generations retain the as-issued values. Unchanged cumulative files are reused;
+changed files are rewritten with bounded memory. This adds full-file I/O and
+archive storage for each changed cumulative snapshot, in addition to the interval
+products. Select first/final only when intermediate files are not needed.
+
+The ledger's `issue_products` map also records durable archive copies of these
+cumulative files. Its `products`
 map locates recent tile/date/issue records in durable immutable NetCDF files and
 records their time indexes and identities. Older records are indexed in the
 ledger's monthly `catalog`; `nrt catalog` resolves both current and as-issued

@@ -79,7 +79,7 @@ def rebuild(root, directory, *, checkpoint=None):
             r = copy.deepcopy(complete["template"])
             r.pop("seed", None)
             r.update(
-                stop=str(np.datetime64(ledger["available_through"]) + 1),
+                stop=ledger["available_through"],
                 available_through=ledger["available_through"],
                 output=str(directory / "work"),
                 source_stream="mixed",

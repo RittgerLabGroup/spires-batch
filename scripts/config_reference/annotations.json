@@ -70,7 +70,7 @@
   "tile": "Native tile identifier, e.g. h08v05. Must be consistent with selection and source grid.",
   "date": "ISO acquisition date for an explicitly registered input.",
   "water_year": "Processing water year, named by its ending year; e.g. summer 2025 R0 serves WY2026.",
-  "schema_version": "Required integer 1: spipy v1.0.0 configuration baseline; independent of saved-state formats and package versions.",
+  "schema_version": "Required integer 1: the draft public configuration baseline. Independent of saved-state formats and package versions.",
   "mode": "Historical or nrt universal workflow mode; nrt jobs are forbidden in historical mode.",
   "sensor": "Sensor family. The universal workflow passes it to each supported child.",
   "platform": "Platform identity. Evaluated interpolation and native NRT orchestration currently require noaa20.",

@@ -33,6 +33,10 @@ checks before continuing. Individual tasks are **alternatives**, not extra steps
 to run after submitting `workflow.json`. Never submit both routes against the
 same output paths.
 
+The five-tile WY2026 workflow is the canonical training scenario. Archived
+validation pilots are provenance records, not additional training examples or
+current submission templates.
+
 Copy only `workflow.json` for the complete chain. For standalone tasks, copy the
 task JSON and `scheduler_policy.json` together; copy the other task files when
 following their handoffs. Use actual per-user paths in standalone JSON.

@@ -94,7 +94,7 @@
         "allowed_values": [
           1
         ],
-        "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+        "description": "Must equal integer 1: the draft public configuration baseline. Calendar date bounds are inclusive."
       },
       "exclude_nodes": {
         "type": "array[string]",
@@ -131,7 +131,7 @@
         "allowed_values": [
           1
         ],
-        "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+        "description": "Must equal integer 1: the draft public configuration baseline. Calendar date bounds are inclusive."
       },
       "stream_root": {
         "type": "path",
@@ -213,7 +213,7 @@
         "allowed_values": [
           1
         ],
-        "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+        "description": "Must equal integer 1: the draft public configuration baseline. Calendar date bounds are inclusive."
       },
       "algorithm": {
         "type": "string",
@@ -227,7 +227,7 @@
       "history_start": {
         "type": "ISO date",
         "required": true,
-        "description": "Beginning of consecutive historical input/state sequence."
+        "description": "Inclusive beginning of the consecutive historical input/state sequence."
       },
       "start": {
         "type": "ISO date",
@@ -237,7 +237,7 @@
       "stop": {
         "type": "ISO date",
         "required": true,
-        "description": "Exclusive target stop."
+        "description": "Inclusive final output date. Equal start and stop select one day; a WY ends September 30."
       },
       "available_through": {
         "type": "ISO date",
@@ -315,12 +315,23 @@
         "type": "path",
         "required": false,
         "description": "Controller-assigned stream root during incremental operation."
+      },
+      "output_issues": {
+        "type": "string",
+        "required": false,
+        "default": "all_issues",
+        "allowed_values": [
+          "all_issues",
+          "first_and_final_only"
+        ],
+        "description": "Select exported NetCDF issues: all eight (0\u20137 future days), or only first/final (0/7). Every selected file contains all variables. Inherited by NRT cumulative tile/WY publication; donor eligibility and calculations are unchanged."
       }
     },
     "notes": [
-      "history_start <= start < stop <= available_through + one day.",
+      "history_start <= start <= stop <= available_through; all calendar date bounds are inclusive.",
       "Field paths resolve relative to request JSON; every calendar date must be present, with null only for a verified missing observation.",
-      "Controller-written state_context/state_identity are generated artifacts, not accepted initial request fields."
+      "Controller-written state_context/state_identity are generated artifacts, not accepted initial request fields.",
+      "Earlier drafts used an exclusive stop: subtract one day from that stop and regenerate the plan to preserve the requested dates. Keep schema_version=1; other date fields do not change."
     ]
   },
   "interpolation_scheduler": {
@@ -445,12 +456,12 @@
       "canopy_adjusted_fsca": {
         "type": "mapped_field",
         "required": true,
-        "description": "Ground/canopy-adjusted snow fraction, 0–1."
+        "description": "Ground/canopy-adjusted snow fraction, 0\u20131."
       },
       "raw_snow_fraction": {
         "type": "mapped_field",
         "required": true,
-        "description": "Original inversion snow fraction, 0–1."
+        "description": "Original inversion snow fraction, 0\u20131."
       },
       "sensor_zenith": {
         "type": "mapped_field",
@@ -517,7 +528,7 @@
         "allowed_values": [
           1
         ],
-        "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+        "description": "Must equal integer 1: the draft public configuration baseline. Calendar date bounds are inclusive."
       },
       "stream_root": {
         "type": "path",
@@ -672,7 +683,7 @@
         "allowed_values": [
           1
         ],
-        "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+        "description": "Must equal integer 1: the draft public configuration baseline. Calendar date bounds are inclusive."
       },
       "date": {
         "type": "ISO date",
@@ -848,7 +859,7 @@
         "allowed_values": [
           1
         ],
-        "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+        "description": "Must equal integer 1: the draft public configuration baseline. Calendar date bounds are inclusive."
       },
       "working_days": {
         "type": "integer",
@@ -956,7 +967,7 @@
     "notes": [
       "See schemas.historical for every top-level field and scheduler option. Nested preparation is a recipe fragment, not a standalone nrt_cycle config: it has no config_type/schema_version header and uses science_python, cloud_python, cloud_model, collection, observation_policy, retrieval_concurrency, retrieval_memory_gib, preparation_memory_gib and tiles. stream_root, through and annual_bright_soil are not historical preparation options.",
       "Tile/WY retrieval bindings follow interfaces.retrieval_recipe. terrain uses mapped_field bindings for dem (metres), slope and aspect (degrees). Daily albedo is evaluated only for state=2 and screening_flags=0; no interpolation is performed.",
-      "missing_reflectance defaults to error: missing local tile/dates stop planning. Explicit allow records each absent tile/date and search pattern in missing_sources, writes a null source inventory entry, and permits a missing-observation receipt. Receipt assembly verifies the saved plan and writes null daily mappings, expanded by interpolation into unknown state and NaN scientific fields. No fake reflectance or empty raster is written. These gaps remain null in NRT history and can be revisited. The planner does not query upstream availability; the operator authorizes local gaps. Duplicate vintages, corrupt existing files, inaccessible archive roots and sources lost or newly appearing after planning still fail. Dates use start inclusive and stop exclusive."
+      "missing_reflectance defaults to error: missing local tile/dates stop planning. Explicit allow records each absent tile/date and search pattern in missing_sources, writes a null source inventory entry, and permits a missing-observation receipt. Receipt assembly verifies the saved plan and writes null daily mappings, expanded by interpolation into unknown state and NaN scientific fields. No fake reflectance or empty raster is written. These gaps remain null in NRT history and can be revisited. The planner does not query upstream availability; the operator authorizes local gaps. Duplicate vintages, corrupt existing files, inaccessible archive roots and sources lost or newly appearing after planning still fail. Start and stop dates are both inclusive (historical schema_version=1)."
     ]
   },
   "scheduler_selection": {

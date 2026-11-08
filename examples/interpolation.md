@@ -45,6 +45,13 @@ Verify every stage, the exported generation and checkpoints. Inspect fSCA,
 grain radius, dust, albedo, QA and observation ages.
 
 For this historical interval, first/final products can reach May 11/May 4.
+All date bounds are inclusive; the example uses `schema_version: 1` and
+`stop: "2026-05-11"`. For a full WY with seven context days, set `stop` to
+September 30 and `available_through` to October 7 after preparing those dates.
+The example sets `output_issues` to `all_issues`, so the six intermediate files
+end on May 10 through May 5. Set it to `first_and_final_only` to export only the
+two endpoints. Every written file contains all output variables, and donor
+eligibility remains based on the original screened observations.
 Keep all history required for registration, not just exported maps.
 
 ## 4. Continue into NRT

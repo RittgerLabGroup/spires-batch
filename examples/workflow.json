@@ -90,11 +90,13 @@
           "cpus": 1,
           "memory": "8G",
           "time": "04:00:00",
-          "concurrency": 4,
+          "concurrency": 76,
           "unit": "One date with one tile, clouds, retrieval and daily albedo",
-          "status": "starting_budget",
+          "status": "measured",
           "evidence": [
-            "6 GiB worker baseline plus 2 GiB coordinator headroom; validate a pilot with the complete runner."
+            "Validated single-tile daily cloud/retrieval/albedo resource budget: 1 CPU and 8 GiB per task. Retired validation records are retained separately from the training examples.",
+            "The blanca-rittger limit of 76 leaves eight cores free with 88 usable cores and an existing four-core allocation. Recalculate for current node availability and other workloads; an array limit is not a partition-wide core reservation.",
+            "This profile selects blanca-rittger only. For a separate blanca-snow array, override queue and concurrency to blanca-snow and 62; coordinate placement and date selections explicitly."
           ],
           "max_tiles": 1,
           "preparation": {
@@ -541,7 +543,7 @@
         "config_type": "historical",
         "schema_version": 1,
         "start": "2025-10-01",
-        "stop": "2026-05-12",
+        "stop": "2026-05-11",
         "reflectance_root": "/pl/active/rittger_ops/vj109ga.002/input",
         "missing_reflectance": "error",
         "output": "${scratch}/work/noaa20/five-tiles/WY2026/unified/historical",
@@ -1006,7 +1008,7 @@
         "algorithm": "viirs_snow",
         "history_start": "2025-10-01",
         "start": "2025-10-01",
-        "stop": "2026-05-12",
+        "stop": "2026-05-11",
         "available_through": "2026-05-11",
         "shape": [
           2400,
@@ -1014,6 +1016,7 @@
         ],
         "stripe_rows": 20,
         "source_stream": "standard",
+        "output_issues": "all_issues",
         "output": "${scratch}/work/noaa20/five-tiles/WY2026/unified/interpolation",
         "snow_library": "/projects/REPLACE_USER/spipy-native/snow_fraction.so",
         "spatial_library": "/projects/REPLACE_USER/spipy-native/spatial.so",

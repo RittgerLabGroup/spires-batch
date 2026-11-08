@@ -1,6 +1,6 @@
 """Versioned NRT inventory, standard-product replacement and domain publication.
 
-First/final are temporal issues, independent of input quality. Every unresolved
+The eight temporal issues are independent of input quality. Every unresolved
 NRT date is revisited. Replacements replay causal state and cross-tile donors;
 prior generations remain available as the as-issued record.
 """
@@ -11,6 +11,7 @@ from datetime import date, timedelta
 import json
 from pathlib import Path
 import re
+from spires_interpolation.issues import ISSUE_NAMES, selected_issue_indices
 from .interpolation import (
     digest,
     file_record,
@@ -183,6 +184,8 @@ def _bootstrap(historical_plan, inventory, root):
 
     p = load_plan(historical_plan, compatible_state=True)
     r = p["request"]
+    if r["stop"] != r["available_through"]:
+        raise ValueError("NRT bootstrap requires historical output through available_through")
     from .interpolation import mapped_fields
     from .nrt_storage import checked
 
@@ -227,7 +230,13 @@ def _bootstrap(historical_plan, inventory, root):
             raise ValueError("Historical output is not the planned generation")
         paths = artifact_paths(folder, generation)
         checkpoints[tile] = paths["checkpoints"]
-        for issue in ("first", "final"):
+        issues = [
+            ISSUE_NAMES[i]
+            for i in selected_issue_indices(r.get("output_issues", "all_issues"))
+        ]
+        if not set(issues).issubset(paths):
+            raise ValueError("Bootstrap requires the configured issue products; replay older history")
+        for issue in issues:
             if issue in paths:
                 import netCDF4
 
@@ -270,6 +279,7 @@ def _bootstrap(historical_plan, inventory, root):
         schema_version=1,
         available_through=r["available_through"],
         history_start=r["history_start"],
+        product_start=r["start"],
         state_identity=r["state_identity"],
         state_context=state_context(r, p["inputs"]),
         template=template,
@@ -399,7 +409,7 @@ def _plan_update(
     first = max(beginning, np.datetime64(changed_days[0]) - 7)
     r.update(
         start=str(first),
-        stop=str(np.datetime64(through) + 1),
+        stop=through,
         available_through=through,
         source_stream="mixed",
         seed={t: str(paths["checkpoint_" + t]) for t in tiles},
@@ -523,12 +533,17 @@ def commit(root, ledger, checkpoints, *, expected_parent, identity):
     store = Store(root)
 
     def build(folder):
+        from .nrt_products import publish_issue_products
+
         outputs = {}
         for tile, path in checkpoints.items():
             stored = store.put(path, "checkpoints", hot=True)
             dest = folder / (tile + "_checkpoints.h5")
             link_or_copy(stored["path"], dest)
             outputs["checkpoint_" + tile] = dest
+        products, records = publish_issue_products(folder, ledger, store)
+        outputs.update(products)
+        ledger["issue_products"] = records
         p = folder / "ledger.json"
         p.write_text(json.dumps(ledger, indent=2) + "\n")
         outputs["ledger"] = p
@@ -594,9 +609,13 @@ def _finish(update_path):
             raise ValueError("Every donor-domain tile must finish before publication")
         paths = artifact_paths(folder, g)
         checkpoints[tile] = paths["checkpoints"]
-        for issue in ("first", "final"):
-            if issue not in paths:
-                continue
+        issues = [
+            ISSUE_NAMES[i]
+            for i in selected_issue_indices(r.get("output_issues", "all_issues"))
+        ]
+        if not set(issues).issubset(paths):
+            raise ValueError("Revision requires the configured issue products")
+        for issue in issues:
             with netCDF4.Dataset(paths[issue]) as ds:
                 for index, day in enumerate(ds["time"][:]):
                     ledger["products"][
@@ -678,7 +697,7 @@ def _main(argv=None):
     q = sub.add_parser("plan")
     q.add_argument("candidates")
     q.add_argument("--root", required=True)
-    q.add_argument("--through", required=True)
+    q.add_argument("--through", required=True, help="Last processing date, inclusive")
     q.add_argument("--output", required=True)
     q.add_argument(
         "--annual-bright-soil",
@@ -694,7 +713,7 @@ def _main(argv=None):
     r.add_argument("update")
     a = sub.add_parser("acquire")
     a.add_argument("--root", required=True)
-    a.add_argument("--through", required=True)
+    a.add_argument("--through", required=True, help="Last processing date, inclusive")
     a.add_argument("--output", required=True)
     a.add_argument("--download", action="store_true")
     a = sub.add_parser("prepare")
@@ -707,7 +726,7 @@ def _main(argv=None):
     a.add_argument("--receipt", required=True)
     a = sub.add_parser("cycle")
     a.add_argument("config")
-    a.add_argument("--through", required=True)
+    a.add_argument("--through", required=True, help="Last processing date, inclusive")
     a.add_argument("--output", required=True)
     a.add_argument("--execute", action="store_true")
     a = sub.add_parser("storage-config")
@@ -730,8 +749,8 @@ def _main(argv=None):
     a = sub.add_parser("catalog")
     a.add_argument("--root", required=True)
     a.add_argument("--output", required=True)
-    a.add_argument("--start")
-    a.add_argument("--stop")
+    a.add_argument("--start", help="First catalog date, inclusive")
+    a.add_argument("--stop", help="Last catalog date, inclusive")
     a.add_argument("--publication")
     a = sub.add_parser("abandon")
     a.add_argument("--root", required=True)

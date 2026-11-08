@@ -219,7 +219,7 @@ to repeat after a successful `cycle`:
 | `plan CANDIDATES --root ROOT --through DATE --output DIRECTORY` | Plan revisions; may restore/copy required saved history, unlike a metadata-only historical plan. |
 | `run UPDATE` | Execute a saved update and publish its results in the current allocation. |
 | `finish UPDATE` | Finalize publication after separately completed processing; not a shortcut around execution. |
-| `catalog --root ROOT --output FILE` | Export the observation catalog; supports `--start`, `--stop`, `--publication`. |
+| `catalog --root ROOT --output FILE` | Export the observation catalog; supports inclusive `--start`/`--stop` and `--publication`. |
 | `retention-plan --root ROOT --output REPORT` | Write proposed cleanup actions for review. |
 | `retention-apply REPORT` | Apply reviewed cleanup; can delete eligible files. |
 | `migrate --root ROOT [--seed-plan PLAN]` | Update storage/catalog organization; see storage documentation first. |

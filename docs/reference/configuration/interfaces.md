@@ -181,7 +181,7 @@ Required baseline configuration kind; never an algorithm-selection switch.
 
 ### `scheduler_policy.schema_version`
 
-Must equal integer 1: the sole spipy v1.0.0 public configuration baseline.
+Must equal integer 1: the draft public configuration baseline. Calendar date bounds are inclusive.
 
 | Property | Value |
 | --- | --- |
@@ -244,7 +244,7 @@ Required baseline configuration kind; never an algorithm-selection switch.
 
 ### `acquire.schema_version`
 
-Must equal integer 1: the sole spipy v1.0.0 public configuration baseline.
+Must equal integer 1: the draft public configuration baseline. Calendar date bounds are inclusive.
 
 | Property | Value |
 | --- | --- |
@@ -382,7 +382,7 @@ Required baseline configuration kind; never an algorithm-selection switch.
 
 ### `interpolation.schema_version`
 
-Must equal integer 1: the sole spipy v1.0.0 public configuration baseline.
+Must equal integer 1: the draft public configuration baseline. Calendar date bounds are inclusive.
 
 | Property | Value |
 | --- | --- |
@@ -409,7 +409,7 @@ Evaluated sensor recipe; not solver ID.
 
 ### `interpolation.history_start`
 
-Beginning of consecutive historical input/state sequence.
+Inclusive beginning of the consecutive historical input/state sequence.
 
 | Property | Value |
 | --- | --- |
@@ -427,7 +427,7 @@ Inclusive target start. Initial historical requests begin October 1.
 
 ### `interpolation.stop`
 
-Exclusive target stop.
+Inclusive final output date. Equal start and stop select one day; a WY ends September 30.
 
 | Property | Value |
 | --- | --- |
@@ -568,11 +568,27 @@ Controller-assigned stream root during incremental operation.
 | `type` | path |
 | `required` | `false` |
 
+### `interpolation.output_issues`
+
+Select exported NetCDF issues: all eight (0–7 future days), or only first/final (0/7). Every selected file contains all variables. Inherited by NRT cumulative tile/WY publication; donor eligibility and calculations are unchanged.
+
+| Property | Value |
+| --- | --- |
+| `type` | string |
+| `required` | `false` |
+| `default` | all_issues |
+
+#### `interpolation.output_issues.allowed_values`
+
+- all_issues
+- first_and_final_only
+
 ### `interpolation.notes`
 
-- history_start &lt;= start &lt; stop &lt;= available_through + one day.
+- history_start &lt;= start &lt;= stop &lt;= available_through; all calendar date bounds are inclusive.
 - Field paths resolve relative to request JSON; every calendar date must be present, with null only for a verified missing observation.
 - Controller-written state_context/state_identity are generated artifacts, not accepted initial request fields.
+- Earlier drafts used an exclusive stop: subtract one day from that stop and regenerate the plan to preserve the requested dates. Keep schema_version=1; other date fields do not change.
 
 ## Interpolation scheduler
 
@@ -909,7 +925,7 @@ Required baseline configuration kind; never an algorithm-selection switch.
 
 ### `nrt_cycle.schema_version`
 
-Must equal integer 1: the sole spipy v1.0.0 public configuration baseline.
+Must equal integer 1: the draft public configuration baseline. Calendar date bounds are inclusive.
 
 | Property | Value |
 | --- | --- |
@@ -1173,7 +1189,7 @@ Required baseline configuration kind; never an algorithm-selection switch.
 
 ### `retained_prepare.schema_version`
 
-Must equal integer 1: the sole spipy v1.0.0 public configuration baseline.
+Must equal integer 1: the draft public configuration baseline. Calendar date bounds are inclusive.
 
 | Property | Value |
 | --- | --- |
@@ -1481,7 +1497,7 @@ Required baseline configuration kind; never an algorithm-selection switch.
 
 ### `nrt_storage.schema_version`
 
-Must equal integer 1: the sole spipy v1.0.0 public configuration baseline.
+Must equal integer 1: the draft public configuration baseline. Calendar date bounds are inclusive.
 
 | Property | Value |
 | --- | --- |
@@ -1672,7 +1688,7 @@ Fresh output directory for coverage report and interactive download scripts.
 
 - See schemas.historical for every top-level field and scheduler option. Nested preparation is a recipe fragment, not a standalone nrt_cycle config: it has no config_type/schema_version header and uses science_python, cloud_python, cloud_model, collection, observation_policy, retrieval_concurrency, retrieval_memory_gib, preparation_memory_gib and tiles. stream_root, through and annual_bright_soil are not historical preparation options.
 - Tile/WY retrieval bindings follow interfaces.retrieval_recipe. terrain uses mapped_field bindings for dem (metres), slope and aspect (degrees). Daily albedo is evaluated only for state=2 and screening_flags=0; no interpolation is performed.
-- missing_reflectance defaults to error: missing local tile/dates stop planning. Explicit allow records each absent tile/date and search pattern in missing_sources, writes a null source inventory entry, and permits a missing-observation receipt. Receipt assembly verifies the saved plan and writes null daily mappings, expanded by interpolation into unknown state and NaN scientific fields. No fake reflectance or empty raster is written. These gaps remain null in NRT history and can be revisited. The planner does not query upstream availability; the operator authorizes local gaps. Duplicate vintages, corrupt existing files, inaccessible archive roots and sources lost or newly appearing after planning still fail. Dates use start inclusive and stop exclusive.
+- missing_reflectance defaults to error: missing local tile/dates stop planning. Explicit allow records each absent tile/date and search pattern in missing_sources, writes a null source inventory entry, and permits a missing-observation receipt. Receipt assembly verifies the saved plan and writes null daily mappings, expanded by interpolation into unknown state and NaN scientific fields. No fake reflectance or empty raster is written. These gaps remain null in NRT history and can be revisited. The planner does not query upstream availability; the operator authorizes local gaps. Duplicate vintages, corrupt existing files, inaccessible archive roots and sources lost or newly appearing after planning still fail. Start and stop dates are both inclusive (historical schema_version=1).
 
 ## Scheduler selection
 

@@ -28,6 +28,37 @@ node and all its available memory. It still loads all summer scenes for one
 tile/year before selection. Its one requested CPU does not permit other jobs to
 share the node, and does not claim that additional algorithm threads would help.
 
+## Single-tile daily concurrency
+
+`daily_single_tile` allows **76 concurrent dates on blanca-rittger**, with
+1 CPU and 8 GiB per date. This resource profile supports individual-tile work;
+the maintained five-tile training workflow uses `daily_five_tiles`.
+
+The limit assumes 88 usable cores with a four-core allocation already running
+and eight cores reserved. Check current CPU and memory
+allocations before submitting: a per-array limit does not reserve eight cores
+across the partition, enforce per-node placement, or coordinate multiple arrays.
+Reduce concurrency when other workloads or unavailable nodes require it.
+
+To select blanca-snow for a **separate single-tile historical run**, use:
+
+```json
+"scheduler": {
+  "policy": "scheduler_policy.json",
+  "job_type": "daily_single_tile",
+  "queue": "blanca-snow",
+  "concurrency": 62
+}
+```
+
+At 8 GiB per task, memory limits the blanca-snow node to 62 tasks. Queue selection
+does not split one array across both partitions. Concurrent runs need disjoint
+date selections and separate output directories; do not submit the same dates
+twice across queues.
+
+These budgets cover single-tile daily processing. Five-tile preparation,
+interpolation, R0 and serialized NRT cycles retain their own resource profiles.
+
 ## Select a profile
 
 Historical configurations select a date-processing profile:
@@ -137,7 +168,8 @@ When tuning a job type:
    guarantee that future dates have the same peak.
 2. Update the relevant `job_types` entry and its `evidence` together. Retain useful
    headroom and distinguish measured allocations from untested estimates.
-3. Regenerate the configuration/reference pages with
+3. Regenerate the embedded workflow policy and configuration/reference pages with
+   `python scripts/build_workflow_example.py` and
    `python scripts/build_config_reference.py` in `spipy14`.
 4. Make a **new plan** from the original run configuration to adopt the change.
    Inspect its resolved settings and generated Slurm directives before submission.

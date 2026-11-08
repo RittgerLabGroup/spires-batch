@@ -70,13 +70,48 @@ provenance and source stream (`standard`, `nrt`, `mixed`) are explicit.
 
 ## Outputs and restart
 
-Screen stripe files retain selected observation states/validity and both fSCA
+All calendar date bounds are inclusive. `start == stop` selects one output day.
+For WY2026, use `start: "2025-10-01"`, `stop: "2026-09-30"`, and
+`available_through: "2026-10-07"` to write all eight issues through September 30.
+Daily preparation must also run through October 7, including the next WY's
+retrieval assets and annual interpolation mask. The workflow does not add those
+seven context days automatically. See [date conventions](configuration/reading.md#inclusive-calendar-dates).
+
+Screen stripe files retain selected observation states/validity and all eight fSCA
 issues. Spatial tile/date files retain both property estimates and donor support.
 Property stripes retain fSCA, grain/dust, source codes, ages, flat/terrain albedo,
 QA flags and context provenance. Export reads each property stripe once into
-first/final NetCDF files, with appropriate issue lengths and scientific metadata.
+the selected NetCDF files, with appropriate issue lengths and scientific metadata.
 Outputs and checkpoint bundles commit through one atomic current.json manifest.
-A final issue with no eligible dates is omitted rather than emitted prematurely.
+
+Set `output_issues` in the interpolation configuration (or the interpolation job's
+`request` in a unified workflow):
+
+```json
+"output_issues": "all_issues"
+```
+
+`all_issues` (the default) writes `first.nc`, `second.nc`, `third.nc`, `fourth.nc`,
+`fifth.nc`, `sixth.nc`, `seventh.nc`, and `final.nc`. Use
+`"output_issues": "first_and_final_only"` to write only `first.nc` and `final.nc`.
+This controls output files, not the calculations or donor eligibility.
+Every selected file contains the full set of variables: fSCA and viewable fSCA,
+grain radius, dust, both albedos, source codes, observation ages, donor diagnostics,
+QA flags and cloud-context provenance.
+
+With input availability through D, issue ages 0–7 end at D through D−7,
+clipped to the requested interval. They share the requested start date. A selected
+issue with no eligible dates is an empty NetCDF with the complete variable schema;
+it never contains partially matured dates. Metadata records `issue`, `issue_number`
+(1–8), `future_days` (0–7), and the fixed direct-observation donor policy.
+The registered NRT stream inherits `output_issues` and publishes cumulative
+tile/WY files as described in [NRT publication](nrt.md).
+
+Rebuild the snow native library for ABI version 2 before running this code.
+The eight-issue layout has issue schema 2. Old two-issue plans/checkpoints require
+a historical replay and a new NRT bootstrap; missing intermediate history cannot
+be recovered by relabeling the first/final files. First/final interpolation rules
+and screened direct-observation donor eligibility are unchanged.
 
 The checkpoint bundle includes bounded snow state, direct property history and
 variable-specific ages. It supports the [NRT revision controller](nrt.md); this command
@@ -96,8 +131,9 @@ must expose the supported algorithm version. Immutable plans still retain their
 source inventory and integrity digest; regenerate a plan for changed input or
 binary paths. The current implementation is the only scientific baseline; there
 is no development-algorithm selector or fallback. Public interpolation JSON requires
-`config_type: "interpolation"` and `schema_version: 1`. This public version is not
-the retired development interpolation format. Plan, observation and checkpoint
+`config_type: "interpolation"` and draft `schema_version: 1`, with inclusive dates.
+For an earlier draft request with an exclusive `stop`, subtract one day from that
+`stop` and regenerate the plan to preserve its output interval; keep version 1. Plan, observation and checkpoint
 format identifiers remain independent; their current value of 2 does not expose
 an alternative algorithm. Unsupported scientific state is rejected, even when a
 `seed_plan` provenance reference is supplied.
@@ -110,7 +146,7 @@ The optional `interpolation` dependency installs the new public API.
 ## Development evidence
 
 A bounded synthetic two-stripe case with the frozen real albedo LUT passed all
-four stages, first/final NetCDF export, checkpoint publication and exact retries.
+four stages, NetCDF issue export, checkpoint publication and exact retries.
 Numerical migration checks compare the production policy/native kernels against
 frozen research code. Full-grid memory/throughput pilots are required before bulk
 submission. No historical or cloud production jobs were submitted by migration.

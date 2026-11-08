@@ -10,7 +10,7 @@ Reservations apply to one task, not an entire array. Memory is total per task.
 | --- | --- | --- | --- | --- | --- | --- |
 | `r0` | blanca-snow | 1 | 0 | 08:00:00 | 1 | measured |
 | `tile_inversion` | blanca-rittger | 1 | 6G | 04:00:00 | 20 | operator_baseline |
-| `daily_single_tile` | blanca-rittger | 1 | 8G | 04:00:00 | 4 | starting_budget |
+| `daily_single_tile` | blanca-rittger | 1 | 8G | 04:00:00 | 76 | measured |
 | `daily_five_tiles` | blanca-rittger | 5 | 16G | 04:00:00 | 4 | measured |
 | `nrt_five_tiles` | blanca-rittger | 5 | 16G | 12:00:00 | 1 | starting_budget |
 | `interpolation_screen` | blanca-rittger | 1 | 6G | 08:00:00 | 16 | measured |
@@ -49,7 +49,9 @@ One tile / date spectral inversion worker
 
 One date with one tile, clouds, retrieval and daily albedo
 
-- 6 GiB worker baseline plus 2 GiB coordinator headroom; validate a pilot with the complete runner.
+- Validated single-tile daily cloud/retrieval/albedo resource budget: 1 CPU and 8 GiB per task. Retired validation records are retained separately from the training examples.
+- The blanca-rittger limit of 76 leaves eight cores free with 88 usable cores and an existing four-core allocation. Recalculate for current node availability and other workloads; an array limit is not a partition-wide core reservation.
+- This profile selects blanca-rittger only. For a separate blanca-snow array, override queue and concurrency to blanca-snow and 62; coordinate placement and date selections explicitly.
 
 ## `daily_five_tiles`
 

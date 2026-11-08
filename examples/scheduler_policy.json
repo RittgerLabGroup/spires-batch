@@ -71,11 +71,13 @@
       "cpus": 1,
       "memory": "8G",
       "time": "04:00:00",
-      "concurrency": 4,
+      "concurrency": 76,
       "unit": "One date with one tile, clouds, retrieval and daily albedo",
-      "status": "starting_budget",
+      "status": "measured",
       "evidence": [
-        "6 GiB worker baseline plus 2 GiB coordinator headroom; validate a pilot with the complete runner."
+        "Validated single-tile daily cloud/retrieval/albedo resource budget: 1 CPU and 8 GiB per task. Retired validation records are retained separately from the training examples.",
+        "The blanca-rittger limit of 76 leaves eight cores free with 88 usable cores and an existing four-core allocation. Recalculate for current node availability and other workloads; an array limit is not a partition-wide core reservation.",
+        "This profile selects blanca-rittger only. For a separate blanca-snow array, override queue and concurrency to blanca-snow and 62; coordinate placement and date selections explicitly."
       ],
       "max_tiles": 1,
       "preparation": {

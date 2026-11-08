@@ -50,7 +50,9 @@ are useful when only one task is needed.
 - A tile is an output unit; the full domain supplies neighboring cloud context and
   interpolation donors. Dropping tiles can change the results.
 - Missing observations are unknown, not zero snow.
-- First and final products use zero and seven days of look-ahead respectively.
+- Eight issue products use zero through seven days of look-ahead respectively.
+  `output_issues` selects all eight (default) or first/final only; every file has
+  all output variables and uses the original screened direct-observation donors.
   A later standard observation can revise previously published final products.
 - Raw retrieval diagnostics and prepared observations are needed for interpolation
   and later revisions; exported maps alone are not sufficient restart history.

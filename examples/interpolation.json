@@ -4,7 +4,7 @@
   "algorithm": "viirs_snow",
   "history_start": "2025-10-01",
   "start": "2025-10-01",
-  "stop": "2026-05-12",
+  "stop": "2026-05-11",
   "available_through": "2026-05-11",
   "shape": [
     2400,
@@ -12,6 +12,7 @@
   ],
   "stripe_rows": 20,
   "source_stream": "standard",
+  "output_issues": "all_issues",
   "output": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/interpolation",
   "snow_library": "/projects/REPLACE_USER/spipy-native/snow_fraction.so",
   "spatial_library": "/projects/REPLACE_USER/spipy-native/spatial.so",

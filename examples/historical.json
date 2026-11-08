@@ -2,7 +2,7 @@
   "config_type": "historical",
   "schema_version": 1,
   "start": "2025-10-01",
-  "stop": "2026-05-12",
+  "stop": "2026-05-11",
   "reflectance_root": "/pl/active/rittger_ops/vj109ga.002/input",
   "missing_reflectance": "error",
   "output": "/scratch/alpine/REPLACE_USER/spipy/work/noaa20/five-tiles/WY2026/unified/historical",

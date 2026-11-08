@@ -43,7 +43,7 @@ class HistoricalRequest(PublicConfiguration):
     model_config = ConfigDict(extra="forbid")
     config_type: Literal["historical"]
     start: date = Field(description="First date to prepare, inclusive.")
-    stop: date = Field(description="Last date boundary, exclusive; a WY ends on October 1.")
+    stop: date = Field(description="Last date to prepare, inclusive; a WY ends on September 30.")
     reflectance_root: str = Field(description="Shared archive input directory containing tile/year/VJ109GA.A*.h5.")
     missing_reflectance: Literal["error", "allow"] = Field(default="error", description="error stops planning when any tile/date has no local granule; allow records that planned gap as an unknown tile for interpolation and NRT history. Does not permit corrupt files, duplicate vintages, inaccessible archives or loss of a source after planning.")
     output: str = Field(description="New per-user scratch run directory; never use another operator's outputs.")
@@ -54,8 +54,8 @@ class HistoricalRequest(PublicConfiguration):
 
     @model_validator(mode="after")
     def validate_domain(self):
-        if self.stop <= self.start:
-            raise ValueError("stop must follow start")
+        if self.stop < self.start:
+            raise ValueError("stop must be on or after start")
         required = {"science_python", "cloud_python", "cloud_model", "collection", "observation_policy", "tiles"}
         allowed = required | {"retrieval_concurrency", "retrieval_memory_gib", "preparation_memory_gib"}
         if required - self.preparation.keys() or self.preparation.keys() - allowed:
@@ -92,9 +92,12 @@ class HistoricalRequest(PublicConfiguration):
 
 
 def days(start, stop):
+    """Yield calendar dates including both endpoints; equal dates select one day."""
     current = start
-    while current < stop:
+    while current <= stop:
         yield current.isoformat()
+        if current == stop:
+            break
         current += timedelta(days=1)
 
 
@@ -370,7 +373,7 @@ def assemble(template_path, receipt_root, directory):
     template_path = Path(template_path).resolve()
     request = resolve_paths(json.loads(template_path.read_text()), template_path.parent)
     require_configuration(request, "interpolation")
-    selected = list(days(date.fromisoformat(request["history_start"]), date.fromisoformat(request["available_through"]) + timedelta(days=1)))
+    selected = list(days(date.fromisoformat(request["history_start"]), date.fromisoformat(request["available_through"])))
     tiles = sorted(request["tiles"])
     inventory = {}
     plans = {}

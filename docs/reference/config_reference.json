@@ -7,9 +7,9 @@
   "entry_points": {
     "workflow": "spires-batch workflow plan CONFIG --output PLAN; config_type=workflow, schema_version=1",
     "daily_request": "spires-batch plan CONFIG --output PLAN; config_type=batch_request, schema_version=1",
-    "historical": "spires-batch historical plan CONFIG --output PLAN; config_type=historical, schema_version=1. render-slurm writes date arrays; run requires an allocation; assemble binds real receipts for interpolation.",
+    "historical": "spires-batch historical plan CONFIG --output PLAN; config_type=historical, schema_version=1 (inclusive start/stop). render-slurm writes date arrays; run requires an allocation; assemble binds real receipts for interpolation.",
     "initialization": "spires-batch tile-init CONFIG --dry-run; config_type=initialization, schema_version=1",
-    "interpolation": "spires-batch interpolation plan CONFIG --output PLAN; config_type=interpolation, schema_version=1",
+    "interpolation": "spires-batch interpolation plan CONFIG --output PLAN; config_type=interpolation, schema_version=1 (all calendar dates inclusive)",
     "nrt_cycle": "spires-batch nrt cycle CONFIG --through DATE --output DIRECTORY [--execute]; requires an allocation and already registered real history",
     "nrt_storage": "See docs/reference/storage.md for configure/retention commands"
   },
@@ -190,7 +190,7 @@
         },
         "schema_version": {
           "const": 1,
-          "description": "Required integer 1: the spipy v1.0.0 configuration baseline. Independent of saved-state formats and package versions.",
+          "description": "Required integer 1: the draft spipy v1.0.0 configuration baseline. Independent of saved-state formats and package versions.",
           "title": "Schema Version",
           "type": "integer"
         },
@@ -1707,7 +1707,7 @@
         },
         "schema_version": {
           "const": 1,
-          "description": "Required integer 1: the spipy v1.0.0 configuration baseline. Independent of saved-state formats and package versions.",
+          "description": "Required integer 1: the draft spipy v1.0.0 configuration baseline. Independent of saved-state formats and package versions.",
           "title": "Schema Version",
           "type": "integer"
         },
@@ -1904,7 +1904,7 @@
         },
         "schema_version": {
           "const": 1,
-          "description": "Required integer 1: the spipy v1.0.0 configuration baseline. Independent of saved-state formats and package versions.",
+          "description": "Required integer 1: the draft spipy v1.0.0 configuration baseline. Independent of saved-state formats and package versions.",
           "title": "Schema Version",
           "type": "integer"
         },
@@ -2110,7 +2110,7 @@
         },
         "schema_version": {
           "const": 1,
-          "description": "Required integer 1: the spipy v1.0.0 configuration baseline. Independent of saved-state formats and package versions.",
+          "description": "Required integer 1: the draft spipy v1.0.0 configuration baseline. Independent of saved-state formats and package versions.",
           "title": "Schema Version",
           "type": "integer"
         },
@@ -2121,7 +2121,7 @@
           "type": "string"
         },
         "stop": {
-          "description": "Last date boundary, exclusive; a WY ends on October 1.",
+          "description": "Last date to prepare, inclusive; a WY ends on September 30.",
           "format": "date",
           "title": "Stop",
           "type": "string"
@@ -3509,7 +3509,7 @@
           "allowed_values": [
             1
           ],
-          "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+          "description": "Must equal integer 1: the draft public configuration baseline. Calendar date bounds are inclusive."
         },
         "exclude_nodes": {
           "type": "array[string]",
@@ -3546,7 +3546,7 @@
           "allowed_values": [
             1
           ],
-          "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+          "description": "Must equal integer 1: the draft public configuration baseline. Calendar date bounds are inclusive."
         },
         "stream_root": {
           "type": "path",
@@ -3628,7 +3628,7 @@
           "allowed_values": [
             1
           ],
-          "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+          "description": "Must equal integer 1: the draft public configuration baseline. Calendar date bounds are inclusive."
         },
         "algorithm": {
           "type": "string",
@@ -3642,7 +3642,7 @@
         "history_start": {
           "type": "ISO date",
           "required": true,
-          "description": "Beginning of consecutive historical input/state sequence."
+          "description": "Inclusive beginning of the consecutive historical input/state sequence."
         },
         "start": {
           "type": "ISO date",
@@ -3652,7 +3652,7 @@
         "stop": {
           "type": "ISO date",
           "required": true,
-          "description": "Exclusive target stop."
+          "description": "Inclusive final output date. Equal start and stop select one day; a WY ends September 30."
         },
         "available_through": {
           "type": "ISO date",
@@ -3730,12 +3730,23 @@
           "type": "path",
           "required": false,
           "description": "Controller-assigned stream root during incremental operation."
+        },
+        "output_issues": {
+          "type": "string",
+          "required": false,
+          "default": "all_issues",
+          "allowed_values": [
+            "all_issues",
+            "first_and_final_only"
+          ],
+          "description": "Select exported NetCDF issues: all eight (0\u20137 future days), or only first/final (0/7). Every selected file contains all variables. Inherited by NRT cumulative tile/WY publication; donor eligibility and calculations are unchanged."
         }
       },
       "notes": [
-        "history_start <= start < stop <= available_through + one day.",
+        "history_start <= start <= stop <= available_through; all calendar date bounds are inclusive.",
         "Field paths resolve relative to request JSON; every calendar date must be present, with null only for a verified missing observation.",
-        "Controller-written state_context/state_identity are generated artifacts, not accepted initial request fields."
+        "Controller-written state_context/state_identity are generated artifacts, not accepted initial request fields.",
+        "Earlier drafts used an exclusive stop: subtract one day from that stop and regenerate the plan to preserve the requested dates. Keep schema_version=1; other date fields do not change."
       ]
     },
     "interpolation_scheduler": {
@@ -3932,7 +3943,7 @@
           "allowed_values": [
             1
           ],
-          "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+          "description": "Must equal integer 1: the draft public configuration baseline. Calendar date bounds are inclusive."
         },
         "stream_root": {
           "type": "path",
@@ -4087,7 +4098,7 @@
           "allowed_values": [
             1
           ],
-          "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+          "description": "Must equal integer 1: the draft public configuration baseline. Calendar date bounds are inclusive."
         },
         "date": {
           "type": "ISO date",
@@ -4263,7 +4274,7 @@
           "allowed_values": [
             1
           ],
-          "description": "Must equal integer 1: the sole spipy v1.0.0 public configuration baseline."
+          "description": "Must equal integer 1: the draft public configuration baseline. Calendar date bounds are inclusive."
         },
         "working_days": {
           "type": "integer",
@@ -4371,7 +4382,7 @@
       "notes": [
         "See schemas.historical for every top-level field and scheduler option. Nested preparation is a recipe fragment, not a standalone nrt_cycle config: it has no config_type/schema_version header and uses science_python, cloud_python, cloud_model, collection, observation_policy, retrieval_concurrency, retrieval_memory_gib, preparation_memory_gib and tiles. stream_root, through and annual_bright_soil are not historical preparation options.",
         "Tile/WY retrieval bindings follow interfaces.retrieval_recipe. terrain uses mapped_field bindings for dem (metres), slope and aspect (degrees). Daily albedo is evaluated only for state=2 and screening_flags=0; no interpolation is performed.",
-        "missing_reflectance defaults to error: missing local tile/dates stop planning. Explicit allow records each absent tile/date and search pattern in missing_sources, writes a null source inventory entry, and permits a missing-observation receipt. Receipt assembly verifies the saved plan and writes null daily mappings, expanded by interpolation into unknown state and NaN scientific fields. No fake reflectance or empty raster is written. These gaps remain null in NRT history and can be revisited. The planner does not query upstream availability; the operator authorizes local gaps. Duplicate vintages, corrupt existing files, inaccessible archive roots and sources lost or newly appearing after planning still fail. Dates use start inclusive and stop exclusive."
+        "missing_reflectance defaults to error: missing local tile/dates stop planning. Explicit allow records each absent tile/date and search pattern in missing_sources, writes a null source inventory entry, and permits a missing-observation receipt. Receipt assembly verifies the saved plan and writes null daily mappings, expanded by interpolation into unknown state and NaN scientific fields. No fake reflectance or empty raster is written. These gaps remain null in NRT history and can be revisited. The planner does not query upstream availability; the operator authorizes local gaps. Duplicate vintages, corrupt existing files, inaccessible archive roots and sources lost or newly appearing after planning still fail. Start and stop dates are both inclusive (historical schema_version=1)."
       ]
     },
     "scheduler_selection": {
@@ -4684,6 +4695,7 @@
     "platform": "noaa20",
     "observation_schema": 2,
     "checkpoint_schema": 2,
+    "issue_schema": 2,
     "screening_version": 1,
     "onset_version": 1,
     "snow_interpolation_version": 1,
@@ -4716,7 +4728,7 @@
     "dust_fallback_ppm": 10.0
   },
   "safety": [
-    "All public configurations require config_type and schema_version=1: the spipy v1.0.0 baseline, not the retired development interpolation. Old/missing headers are rejected; no automatic configuration migration exists. Saved-plan/checkpoint formats and scientific component versions are separate contracts.",
+    "All public configurations require config_type and schema_version. All kinds use draft version 1 with inclusive calendar bounds. To preserve an earlier draft historical/interpolation range with an exclusive stop, subtract one day from that stop and regenerate the plan; keep version 1. Unsupported/missing headers are rejected; no implicit migration occurs. Saved-plan/checkpoint formats and scientific component versions are separate contracts.",
     "Planning a universal workflow does not download or compute; nrt cycle without --execute DOES acquire, prepare clouds and retrieve before stopping at the revision plan.",
     "JSON has no comments. Do not paste this reference's description/type/default wrappers into a runnable request.",
     "Scientific recipe constants are not user-adjustable JSON options. Only evaluated NOAA-20 viirs_snow interpolation is enabled.",

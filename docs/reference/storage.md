@@ -83,7 +83,7 @@ checkpoints move to the archive. If no September 30 checkpoint exists, the polic
 does not fabricate one. Unresolved inputs remain protected without a hard age
 expiration, and overdue records generate alerts.
 
-All published first/final products and subsequent published corrections, native
+All selected issue products (interval and cumulative) and published corrections, native
 and prepared observations, and scientific provenance remain in the archive. This
 policy bounds working storage; it deliberately does not cap the scientific archive.
 

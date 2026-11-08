@@ -240,7 +240,7 @@ def acquire(root, through, directory, *, collection="002", fetch=False):
 def main(argv=None):
     p = argparse.ArgumentParser()
     p.add_argument("--root", required=True)
-    p.add_argument("--through", required=True)
+    p.add_argument("--through", required=True, help="Last processing date, inclusive")
     p.add_argument("--output", required=True)
     p.add_argument("--download", action="store_true")
     a = p.parse_args(argv)

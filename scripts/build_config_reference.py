@@ -111,9 +111,9 @@ def build_reference():
         "entry_points": {
             "workflow": "spires-batch workflow plan CONFIG --output PLAN; config_type=workflow, schema_version=1",
             "daily_request": "spires-batch plan CONFIG --output PLAN; config_type=batch_request, schema_version=1",
-            "historical": "spires-batch historical plan CONFIG --output PLAN; config_type=historical, schema_version=1. render-slurm writes date arrays; run requires an allocation; assemble binds real receipts for interpolation.",
+            "historical": "spires-batch historical plan CONFIG --output PLAN; config_type=historical, schema_version=1 (inclusive start/stop). render-slurm writes date arrays; run requires an allocation; assemble binds real receipts for interpolation.",
             "initialization": "spires-batch tile-init CONFIG --dry-run; config_type=initialization, schema_version=1",
-            "interpolation": "spires-batch interpolation plan CONFIG --output PLAN; config_type=interpolation, schema_version=1",
+            "interpolation": "spires-batch interpolation plan CONFIG --output PLAN; config_type=interpolation, schema_version=1 (all calendar dates inclusive)",
             "nrt_cycle": "spires-batch nrt cycle CONFIG --through DATE --output DIRECTORY [--execute]; requires an allocation and already registered real history",
             "nrt_storage": "See docs/reference/storage.md for configure/retention commands",
         },
@@ -127,7 +127,7 @@ def build_reference():
         "interfaces": interfaces,
         "fixed_scientific_recipe_not_user_options": asdict(VIIRS_SNOW),
         "safety": [
-            "All public configurations require config_type and schema_version=1: the spipy v1.0.0 baseline, not the retired development interpolation. Old/missing headers are rejected; no automatic configuration migration exists. Saved-plan/checkpoint formats and scientific component versions are separate contracts.",
+            "All public configurations require config_type and schema_version. All kinds use draft version 1 with inclusive calendar bounds. To preserve an earlier draft historical/interpolation range with an exclusive stop, subtract one day from that stop and regenerate the plan; keep version 1. Unsupported/missing headers are rejected; no implicit migration occurs. Saved-plan/checkpoint formats and scientific component versions are separate contracts.",
             "Planning a universal workflow does not download or compute; nrt cycle without --execute DOES acquire, prepare clouds and retrieve before stopping at the revision plan.",
             "JSON has no comments. Do not paste this reference's description/type/default wrappers into a runnable request.",
             "Scientific recipe constants are not user-adjustable JSON options. Only evaluated NOAA-20 viirs_snow interpolation is enabled.",

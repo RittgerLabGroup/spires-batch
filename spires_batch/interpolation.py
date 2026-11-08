@@ -152,6 +152,7 @@ def plan(config, destination, *, header_cache=None):
         "algorithm",
         "stripe_rows",
         "source_stream",
+        "output_issues",
         "seed",
         "seed_plan",
         "stream_root",
@@ -163,6 +164,9 @@ def plan(config, destination, *, header_cache=None):
         raise ValueError("Invalid interpolation request fields/schema")
     if request.get("source_stream", "standard") not in ("standard", "nrt", "mixed"):
         raise ValueError("Invalid source stream")
+    from spires_interpolation.issues import selected_issue_indices
+
+    selected_issue_indices(request.setdefault("output_issues", "all_issues"))
     dates = [
         np.datetime64(request[k], "D")
         for k in ("history_start", "start", "stop", "available_through")
@@ -170,7 +174,7 @@ def plan(config, destination, *, header_cache=None):
     history, start, stop, available = dates
     if (
         any((np.isnat(d) for d in dates))
-        or not history <= start < stop <= available + 1
+        or not history <= start <= stop <= available
     ):
         raise ValueError("Invalid history/target/availability interval")
     if str(start)[5:] != "10-01" and "seed" not in request:
@@ -241,7 +245,7 @@ def plan(config, destination, *, header_cache=None):
         request["snow_library"],
         request["spatial_library"],
         request["albedo_lut"],
-        str(policy),
+        request["scheduler"]["policy"],
     ):
         inputs[p] = file_record(p, True)
     if "seed" in request:
@@ -328,7 +332,7 @@ def plan(config, destination, *, header_cache=None):
         request["state_identity"] = inherited.pop()
     tasks = {
         "screen": [dict(tile=t, stripe=s) for t in request["tiles"] for s in range(n)],
-        "spatial": [dict(day=str(d)) for d in np.arange(start, stop)],
+        "spatial": [dict(day=str(d)) for d in np.arange(start, stop + 1)],
         "properties": [
             dict(tile=t, stripe=s) for t in request["tiles"] for s in range(n)
         ],
@@ -362,8 +366,23 @@ def load_plan(path, *, compatible_state=False):
     if digest(p) != identity:
         raise ValueError("Plan digest mismatch")
     p["identity"] = identity
+    require_configuration(p["request"], "interpolation")
     if p.get("schema_version") != 2:
         raise ValueError("Interpolation plan schema 2 required; regenerate the plan")
+    import numpy as np
+
+    expected_days = [
+        dict(day=str(day))
+        for day in np.arange(
+            np.datetime64(p["request"]["start"], "D"),
+            np.datetime64(p["request"]["stop"], "D") + 1,
+        )
+    ]
+    if p["tasks"]["spatial"] != expected_days:
+        raise ValueError(
+            "Saved interpolation plan does not cover inclusive start/stop dates; "
+            "regenerate the plan"
+        )
     from spires_interpolation.algorithm import resolve_algorithm
 
     expected = resolve_algorithm(
@@ -445,8 +464,15 @@ def export_tile(plan, tile):
     from spires_interpolation.netcdf_export import copy_stripes
     from spires_interpolation.publication import publish_generation
     from spires_interpolation.albedo import FLAG_MASKS, FLAG_MEANINGS
+    from spires_interpolation.issues import (
+        ISSUE_NAMES,
+        ISSUE_AGES,
+        ISSUE_SCHEMA,
+        selected_issue_indices,
+    )
 
     r = plan["request"]
+    selected_issues = selected_issue_indices(r.get("output_issues", "all_issues"))
     identity = plan["identity"]
     height, width = r["shape"]
     rows = r.get("stripe_rows", 20)
@@ -456,26 +482,31 @@ def export_tile(plan, tile):
     for _, path in stripes:
         if not output_is_complete(path, identity):
             raise FileNotFoundError(path)
-    dates = np.arange(np.datetime64(r["start"]), np.datetime64(r["stop"]))
-    final_count = int(
-        np.count_nonzero(dates <= np.datetime64(r["available_through"]) - 7)
-    )
+    dates = np.arange(np.datetime64(r["start"]), np.datetime64(r["stop"]) + 1)
+    counts = {
+        name: int(np.count_nonzero(dates <= np.datetime64(r["available_through"]) - age))
+        for name, age in zip(ISSUE_NAMES, ISSUE_AGES)
+    }
     with h5py.File(stripes[0][1], "r") as h:
         variables = {
             k: h[k].dtype
             for k in h
             if isinstance(h[k], h5py.Dataset) and h[k].ndim in (3, 4)
         }
+        if any(
+            h[k].ndim == 4 and h[k].shape[-1] != len(ISSUE_NAMES) for k in variables
+        ):
+            raise ValueError("Replay interpolation with the eight-issue schema before export")
     a = read_terrain(r, tile, (slice(0, height), slice(0, width)))
 
     def build(folder):
         artifacts = {}
         outputs = {}
         with ExitStack() as stack:
-            for issue, count in ((0, len(dates)), (1, final_count)):
-                if not count:
-                    continue
-                path = folder / ("first.nc" if issue == 0 else "final.nc")
+            for issue in selected_issues:
+                name = ISSUE_NAMES[issue]
+                count = counts[name]
+                path = folder / (name + ".nc")
                 out = stack.enter_context(netCDF4.Dataset(path, "w"))
                 outputs[issue] = out
                 for name, size in [("time", count), ("y", height), ("x", width)]:
@@ -503,8 +534,13 @@ def export_tile(plan, tile):
                         zlib=True,
                         complevel=2,
                         shuffle=True,
-                        chunksizes=(min(8, count), min(20, height), min(240, width)),
+                        chunksizes=(
+                            max(1, min(8, count)), min(20, height), min(240, width)
+                        ),
                     )
+                    # Eight files times all variables must not multiply 64-MiB
+                    # default caches beyond the export allocation.
+                    v.set_var_chunk_cache(size=1024**2, nelems=1009, preemption=0.75)
                     v.grid_mapping = "crs"
                     v.long_name = name.replace("_", " ")
                     v.units = (
@@ -529,8 +565,13 @@ def export_tile(plan, tile):
                         Conventions="CF-1.8",
                         tile=tile,
                         policy="viirs_snow",
-                        issue="first" if issue == 0 else "final",
-                        future_days=issue * 7,
+                        issue=ISSUE_NAMES[issue],
+                        issue_number=issue + 1,
+                        issue_schema=ISSUE_SCHEMA,
+                        future_days=ISSUE_AGES[issue],
+                        donor_policy="screened_direct_observations",
+                        available_through=r["available_through"],
+                        output_issues=r.get("output_issues", "all_issues"),
                         source_stream=r.get("source_stream", "standard"),
                         plan_identity=identity,
                         asset_provenance=json.dumps(
@@ -538,7 +579,7 @@ def export_tile(plan, tile):
                         ),
                     )
                 )
-                artifacts["first" if issue == 0 else "final"] = path
+                artifacts[ISSUE_NAMES[issue]] = path
             copy_stripes(
                 stripes, outputs, variables=variables, max_array_bytes=128 * 1024**2
             )
@@ -575,9 +616,7 @@ def export_tile(plan, tile):
                         raise ValueError("Incomplete checkpoints")
             else:
                 with netCDF4.Dataset(path) as ds:
-                    if len(ds.dimensions["time"]) != (
-                        len(dates) if name == "first" else final_count
-                    ):
+                    if len(ds.dimensions["time"]) != counts[name]:
                         raise ValueError("Wrong issue length")
                     for variable in variables:
                         if ds[variable].shape[1:] != (height, width):

@@ -25,7 +25,7 @@ Review `jobs` in order:
    Its controller creates the output/reservation directory and stages the planned
    summer inputs inside its allocation before submitting R0 workers.
 3. `historical` processes dates concurrently, with five concurrent tile retrievals
-   per date. Its stop date is exclusive.
+   per date. Its start and stop dates are inclusive.
 4. `interpolate` assembles those receipts automatically, then runs the stage arrays.
 5. `register` configures the durable archive and adopts the completed products and
    checkpoints. This first archival step can transfer substantial history.
@@ -99,6 +99,11 @@ and publication receipts before treating the result as scientifically accepted.
 In the example, historical first/final products reach May 11/May 4. After the
 May 18 continuation, they should reach May 18/May 11. NRT full-history recovery
 still stops with its transfer-size report instead of copying everything silently.
+
+The interpolation job's `request.output_issues` defaults to `all_issues`: six
+intermediate NetCDFs fill the daily cutoffs between first and final. Set
+`first_and_final_only` to write only those two files. NRT inherits this setting
+and publishes cumulative tile/WY files containing every output variable.
 
 ## 5. Submit another NRT update from the same JSON
 
