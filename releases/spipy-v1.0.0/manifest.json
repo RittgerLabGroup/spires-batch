@@ -43,7 +43,7 @@
       "repository": "https://github.com/RittgerLabGroup/spires-postprocess.git"
     },
     "spires-interpolation": {
-      "commit": "60c54f89f5fe952cab7d5328da6e6ad1e47669e0",
+      "commit": "2cca6e16d0f0c64db884557cc93647063ecaef90",
       "groups": [
         "runtime"
       ],
@@ -54,7 +54,7 @@
       "repository": "https://github.com/RittgerLabGroup/spires-interpolation.git"
     },
     "spires-batch": {
-      "commit": "3040cf27f6b0af17bd93b20bceb7cf80a2d6d0de",
+      "commit": "9bfdf85b3a2a1aa7bcc725bcd262f91e2f912474",
       "groups": [
         "runtime"
       ],
