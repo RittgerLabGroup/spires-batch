@@ -34,6 +34,7 @@ after starting a unified workflow.
 - [Documentation maintenance](maintainers/documentation.md)
 - [Environment validation, November 5, 2026](maintainers/validation/environment-2026-11-05.md)
 - [Five-tile campaign observations, November 6, 2026](maintainers/validation/campaign-2026-11-06.md)
+- [Training candidate installation, November 8, 2026](maintainers/validation/training-candidate-2026-11-08.md)
 
 Dated reports describe checks at that time. They are not setup instructions,
 live job status, or approval of later changes.

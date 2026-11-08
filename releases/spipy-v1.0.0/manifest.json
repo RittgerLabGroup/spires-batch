@@ -80,11 +80,11 @@
     }
   },
   "validation": {
-    "environment": "spipy14 (existing development environment; not a clean installation)",
-    "existing_tests_passed": 124,
-    "existing_tests_skipped": 6,
-    "test_scope": "contract, R0, archived VIIRS loading, inversion Dask and contract boundaries",
-    "clean_install_validated": false,
+    "environment": "Fresh isolated spipy14 science and viirs-cloudmask-batch cloud environments; validated 2026-11-08",
+    "existing_tests_passed": 13,
+    "existing_tests_skipped": 0,
+    "test_scope": "Existing inversion contract-boundary checks against the installed native extension",
+    "clean_install_validated": true,
     "historical_and_nrt_acceptance_validated": false,
     "lut_build_validated": false,
     "standalone_cloud_preparation": {
@@ -92,6 +92,21 @@
       "slurm_job_id": "29327825",
       "reference_reader_commit": "2778eac9171fde9c9d67350731349f438a9cf56f",
       "scope": "All 13 prepared arrays match exactly on one standard and one NRT 2400-by-2400 scene, including compact observations; SPIReS imports forbidden in the cloud subprocess. This is not full-grid inference or end-to-end acceptance."
+    },
+    "installation_report": "docs/maintainers/validation/training-candidate-2026-11-08.md",
+    "bounded_historical_and_nrt": {
+      "validated": true,
+      "grid": [
+        4,
+        5
+      ],
+      "historical_days": 12,
+      "continued_days": 16,
+      "output_modes": [
+        "all_issues",
+        "first_and_final_only"
+      ],
+      "scope": "Installed native libraries, all output variables and masks, inclusive bounds, NRT bootstrap and append; not full-grid acceptance."
     }
   },
   "release_blockers": [

@@ -15,6 +15,11 @@ Use a new prefix, leaving established operations untouched. The basename
 `spipy14` identifies the science environment used for development and validation.
 Create environments sequentially to avoid concurrent writes to the package cache.
 
+Use disposable prefixes under `/projects/$USER` even for temporary validation.
+On this site, `/tmp` is purged every 15 minutes using file modification dates:
+newly extracted Conda files can retain old package timestamps and be deleted
+while an installation is running. Keep the package cache outside `/tmp` too.
+
 Before installation, colleagues need access to the private RittgerLabGroup
 repositories. Anonymous HTTPS access is insufficient. At this site SSH access
 works; verify it with `git ls-remote` before starting. Do not put credentials in
