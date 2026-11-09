@@ -40,11 +40,35 @@ Each tile declares:
   Trailing parameter axes use `band`; integer flags can use `bitwise_and`.
   One-dimensional axes use `axis: "x"` or `axis: "y"`.
 - `bright_soil`: water-year -> field, with optional `index` for a stacked source.
-- `agriculture` and `coastal`: Boolean fields.
-- `frequency`: 12 monthly fields, optionally indexed in one file. These are the
+- `agriculture`: required Boolean field.
+- `coastal`: Boolean field required when `use_snow_climatology` is enabled.
+- `frequency`: 12 monthly fields, optionally indexed in one file, required when
+  `use_snow_climatology` is enabled. These are the
   target-WY-excluded frequencies for historical evaluation, fixed throughout the
   entire onset prefix. An operational stream retains its registered climatology
   across October 1; changing that science context is a separate revision.
+
+Set `use_snow_climatology` in the interpolation request (or the interpolation
+job's `request` in a unified workflow):
+
+```json
+"use_snow_climatology": false
+```
+
+The default is `true`; only JSON Booleans are accepted, not strings, numbers or
+`null`. Disabled mode fixes the onset frequency weight at one and removes the
+rare-snow veto. Canopy handling, playa/bright-soil and agriculture screening
+thresholds and onset floors, and the other cloud/SWIR screening remain unchanged.
+For valid canopy fraction `C`, onset uses `max(existing_floor, 0.2 * (1 - C))`.
+
+When disabled, `frequency` and `coastal` can be omitted. If supplied, planning
+removes those bindings from the effective request before resolving paths,
+inventorying files or checking dataset headers. They are not part of the saved
+scientific context or archived input assets; the source JSON is unchanged. This
+allows the switch to be flipped without deleting existing monthly mappings.
+Annual bright-soil and agricultural masks are still required. Initialization
+uses its own asset list: omit climatology assets from that job as well when
+configuring a workflow that must operate without the climatology product.
 
 The daily observation boundary is produced by
 `spires_interpolation.observations.prepare_viirs_observations` from retained inversion values,
@@ -56,7 +80,7 @@ scientific/cloud packages and registered explicitly.
 
 Always configure the complete donor domain when reproducing the evaluated
 five-tile workflow. Split WY2023-2026 into target-year requests with their own
-climatology context and output roots. All tiles require equivalent annual masks;
+climatology context (when enabled) and output roots. All tiles require equivalent annual masks;
 missing context fails preflight. R0 builders retain the maintained all-summer
 in-memory policy. Models, LUTs and ancillary assets are externally versioned data,
 not files to commit in this repository.
@@ -69,6 +93,17 @@ This is not a full pixel-content scan of every large input. Scientific asset
 provenance and source stream (`standard`, `nrt`, `mixed`) are explicit.
 
 ## Outputs and restart
+
+The resolved Boolean is recorded in the plan and inherited by NRT templates.
+Exported NetCDFs, including cumulative NRT products, record the global attribute
+`use_snow_climatology` as integer 0 or 1. The mode applies to every issue and is
+independent of `output_issues`.
+
+Changing modes requires replay from `history_start`; checkpoints from the other
+mode are rejected. Use separate output roots and registered streams for enabled
+and disabled comparisons. Omitted and explicit `true` preserve the current
+enabled scientific identity; older compatible enabled contexts represent it by
+the absence of the field. No checkpoint-layout change is required.
 
 All calendar date bounds are inclusive. `start == stop` selects one output day.
 For WY2026, use `start: "2025-10-01"`, `stop: "2026-09-30"`, and

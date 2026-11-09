@@ -327,7 +327,10 @@ def ledger_context(ledger, seed_plan=None):
         from spires_interpolation.algorithm import resolve_algorithm
 
         context = ledger["state_context"]
-        algorithm = resolve_algorithm(ledger["template"].get("algorithm", "viirs_snow"))
+        algorithm = resolve_algorithm(
+            ledger["template"].get("algorithm", "viirs_snow"),
+            use_snow_climatology=ledger["template"].get("use_snow_climatology", True),
+        )
         if (
             context.get("schema_version") != 2
             or context["fixed"].get("algorithm") != algorithm.compatibility()

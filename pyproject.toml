@@ -19,7 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest"]
 interpolation = [
-    "spires-interpolation[io,netcdf] @ git+https://github.com/RittgerLabGroup/spires-interpolation.git@2cca6e16d0f0c64db884557cc93647063ecaef90",
+    "spires-interpolation[io,netcdf] @ git+https://github.com/RittgerLabGroup/spires-interpolation.git@b7f3ecdf53228c9e3d73665670334ee61d286d43",
 ]
 science = [
     "spires-contract @ git+https://github.com/RittgerLabGroup/spires-contract.git@dda5155c9af5d4976d67de0fb6de1ff1d73d080d",

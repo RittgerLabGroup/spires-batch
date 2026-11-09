@@ -1006,6 +1006,7 @@
         "config_type": "interpolation",
         "schema_version": 1,
         "algorithm": "viirs_snow",
+        "use_snow_climatology": true,
         "history_start": "2025-10-01",
         "start": "2025-10-01",
         "stop": "2026-05-11",

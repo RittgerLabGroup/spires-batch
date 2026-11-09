@@ -41,6 +41,9 @@ def _write_product(
             future_days=ISSUE_AGES[issue],
             issue_schema=ISSUE_SCHEMA,
             donor_policy="screened_direct_observations",
+            use_snow_climatology=int(
+                ledger["template"].get("use_snow_climatology", True)
+            ),
             source_stream="per_day_inventory",
             available_through=ledger["available_through"],
             source_catalog_identity=identity,

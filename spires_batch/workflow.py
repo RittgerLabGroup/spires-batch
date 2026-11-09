@@ -349,6 +349,7 @@ def plan(config_path, destination, *, cycle_job=None, through=None):
 
             resolve_algorithm(
                 request.get("algorithm", "viirs_snow"),
+                use_snow_climatology=request.get("use_snow_climatology", True),
                 sensor=config.sensor,
                 platform=config.platform,
             )

@@ -583,12 +583,23 @@ Select exported NetCDF issues: all eight (0–7 future days), or only first/fina
 - all_issues
 - first_and_final_only
 
+### `interpolation.use_snow_climatology`
+
+Use monthly snow climatology for onset thresholds and the rare-snow veto. False fixes the frequency weight at one and bypasses that veto, retaining canopy rules and playa/bright-soil and agricultural thresholds/floors. Only JSON true/false are accepted. Applies to all issues; changing modes requires replay from history_start and compatible checkpoints.
+
+| Property | Value |
+| --- | --- |
+| `type` | boolean |
+| `required` | `false` |
+| `default` | `true` |
+
 ### `interpolation.notes`
 
 - history_start &lt;= start &lt;= stop &lt;= available_through; all calendar date bounds are inclusive.
 - Field paths resolve relative to request JSON; every calendar date must be present, with null only for a verified missing observation.
 - Controller-written state_context/state_identity are generated artifacts, not accepted initial request fields.
 - Earlier drafts used an exclusive stop: subtract one day from that stop and regenerate the plan to preserve the requested dates. Keep schema_version=1; other date fields do not change.
+- Planning records the resolved use_snow_climatology Boolean. Disabled requests discard frequency/coastal bindings before file inventory and header checks, leaving the source JSON unchanged. NRT inherits the mode; NetCDF attributes encode it as integer 0/1.
 
 ## Interpolation scheduler
 
@@ -766,25 +777,25 @@ Agricultural Boolean mask.
 
 ### `interpolation_tile.coastal`
 
-Explicit Boolean coastal mask controlling missing climatology treatment.
+Explicit Boolean coastal mask controlling missing climatology treatment. Required when use_snow_climatology is true (the default); optional and ignored when false.
 
 | Property | Value |
 | --- | --- |
 | `type` | mapped_field |
-| `required` | `true` |
+| `required` | `false` |
 
 ### `interpolation_tile.frequency`
 
-Exactly 12 monthly snow frequencies, January through December.
+Exactly 12 monthly snow frequencies, January through December. Required when use_snow_climatology is true (the default); optional and ignored when false.
 
 | Property | Value |
 | --- | --- |
 | `type` | array[mapped_field] |
-| `required` | `true` |
+| `required` | `false` |
 
 ### `interpolation_tile.notes`
 
-`[]` (empty list)
+- With use_snow_climatology enabled, both frequency and coastal are required. When disabled, neither binding participates in input inventory, scientific compatibility or worker reads. Annual bright_soil and agriculture remain required in both modes. Initialization asset lists are independent; omit climatology assets there for a workflow without that product.
 
 ## Prepared daily
 

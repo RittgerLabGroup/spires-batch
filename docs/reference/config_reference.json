@@ -3740,13 +3740,20 @@
             "first_and_final_only"
           ],
           "description": "Select exported NetCDF issues: all eight (0\u20137 future days), or only first/final (0/7). Every selected file contains all variables. Inherited by NRT cumulative tile/WY publication; donor eligibility and calculations are unchanged."
+        },
+        "use_snow_climatology": {
+          "type": "boolean",
+          "required": false,
+          "default": true,
+          "description": "Use monthly snow climatology for onset thresholds and the rare-snow veto. False fixes the frequency weight at one and bypasses that veto, retaining canopy rules and playa/bright-soil and agricultural thresholds/floors. Only JSON true/false are accepted. Applies to all issues; changing modes requires replay from history_start and compatible checkpoints."
         }
       },
       "notes": [
         "history_start <= start <= stop <= available_through; all calendar date bounds are inclusive.",
         "Field paths resolve relative to request JSON; every calendar date must be present, with null only for a verified missing observation.",
         "Controller-written state_context/state_identity are generated artifacts, not accepted initial request fields.",
-        "Earlier drafts used an exclusive stop: subtract one day from that stop and regenerate the plan to preserve the requested dates. Keep schema_version=1; other date fields do not change."
+        "Earlier drafts used an exclusive stop: subtract one day from that stop and regenerate the plan to preserve the requested dates. Keep schema_version=1; other date fields do not change.",
+        "Planning records the resolved use_snow_climatology Boolean. Disabled requests discard frequency/coastal bindings before file inventory and header checks, leaving the source JSON unchanged. NRT inherits the mode; NetCDF attributes encode it as integer 0/1."
       ]
     },
     "interpolation_scheduler": {
@@ -3849,16 +3856,18 @@
         },
         "coastal": {
           "type": "mapped_field",
-          "required": true,
-          "description": "Explicit Boolean coastal mask controlling missing climatology treatment."
+          "required": false,
+          "description": "Explicit Boolean coastal mask controlling missing climatology treatment. Required when use_snow_climatology is true (the default); optional and ignored when false."
         },
         "frequency": {
           "type": "array[mapped_field]",
-          "required": true,
-          "description": "Exactly 12 monthly snow frequencies, January through December."
+          "required": false,
+          "description": "Exactly 12 monthly snow frequencies, January through December. Required when use_snow_climatology is true (the default); optional and ignored when false."
         }
       },
-      "notes": []
+      "notes": [
+        "With use_snow_climatology enabled, both frequency and coastal are required. When disabled, neither binding participates in input inventory, scientific compatibility or worker reads. Annual bright_soil and agriculture remain required in both modes. Initialization asset lists are independent; omit climatology assets there for a workflow without that product."
+      ]
     },
     "prepared_daily": {
       "source": "spires_interpolation.raster_io.DAILY_FIELDS",
@@ -4731,7 +4740,7 @@
     "All public configurations require config_type and schema_version. All kinds use draft version 1 with inclusive calendar bounds. To preserve an earlier draft historical/interpolation range with an exclusive stop, subtract one day from that stop and regenerate the plan; keep version 1. Unsupported/missing headers are rejected; no implicit migration occurs. Saved-plan/checkpoint formats and scientific component versions are separate contracts.",
     "Planning a universal workflow does not download or compute; nrt cycle without --execute DOES acquire, prepare clouds and retrieve before stopping at the revision plan.",
     "JSON has no comments. Do not paste this reference's description/type/default wrappers into a runnable request.",
-    "Scientific recipe constants are not user-adjustable JSON options. Only evaluated NOAA-20 viirs_snow interpolation is enabled.",
+    "Scientific recipe constants are not user-adjustable JSON options. NOAA-20 viirs_snow supports the Boolean use_snow_climatology option (default true); disabled mode fixes onset frequency weight at one and removes the rare-snow veto. Switching modes requires replay with compatible state.",
     "R0 loads every summer scene for a tile/year into RAM; zarr_path, zarr_mode and chunks are rejected.",
     "Full-history NRT replay stops with status 3 and a transfer-size report instead of silently staging all history.",
     "Use exclusive full-node blanca-snow allocations for high-memory R0; other work uses blanca-snow/blanca-rittger and approved preemptable overflow with the verified exclusion list.",

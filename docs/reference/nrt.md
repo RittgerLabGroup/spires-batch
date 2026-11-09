@@ -143,7 +143,15 @@ The observation policy must equal the historical plan's
 Models, annual masks, climatology, backgrounds and grid context are versioned
 scientific inputs. Missing annual assets or incompatible contexts fail explicitly;
 this implementation does not invent a WY2027 mask/R0 or silently reuse a different
-climatology.
+climatology when it is enabled.
+
+The stream inherits `use_snow_climatology` from its historical interpolation
+request; omission means `true`. Disabled streams retain no frequency/coastal
+input bindings and do not require climatology assets. Changing the mode requires
+replaying history from `history_start` and registering the resulting compatible
+history in a separate stream. Editing a template does not make checkpoints from
+the other mode compatible. Cumulative NetCDF products record the resolved mode
+in the integer global attribute `use_snow_climatology` (0 or 1).
 
 ## Continuous history across October 1
 
@@ -170,8 +178,8 @@ These entries supplement the ledger's existing masks; replacing an existing
 binding or changing its file is rejected. Standalone `nrt plan` accepts the same
 tile/year mapping via `--annual-bright-soil FILE`. Cycle mask paths are relative
 to the cycle configuration; standalone mappings use the current working directory.
-Missing annual assets fail explicitly. The registered monthly climatology stays
-fixed across the transition.
+Missing annual assets fail explicitly. When enabled, the registered monthly
+climatology stays fixed across the transition; disabled streams remain disabled.
 
 Streams must be bootstrapped from current scientific plans/checkpoints. Their
 internal format identifier is 2, independently of the public configuration

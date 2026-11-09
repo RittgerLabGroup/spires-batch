@@ -8,6 +8,14 @@ these commands are for an independent interpolation run.
 
 Set the dates, tile domain, native-library paths, ancillary fields, albedo LUT and
 output destination. Keep `scheduler_policy.json` beside the request.
+The example explicitly sets `use_snow_climatology: true`. Set it to `false` to
+hold the onset frequency weight at one and remove the rare-snow veto while
+retaining playa/bright-soil and agricultural thresholds. Disabled runs need no
+`frequency` or `coastal` fields; existing bindings are ignored and omitted from
+the effective plan. In a unified workflow, this option belongs in the
+interpolation job's `request`. Also omit climatology assets from initialization
+if those files will be unavailable. Use a separate output root and replay from
+`history_start` when changing modes; the other mode's checkpoints cannot be reused.
 The example ends May 11, 2026 and excludes May 12–18 even from historical
 look-ahead; those dates are reserved for NRT continuation.
 

@@ -125,12 +125,15 @@ def build_reference():
         },
         "daily_request_guidance": daily,
         "interfaces": interfaces,
-        "fixed_scientific_recipe_not_user_options": asdict(VIIRS_SNOW),
+        "fixed_scientific_recipe_not_user_options": {
+            key: value for key, value in asdict(VIIRS_SNOW).items()
+            if key != "use_snow_climatology"
+        },
         "safety": [
             "All public configurations require config_type and schema_version. All kinds use draft version 1 with inclusive calendar bounds. To preserve an earlier draft historical/interpolation range with an exclusive stop, subtract one day from that stop and regenerate the plan; keep version 1. Unsupported/missing headers are rejected; no implicit migration occurs. Saved-plan/checkpoint formats and scientific component versions are separate contracts.",
             "Planning a universal workflow does not download or compute; nrt cycle without --execute DOES acquire, prepare clouds and retrieve before stopping at the revision plan.",
             "JSON has no comments. Do not paste this reference's description/type/default wrappers into a runnable request.",
-            "Scientific recipe constants are not user-adjustable JSON options. Only evaluated NOAA-20 viirs_snow interpolation is enabled.",
+            "Scientific recipe constants are not user-adjustable JSON options. NOAA-20 viirs_snow supports the Boolean use_snow_climatology option (default true); disabled mode fixes onset frequency weight at one and removes the rare-snow veto. Switching modes requires replay with compatible state.",
             "R0 loads every summer scene for a tile/year into RAM; zarr_path, zarr_mode and chunks are rejected.",
             "Full-history NRT replay stops with status 3 and a transfer-size report instead of silently staging all history.",
             "Use exclusive full-node blanca-snow allocations for high-memory R0; other work uses blanca-snow/blanca-rittger and approved preemptable overflow with the verified exclusion list.",

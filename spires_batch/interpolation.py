@@ -59,7 +59,10 @@ def state_context(request, inputs):
     paths = {r["path"] for r in mapped_fields(context)}
     from spires_interpolation.algorithm import resolve_algorithm
 
-    algorithm = resolve_algorithm(request.get("algorithm", "viirs_snow"))
+    algorithm = resolve_algorithm(
+        request.get("algorithm", "viirs_snow"),
+        use_snow_climatology=request.get("use_snow_climatology", True),
+    )
     fixed = dict(
         algorithm=algorithm.compatibility(),
         history_start=request["history_start"],
@@ -150,6 +153,7 @@ def plan(config, destination, *, header_cache=None):
     }
     optional = {
         "algorithm",
+        "use_snow_climatology",
         "stripe_rows",
         "source_stream",
         "output_issues",
@@ -162,6 +166,38 @@ def plan(config, destination, *, header_cache=None):
         or set(request) - required - optional
     ):
         raise ValueError("Invalid interpolation request fields/schema")
+    from spires_interpolation.algorithm import resolve_algorithm
+
+    algorithm = resolve_algorithm(
+        request.get("algorithm", "viirs_snow"),
+        use_snow_climatology=request.setdefault("use_snow_climatology", True),
+    )
+    # Normalize before resolving or inventorying mapped paths. Disabled inputs
+    # may remain in the operator's JSON, but are not part of the effective plan.
+    tile_required = {"daily", "terrain", "bright_soil", "agriculture"}
+    climatology_fields = {"frequency", "coastal"}
+    for tile, fields in request["tiles"].items():
+        if (
+            tile_required - set(fields)
+            or set(fields) - tile_required - climatology_fields
+        ):
+            raise ValueError(f"Incomplete or unknown tile context: {tile}")
+        if algorithm.use_snow_climatology:
+            if (
+                climatology_fields - set(fields)
+                or not isinstance(fields["frequency"], list)
+                or len(fields["frequency"]) != 12
+                or not isinstance(fields["coastal"], dict)
+            ):
+                raise ValueError(
+                    f"Enabled snow climatology requires 12 monthly fields and coastal: {tile}"
+                )
+            for field in [*fields["frequency"], fields["coastal"]]:
+                if not isinstance(field, dict) or not {"path", "dataset"} <= set(field):
+                    raise ValueError(f"Invalid snow climatology field mapping: {tile}")
+        else:
+            for name in climatology_fields:
+                fields.pop(name, None)
     if request.get("source_stream", "standard") not in ("standard", "nrt", "mixed"):
         raise ValueError("Invalid source stream")
     from spires_interpolation.issues import selected_issue_indices
@@ -203,19 +239,6 @@ def plan(config, destination, *, header_cache=None):
 
     request["scheduler"] = resolve_interpolation_scheduler(request["scheduler"], config.parent)
     for tile, t in request["tiles"].items():
-        if (
-            set(t)
-            != {
-                "daily",
-                "terrain",
-                "bright_soil",
-                "agriculture",
-                "coastal",
-                "frequency",
-            }
-            or len(t["frequency"]) != 12
-        ):
-            raise ValueError(f"Incomplete tile context: {tile}")
         if set(t["terrain"]) != {"x", "y", "dem", "slope", "aspect", "canopy_fraction"}:
             raise ValueError("Incomplete terrain")
         for day in np.arange(start if "seed" in request else history, available + 1):
@@ -386,7 +409,8 @@ def load_plan(path, *, compatible_state=False):
     from spires_interpolation.algorithm import resolve_algorithm
 
     expected = resolve_algorithm(
-        p["request"].get("algorithm", "viirs_snow")
+        p["request"].get("algorithm", "viirs_snow"),
+        use_snow_climatology=p["request"].get("use_snow_climatology", True),
     ).compatibility()
     if p["request"]["state_context"]["fixed"]["algorithm"] != expected:
         raise ValueError(
@@ -572,6 +596,7 @@ def export_tile(plan, tile):
                         donor_policy="screened_direct_observations",
                         available_through=r["available_through"],
                         output_issues=r.get("output_issues", "all_issues"),
+                        use_snow_climatology=int(r.get("use_snow_climatology", True)),
                         source_stream=r.get("source_stream", "standard"),
                         plan_identity=identity,
                         asset_provenance=json.dumps(
