@@ -43,7 +43,7 @@
       "repository": "https://github.com/RittgerLabGroup/spires-postprocess.git"
     },
     "spires-interpolation": {
-      "commit": "2cca6e16d0f0c64db884557cc93647063ecaef90",
+      "commit": "b7f3ecdf53228c9e3d73665670334ee61d286d43",
       "groups": [
         "runtime"
       ],
@@ -54,7 +54,7 @@
       "repository": "https://github.com/RittgerLabGroup/spires-interpolation.git"
     },
     "spires-batch": {
-      "commit": "9bfdf85b3a2a1aa7bcc725bcd262f91e2f912474",
+      "commit": "c26fffeb1cf4cee35f0dbab56dff86eeb47366e8",
       "groups": [
         "runtime"
       ],
@@ -84,7 +84,7 @@
     "existing_tests_passed": 13,
     "existing_tests_skipped": 0,
     "test_scope": "Existing inversion contract-boundary checks against the installed native extension",
-    "clean_install_validated": true,
+    "clean_install_validated": false,
     "historical_and_nrt_acceptance_validated": false,
     "lut_build_validated": false,
     "standalone_cloud_preparation": {
@@ -106,7 +106,34 @@
         "all_issues",
         "first_and_final_only"
       ],
-      "scope": "Installed native libraries, all output variables and masks, inclusive bounds, NRT bootstrap and append; not full-grid acceptance."
+      "scope": "Installed native libraries, all output variables and masks, inclusive bounds, NRT bootstrap and append; not full-grid acceptance.",
+      "source_commits": {
+        "spires-interpolation": "2cca6e16d0f0c64db884557cc93647063ecaef90",
+        "spires-batch": "9bfdf85b3a2a1aa7bcc725bcd262f91e2f912474"
+      }
+    },
+    "previous_installation_source_commits": {
+      "spires-interpolation": "2cca6e16d0f0c64db884557cc93647063ecaef90",
+      "spires-batch": "9bfdf85b3a2a1aa7bcc725bcd262f91e2f912474"
+    },
+    "clean_install_note": "The installation report describes the previous source commits above. The optional-climatology candidate has lightweight worktree validation only; its new pins have not been installed into a fresh or operational environment.",
+    "optional_snow_climatology": {
+      "validated": true,
+      "environment": "spipy14; isolated worktrees; temporary synthetic HDF5 and NetCDF inputs",
+      "source_commits": {
+        "spires-interpolation": "b7f3ecdf53228c9e3d73665670334ee61d286d43",
+        "spires-batch": "c26fffeb1cf4cee35f0dbab56dff86eeb47366e8"
+      },
+      "checks": [
+        "Strict Boolean handling and omitted/explicit-true equivalence",
+        "Disabled frequency weight of one and removal of the rare-snow veto",
+        "Unchanged playa/agriculture thresholds and onset state transitions",
+        "Planning with omitted or unavailable climatology; source JSON preserved",
+        "Same-mode checkpoint planning accepted and cross-mode reuse rejected; NRT recipe compatibility",
+        "Historical and cumulative NRT NetCDF mode provenance for both modes and both output-issue selections",
+        "Generated configuration references, workflow example and Git whitespace checks"
+      ],
+      "scope": "Lightweight synthetic checks only. Planner checks stubbed unchanged native-library initialization and scheduler resolution. No production replay, new native-kernel validation, scientific baseline, or fresh installation was performed."
     }
   },
   "release_blockers": [
