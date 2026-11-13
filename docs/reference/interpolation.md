@@ -128,7 +128,9 @@ Set `output_issues` in the interpolation configuration (or the interpolation job
 
 `all_issues` (the default) writes `first.nc`, `second.nc`, `third.nc`, `fourth.nc`,
 `fifth.nc`, `sixth.nc`, `seventh.nc`, and `final.nc`. Use
-`"output_issues": "first_and_final_only"` to write only `first.nc` and `final.nc`.
+`"output_issues": "first_and_final_only"` to write only `first.nc` and `final.nc`,
+or `"output_issues": "final_only"` to write only `final.nc`.
+Restart checkpoints are retained in every mode.
 This controls output files, not the calculations or donor eligibility.
 Every selected file contains the full set of variables: fSCA and viewable fSCA,
 grain radius, dust, both albedos, source codes, observation ages, donor diagnostics,
@@ -141,6 +143,15 @@ it never contains partially matured dates. Metadata records `issue`, `issue_numb
 (1–8), `future_days` (0–7), and the fixed direct-observation donor policy.
 The registered NRT stream inherits `output_issues` and publishes cumulative
 tile/WY files as described in [NRT publication](nrt.md).
+
+The exporter uses full-width storage chunks (up to 8 days × 20 rows × tile width),
+a 4 MiB cache per variable/file, and transfers up to 223 days at a time within a
+512 MiB array budget. Longer intervals are split automatically. Lossless zlib
+level 2 and shuffle remain enabled. On the h10v04 benchmark this combination
+reduced median eight-file export time by about 67%, with about 10% larger files;
+shared-filesystem load affects timings. These settings apply to historical and
+NRT replay-interval exports. Cumulative NRT snapshots retain their separate
+incremental copy/update layout.
 
 Rebuild the snow native library for ABI version 2 before running this code.
 The eight-issue layout has issue schema 2. Old two-issue plans/checkpoints require

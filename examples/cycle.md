@@ -28,6 +28,12 @@ Obtain a suitable Slurm/Blanca allocation using your site's approved submission
 method and the resolved resources. If you want batch to submit that allocation,
 use the unified workflow's `workflow cycle` command instead.
 
+The five-tile profile starts with 16 CPUs and 96 GiB for parallel interpolation.
+Workers are bounded by the allocation and the historical stream's per-stage
+resource budgets. Optional `revision_concurrency` limits workers within a stage;
+see [execution and publication details](../docs/reference/nrt.md#parallel-revision-execution).
+The 16 GiB preparation budget is a separate limit for cloud/retrieval work.
+
 ## 3. Execute inside that allocation
 
 Use a new directory for this update:
@@ -52,6 +58,12 @@ spires-batch nrt storage-report --root "$STREAM_ROOT"
 Check receipts, generation, maps and first/final cutoffs. After the May 18
 continuation, the expected cutoffs are May 18/May 11. Full-history replay exits
 with a transfer-size report; stop and diagnose rather than bypassing it.
+
+Inspect `revision/execution-metrics.json` for actual stage worker counts and
+durations. Cumulative publication copies unchanged history into an unpublished
+generation and updates its suffix. Existing fixed-time products are converted
+once; the generation's `publication-metrics.json` distinguishes conversion,
+copy/update, unchanged-file reuse and a full rebuild.
 
 See [routine NRT operations](../docs/nrt-operations.md). No example creates cron
 entries or enables a recurring service.

@@ -102,8 +102,10 @@ still stops with its transfer-size report instead of copying everything silently
 
 The interpolation job's `request.output_issues` defaults to `all_issues`: six
 intermediate NetCDFs fill the daily cutoffs between first and final. Set
-`first_and_final_only` to write only those two files. NRT inherits this setting
-and publishes cumulative tile/WY files containing every output variable.
+`first_and_final_only` to write only those two files, or `final_only` to write
+only the final issue (all variables, available through seven days before the
+input availability date). Checkpoints are retained in all modes. NRT inherits
+this setting and publishes cumulative tile/WY files containing every output variable.
 
 ## 5. Submit another NRT update from the same JSON
 

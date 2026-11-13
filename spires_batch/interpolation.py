@@ -559,12 +559,12 @@ def export_tile(plan, tile):
                         complevel=2,
                         shuffle=True,
                         chunksizes=(
-                            max(1, min(8, count)), min(20, height), min(240, width)
+                            max(1, min(8, count)), min(20, height), width
                         ),
                     )
-                    # Eight files times all variables must not multiply 64-MiB
-                    # default caches beyond the export allocation.
-                    v.set_var_chunk_cache(size=1024**2, nelems=1009, preemption=0.75)
+                    # Full-width chunks reduce chunk lookups and small writes.
+                    # Bound each cache across all selected files and variables.
+                    v.set_var_chunk_cache(size=4 * 1024**2, nelems=1009, preemption=0.75)
                     v.grid_mapping = "crs"
                     v.long_name = name.replace("_", " ")
                     v.units = (
@@ -606,7 +606,8 @@ def export_tile(plan, tile):
                 )
                 artifacts[ISSUE_NAMES[issue]] = path
             copy_stripes(
-                stripes, outputs, variables=variables, max_array_bytes=128 * 1024**2
+                stripes, outputs, variables=variables,
+                max_array_bytes=512 * 1024**2, time_block=223,
             )
         with h5py.File(folder / "checkpoints.h5", "w") as h:
             for i, (_, path) in enumerate(stripes):

@@ -570,7 +570,7 @@ Controller-assigned stream root during incremental operation.
 
 ### `interpolation.output_issues`
 
-Select exported NetCDF issues: all eight (0–7 future days), or only first/final (0/7). Every selected file contains all variables. Inherited by NRT cumulative tile/WY publication; donor eligibility and calculations are unchanged.
+Select exported NetCDF issues: all eight (0–7 future days), first/final (0/7), or final only (7). Every selected file contains all variables. Inherited by NRT cumulative tile/WY publication; donor eligibility, calculations and restart checkpoints are unchanged.
 
 | Property | Value |
 | --- | --- |
@@ -582,6 +582,7 @@ Select exported NetCDF issues: all eight (0–7 future days), or only first/fina
 
 - all_issues
 - first_and_final_only
+- final_only
 
 ### `interpolation.use_snow_climatology`
 

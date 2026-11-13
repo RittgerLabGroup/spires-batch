@@ -1,6 +1,9 @@
 """Immutable, cumulative tile/water-year NetCDF issue products for NRT commits."""
 
 from pathlib import Path
+import shutil
+import time
+import json
 
 import numpy as np
 
@@ -18,7 +21,7 @@ def _water_year(day):
     return int(day[:4]) + (day[5:7] >= "10")
 
 
-def _write_product(
+def _create_product(
     path, template, dates, records, *, tile, year, issue, identity, ledger
 ):
     """Stream contiguous source intervals with bounded raster memory/file handles."""
@@ -28,7 +31,7 @@ def _write_product(
         source.set_auto_maskandscale(False)
         height, width = (len(source.dimensions[k]) for k in ("y", "x"))
         for name, count in (("time", len(dates)), ("y", height), ("x", width)):
-            out.createDimension(name, count)
+            out.createDimension(name, None if name == "time" else count)
         attributes = {k: source.getncattr(k) for k in source.ncattrs()}
         # A cumulative product can contain many plans and both NRT/standard inputs.
         attributes.pop("plan_identity", None)
@@ -46,6 +49,7 @@ def _write_product(
             ),
             source_stream="per_day_inventory",
             available_through=ledger["available_through"],
+            output_issues=ledger["template"].get("output_issues", "all_issues"),
             source_catalog_identity=identity,
             provenance=(
                 "Generation ledger.json and its monthly catalogs identify each source date and plan"
@@ -65,7 +69,7 @@ def _write_product(
                     complevel=2,
                     shuffle=True,
                     chunksizes=(
-                        max(1, min(8, len(dates))), min(20, height), min(240, width)
+                        8, min(20, height), min(240, width)
                     ),
                 )
             elif var.dimensions not in ((), ("time",), ("y",), ("x",)):
@@ -82,7 +86,17 @@ def _write_product(
         if not raster_names:
             raise ValueError("An issue product must contain raster variables")
 
-        begin = 0
+    return raster_names, height, width, attributes
+
+
+def _copy_dates(path, dates, records, begin_day, *, tile, issue, raster_names, height, width):
+    import netCDF4
+
+    with netCDF4.Dataset(path, "r+") as out:
+        out.set_auto_maskandscale(False)
+        for name in raster_names:
+            out[name].set_var_chunk_cache(size=1024**2, nelems=1009, preemption=0.75)
+        begin = begin_day
         while begin < len(records):
             record = records[begin]
             end = begin + 1
@@ -142,13 +156,107 @@ def _write_product(
             raise ValueError("Incomplete cumulative issue product")
 
 
-def publish_issue_products(folder, ledger, store):
+def _compressed_prefix(source_path, destination, days, variables):
+    """Convert legacy fixed-time history without decoding complete prefix chunks.
+
+    NetCDF creates the dimensions/scales/metadata; HDF5 transfers only raw chunks
+    between identical dtype/filter/chunk layouts. Partial time chunks are handled
+    by the ordinary NetCDF writer. Source files are always opened read-only.
+    """
+    import h5py
+
+    def filters(dataset):
+        properties = dataset.id.get_create_plist()
+        return [properties.get_filter(i) for i in range(properties.get_nfilters())]
+
+    with h5py.File(source_path, "r") as source, h5py.File(destination, "r+") as out:
+        for name in variables:
+            a, b = source[name], out[name]
+            if (a.dtype != b.dtype or a.chunks != b.chunks or a.chunks is None
+                    or filters(a) != filters(b)
+                    or not np.array_equal(a.fillvalue, b.fillvalue, equal_nan=True)):
+                return 0, 0
+        time_chunks = {source[name].chunks[0] for name in variables}
+        if len(time_chunks) != 1:
+            return 0, 0
+        copied = days // next(iter(time_chunks)) * next(iter(time_chunks))
+        byte_count = 0
+        for name in variables:
+            a, b = source[name], out[name]
+            b.resize((len(out["time"]), *a.shape[1:]))
+            nt, ny, nx = a.chunks
+            for t in range(0, copied, nt):
+                for y in range(0, a.shape[1], ny):
+                    for x in range(0, a.shape[2], nx):
+                        offset = (t, y, x)
+                        if a.id.get_chunk_info_by_coord(offset).size == 0:
+                            continue  # Equal fill values; preserve unallocated chunks.
+                        mask, data = a.id.read_direct_chunk(offset)
+                        b.id.write_direct_chunk(offset, data, filter_mask=mask)
+                        byte_count += len(data)
+    return copied, byte_count
+
+
+def _write_product(path, template, dates, records, *, tile, year, issue, identity, ledger,
+                   prior=None, reuse_days=0):
+    """Copy immutable history once and write only the changed/appended suffix."""
+    import netCDF4
+
+    began = time.perf_counter()
+    names, height, width, attributes = _create_product(
+        path, template, dates, records, tile=tile, year=year, issue=issue,
+        identity=identity, ledger=ledger)
+    metrics = dict(mode="rebuild", unchanged_days=reuse_days, reused_days=0, raw_chunk_bytes=0)
+    begin = 0
+    if prior is not None and reuse_days:
+        previous = checked(prior["file"])
+        with netCDF4.Dataset(previous) as old:
+            old.set_auto_maskandscale(False)
+            if (old.getncattr("source_catalog_identity") != prior["source_identity"]
+                    or old.getncattr("tile") != tile or old.getncattr("issue") != ISSUE_NAMES[issue]
+                    or old.getncattr("issue_schema") != ISSUE_SCHEMA
+                    or set(old.variables) != set(names) | {"time", "x", "y", "crs"}
+                    or not 0 <= reuse_days <= len(old.dimensions["time"])
+                    or len(old.dimensions["time"]) > len(dates)
+                    or not np.array_equal(old["time"][:], dates[:len(old.dimensions["time"])].astype("i8"))):
+                raise ValueError("Previous cumulative product differs from its committed catalog")
+            with netCDF4.Dataset(path) as target:
+                if any(not np.array_equal(old[k][:], target[k][:]) for k in ("x", "y")):
+                    raise ValueError("Previous cumulative grid changed")
+                for name in names:
+                    if old[name].dtype != target[name].dtype or old[name].dimensions != target[name].dimensions:
+                        raise ValueError("Previous cumulative variable schema changed")
+            extendable = old.dimensions["time"].isunlimited()
+        copied = time.perf_counter()
+        if extendable:
+            # Never link a prior generation that will be modified in place.
+            shutil.copyfile(previous, path)
+            begin = reuse_days
+            metrics["mode"] = "copy_and_update"
+        else:
+            begin, metrics["raw_chunk_bytes"] = _compressed_prefix(previous, path, reuse_days, names)
+            metrics["mode"] = "convert_fixed_time" if begin else "rebuild"
+        metrics["history_copy_seconds"] = time.perf_counter() - copied
+        with netCDF4.Dataset(path, "r+") as out:
+            out.setncatts(attributes)
+            out["time"][:] = dates.astype("i8")
+    metrics["reused_days"] = begin
+    updated = time.perf_counter()
+    _copy_dates(path, dates, records, begin, tile=tile, issue=issue,
+                raster_names=names, height=height, width=width)
+    metrics.update(updated_days=len(dates) - begin, update_seconds=time.perf_counter() - updated,
+                   seconds=time.perf_counter() - began)
+    return metrics
+
+
+def publish_issue_products(folder, ledger, store, *, previous_history=None, templates=None):
     """Build selected products per tile/WY; reuse unchanged immutable products.
 
     Replay interval files remain the authoritative per-day sources in the ledger.
     This materializes their latest committed values as standalone cumulative files.
     Empty (not yet mature) issues retain the same variable schema. Catalog metadata
     is expanded here, but source rasters are read only in bounded blocks.
+    Per-tile templates supply that schema when no selected issue has matured yet.
     """
     if "product_start" not in ledger:
         raise ValueError("Eight-issue NRT products require a new historical bootstrap")
@@ -159,10 +267,10 @@ def publish_issue_products(folder, ledger, store):
         ledger["template"].get("output_issues", "all_issues")
     )
     outputs, saved = {}, {}
+    metrics = {}
     for tile in sorted(ledger["template"]["tiles"]):
         for year in range(_water_year(start), _water_year(through) + 1):
             first = max(start, f"{year - 1}-10-01")
-            template = checked(history[f"{tile}/{first}/first"]["file"])
             for issue in selected:
                 name, age = ISSUE_NAMES[issue], ISSUE_AGES[issue]
                 stop = min(
@@ -187,12 +295,36 @@ def publish_issue_products(folder, ledger, store):
                 if prior is not None and prior["source_identity"] == identity:
                     link_or_copy(checked(prior["file"]), path)
                     record = prior["file"]
+                    metrics[key] = dict(mode="unchanged", reused_days=len(dates), updated_days=0)
                 else:
-                    _write_product(
+                    if records:
+                        template_record = records[0]["file"]
+                    elif templates and tile in templates:
+                        template_record = templates[tile]
+                    elif prior is not None:
+                        template_record = prior["file"]
+                    else:
+                        # Compatibility for callers with another mature issue
+                        # in the catalog, but no explicit empty-file template.
+                        entry = next((v for k, v in history.items()
+                                      if k.startswith(tile + "/")), None)
+                        if entry is None:
+                            raise ValueError(f"No cumulative product template for {tile}")
+                        template_record = entry["file"]
+                    template = checked(template_record)
+                    reuse_days = 0
+                    if prior is not None and previous_history is not None:
+                        for day, rec in zip(dates, records):
+                            if previous_history.get(f"{tile}/{day}/{name}") != rec:
+                                break
+                            reuse_days += 1
+                    metrics[key] = _write_product(
                         path, template, dates, records,
                         tile=tile, year=year, issue=issue, identity=identity, ledger=ledger,
+                        prior=prior, reuse_days=reuse_days,
                     )
                     record = store.put(path, "products")
+                (Path(folder) / "publication-metrics.json").write_text(json.dumps(metrics, indent=2) + "\n")
                 outputs[f"product_{tile}_WY{year}_{name}"] = path
                 saved[key] = dict(file=record, source_identity=identity)
     return outputs, saved

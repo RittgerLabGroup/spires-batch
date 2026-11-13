@@ -269,6 +269,7 @@ def _verify_interpolation(plan_path, stage, indices):
     from .interpolation import load_plan as load_interpolation
     from spires_interpolation.raster_io import screen_path, spatial_path, property_path, output_is_complete
     from spires_interpolation.publication import current_generation, artifact_paths
+    from spires_interpolation.issues import ISSUE_NAMES, selected_issue_indices
 
     plan = load_interpolation(plan_path)
     request = plan["request"]
@@ -280,7 +281,11 @@ def _verify_interpolation(plan_path, stage, indices):
             if generation is None or generation["request"] != dict(plan=plan["identity"], tile=task["tile"]):
                 raise ValueError("Interpolation publication belongs to a different plan")
             artifacts = artifact_paths(root, generation)
-            if not {"first", "checkpoints"}.issubset(artifacts):
+            expected = {"checkpoints"} | {
+                ISSUE_NAMES[i]
+                for i in selected_issue_indices(request.get("output_issues", "all_issues"))
+            }
+            if not expected.issubset(artifacts):
                 raise ValueError("Interpolation publication lacks products/checkpoints")
             continue
         paths = ([spatial_path(request, tile, task["day"]) for tile in request["tiles"]]

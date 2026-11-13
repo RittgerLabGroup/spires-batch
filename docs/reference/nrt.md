@@ -39,9 +39,13 @@ all tile checkpoints and cumulative tile/WY NetCDFs. Consumers resolve that poin
 once. Artifact names are `product_<tile>_WY<year>_<issue>` and files are
 `<tile>_WY<year>_<issue>.nc`. With `output_issues: all_issues` in the registered
 interpolation configuration, all eight files contain all variables. With
-`first_and_final_only`, only the first and final files are written. The setting is
-inherited by subsequent updates. Enabling missing intermediate history in an
-existing first/final stream requires a historical replay and new bootstrap.
+`first_and_final_only`, only the first and final files are written. With
+`final_only`, only `<tile>_WY<year>_final.nc` is written, with every output variable
+and the same restart checkpoints. Set `output_issues` in the historical
+interpolation request (`jobs.interpolate.request.output_issues` in the unified
+workflow) before bootstrap; subsequent NRT updates inherit it from the registered
+stream. It is not a per-cycle override. Adding issues absent from an existing
+stream requires a historical replay and new bootstrap.
 
 Each cumulative product begins at October 1 (or the historical output start) and
 ends at the earlier of September 30 and current availability minus its issue age.
@@ -51,7 +55,8 @@ Replacement observations revise affected dates in the new generation while old
 generations retain the as-issued values. Unchanged cumulative files are reused;
 changed files are rewritten with bounded memory. This adds full-file I/O and
 archive storage for each changed cumulative snapshot, in addition to the interval
-products. Select first/final only when intermediate files are not needed.
+products. Select `first_and_final_only` when intermediate issues are not needed,
+or `final_only` when only the seven-day-matured product is needed.
 
 The ledger's `issue_products` map also records durable archive copies of these
 cumulative files. Its `products`
@@ -137,6 +142,48 @@ This total already includes cloud inference and coordinator overhead; nothing
 is added or multiplied. JSON validates the allocation but does not resize it.
 The concurrent winter pilot peaked at 9.43 GiB; contrasting dates are being
 validated before expanding the campaign at this lower reservation.
+
+### Parallel revision execution
+
+`cycle --execute` runs independent screening stripes, spatial dates, property
+stripes and tile exports in separate worker processes. Each stage finishes
+successfully before the next stage begins. The worker count is bounded by the
+actual `SLURM_CPUS_PER_TASK` and memory allocation, each registered stage's CPU
+and memory request, and its scheduler concurrency cap. Spatial workers retain
+their configured native thread count; two GiB are reserved for the coordinator.
+The scheduler's array concurrency never overrides this allocation budget.
+An allocation that cannot fit one worker fails before acquisition/preparation.
+
+Optional `revision_concurrency` in the cycle JSON sets lower worker ceilings:
+
+```json
+"revision_concurrency": {"screen": 12, "spatial": 4, "properties": 10, "export": 2}
+```
+
+These are ceilings, not additional CPU reservations. Increasing them cannot
+enlarge a Slurm allocation. The example `nrt_five_tiles` profile now requests
+16 CPUs and 96 GiB as a starting budget for full-grid acceptance. Its stream
+concurrency remains one. The 16 GiB preparation measurement above applies to
+preparation only. Each revision saves worker counts and stage durations in
+`revision/execution-metrics.json`. Failed tasks prevent later stages/publication;
+completed stripe artifacts remain reusable by a retry of the identical plan.
+
+### Incremental cumulative NetCDF publication
+
+New cumulative issue files have an unlimited time dimension. When the source
+records for a historical prefix are unchanged, publication copies the previous
+immutable file into the new generation, then rewrites the changed suffix and
+appends new dates. It does not decompress and recompress the unchanged prefix.
+File copying and durable archival still incur I/O; this is not a zero-copy update.
+
+Older fixed-time files are converted once. Complete unchanged chunks are copied
+in compressed form when dtype, chunk shape, filters and fill values match.
+Partial boundary chunks and revised dates use the regular NetCDF writer. An
+incompatible chunk layout falls back to a bounded rebuild. Subsequent updates
+use the extendable-file copy/update path. Standalone files, all variables, issue
+cutoffs and the atomic whole-domain publication contract are preserved. The old
+generation is never modified or hard-linked into a writable update. Per-product
+reuse counts and timings are saved in the generation's `publication-metrics.json`.
 
 The observation policy must equal the historical plan's
 `asset_provenance.observation_policy` and include the cloud model manifest SHA256.

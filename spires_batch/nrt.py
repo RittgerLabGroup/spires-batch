@@ -220,6 +220,7 @@ def _bootstrap(historical_plan, inventory, root):
                 raise ValueError("Historical source identity mismatch")
     products = {}
     checkpoints = {}
+    product_templates = {}
     for tile in tiles:
         folder = Path(r["output"]) / "products" / tile
         generation = current_generation(folder)
@@ -236,6 +237,7 @@ def _bootstrap(historical_plan, inventory, root):
         ]
         if not set(issues).issubset(paths):
             raise ValueError("Bootstrap requires the configured issue products; replay older history")
+        product_templates[tile] = file_record(paths[issues[0]])
         for issue in issues:
             if issue in paths:
                 import netCDF4
@@ -297,6 +299,7 @@ def _bootstrap(historical_plan, inventory, root):
         root,
         ledger,
         checkpoints,
+        product_templates=product_templates,
         expected_parent=None,
         identity=dict(bootstrap=p["identity"], inventory=digest(inventory)),
     )
@@ -519,7 +522,7 @@ def _plan_update(
     return update
 
 
-def commit(root, ledger, checkpoints, *, expected_parent, identity):
+def commit(root, ledger, checkpoints, *, expected_parent, identity, product_templates=None):
     from spires_interpolation.publication import (
         publish_generation,
         current_generation,
@@ -534,6 +537,14 @@ def commit(root, ledger, checkpoints, *, expected_parent, identity):
         return dict(previous, reused=True)
     ledger = archive_ledger(root, ledger)
     store = Store(root)
+    previous_history = None
+    if previous is not None:
+        from .nrt_storage import expand
+
+        previous_paths = artifact_paths(root, previous)
+        previous_ledger = json.loads(previous_paths["ledger"].read_text())
+        previous_history = expand(previous_ledger, start=ledger["product_start"],
+                                  stop=ledger["available_through"])["products"]
 
     def build(folder):
         from .nrt_products import publish_issue_products
@@ -544,7 +555,9 @@ def commit(root, ledger, checkpoints, *, expected_parent, identity):
             dest = folder / (tile + "_checkpoints.h5")
             link_or_copy(stored["path"], dest)
             outputs["checkpoint_" + tile] = dest
-        products, records = publish_issue_products(folder, ledger, store)
+        products, records = publish_issue_products(folder, ledger, store,
+                                                  previous_history=previous_history,
+                                                  templates=product_templates)
         outputs.update(products)
         ledger["issue_products"] = records
         p = folder / "ledger.json"
@@ -605,6 +618,7 @@ def _finish(update_path):
     p = load_plan(u["plan"])
     r = p["request"]
     checkpoints = {}
+    product_templates = {}
     for tile in r["tiles"]:
         folder = Path(r["output"]) / "products" / tile
         g = current_generation(folder)
@@ -618,6 +632,7 @@ def _finish(update_path):
         ]
         if not set(issues).issubset(paths):
             raise ValueError("Revision requires the configured issue products")
+        product_templates[tile] = file_record(paths[issues[0]])
         for issue in issues:
             with netCDF4.Dataset(paths[issue]) as ds:
                 for index, day in enumerate(ds["time"][:]):
@@ -651,6 +666,7 @@ def _finish(update_path):
         u["root"],
         ledger,
         checkpoints,
+        product_templates=product_templates,
         expected_parent=u["expected_parent"],
         identity=dict(update=identity),
     )

@@ -105,15 +105,16 @@
     },
     "nrt_five_tiles": {
       "queue": "blanca-rittger",
-      "cpus": 5,
-      "memory": "16G",
+      "cpus": 16,
+      "memory": "96G",
       "time": "12:00:00",
       "concurrency": 1,
       "unit": "One NRT cycle over up to five tiles; serialized updates to one stream",
       "status": "starting_budget",
       "evidence": [
-        "Preparation uses the five-tile measured budget; complete cycle time/memory still needs validation.",
-        "The allocation must also cover the interpolation settings registered with the stream. No cron or Slurm job is created by selecting this profile."
+        "Starting budget for bounded NRT process pools; full-grid acceptance is required before calling the end-to-end timing validated.",
+        "Workers fit actual Slurm CPU and memory reservations, including per-task spatial threads and 2 GiB coordinator headroom.",
+        "The preparation budget remains 16 GiB. Parallel interpolation shares the larger allocation; stream updates remain serialized."
       ],
       "max_tiles": 5,
       "preparation": {

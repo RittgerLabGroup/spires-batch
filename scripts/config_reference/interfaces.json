@@ -322,9 +322,10 @@
         "default": "all_issues",
         "allowed_values": [
           "all_issues",
-          "first_and_final_only"
+          "first_and_final_only",
+          "final_only"
         ],
-        "description": "Select exported NetCDF issues: all eight (0\u20137 future days), or only first/final (0/7). Every selected file contains all variables. Inherited by NRT cumulative tile/WY publication; donor eligibility and calculations are unchanged."
+        "description": "Select exported NetCDF issues: all eight (0\u20137 future days), first/final (0/7), or final only (7). Every selected file contains all variables. Inherited by NRT cumulative tile/WY publication; donor eligibility, calculations and restart checkpoints are unchanged."
       },
       "use_snow_climatology": {
         "type": "boolean",

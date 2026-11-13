@@ -5,12 +5,16 @@ assets. No scheduler submission or live cron modification occurs implicitly.
 """
 
 import copy
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, wait, FIRST_COMPLETED
+import multiprocessing
 import json
 import os
 from pathlib import Path
 import subprocess
 import hashlib
+import sys
+import time
+import re
 from .configuration import require_configuration
 from .nrt import (
     current,
@@ -20,7 +24,76 @@ from .nrt import (
     finish,
     extend_annual_context,
 )
-from .interpolation import digest, load_plan, execute, implementations
+from .interpolation import digest, load_plan, execute, implementations, stage_resources
+
+
+def revision_workers(plan, configuration):
+    """Fit stage workers inside the actual allocation, including native threads.
+
+    Scheduler concurrency caps jobs across a campaign; it never authorizes this
+    process to exceed its own CPU/memory allocation. Reserve 2 GiB for the parent.
+    """
+    limits = configuration.get("revision_concurrency", {})
+    if not isinstance(limits, dict) or set(limits) - set(plan["stage_order"]):
+        raise ValueError("revision_concurrency must map interpolation stages to worker limits")
+    if any(type(value) is not int or value < 1 for value in limits.values()):
+        raise ValueError("Revision worker limits must be positive integers")
+    cpus = int(os.environ.get("SLURM_CPUS_PER_TASK", "1"))
+    memory = os.environ.get("SLURM_MEM_PER_NODE")
+    if memory is None and "SLURM_MEM_PER_CPU" in os.environ:
+        memory = int(os.environ["SLURM_MEM_PER_CPU"]) * cpus
+    if memory is None or int(memory) <= 0:
+        raise ValueError("Revision execution requires an explicit Slurm memory allocation")
+    available = int(memory) * 1024**2 - 2 * 1024**3
+    result = {}
+    units = {"K": 1024, "M": 1024**2, "": 1024**2, "G": 1024**3, "T": 1024**4}
+    for stage in plan["stage_order"]:
+        resource = stage_resources(plan["request"]["scheduler"], stage)
+        match = re.fullmatch(r"([0-9]+)([KMGT]?)", resource["memory"])
+        if match is None or int(match[1]) == 0:
+            raise ValueError("Revision tasks require bounded scheduler memory budgets")
+        per_worker = int(match[1]) * units[match[2]]
+        count = min(cpus // resource["cpus"], available // per_worker,
+                    resource["concurrency"], limits.get(stage, resource["concurrency"]))
+        if count < 1:
+            raise ValueError(f"Allocation cannot fit one {stage} worker plus 2 GiB coordinator headroom")
+        result[stage] = min(count, len(plan["tasks"][stage]))
+    return result
+
+
+def _revision_task(path, stage, index):
+    # Separate processes isolate NetCDF/HDF5 and serial_task_log stdout redirection.
+    # Native spatial threads are explicitly supplied by execute's stage profile.
+    execute(path, stage, index)
+
+
+def _parallel_stage(path, stage, count, workers):
+    if workers == 1:
+        for index in range(count):
+            _revision_task(path, stage, index)
+        return
+    with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("spawn")) as pool:
+        pending = set()
+        indices = iter(range(count))
+        for _ in range(min(count, workers)):
+            # Consume the same iterator used to replenish the pool so the
+            # initial tasks are not submitted again while still running.
+            index = next(indices)
+            pending.add(pool.submit(_revision_task, path, stage, index))
+        try:
+            while pending:
+                done, pending = wait(pending, return_when=FIRST_COMPLETED)
+                # Observe every completed result before launching more work.
+                for task in done:
+                    task.result()
+                for _ in done:
+                    index = next(indices, None)
+                    if index is not None:
+                        pending.add(pool.submit(_revision_task, path, stage, index))
+        except BaseException:
+            for task in pending:
+                task.cancel()
+            raise
 
 
 def invoke(python, code, *args, env=None, log=None):
@@ -218,6 +291,11 @@ def _cycle(config, through, directory, *, run=False, resolved=None):
     if through < ledger["available_through"]:
         raise ValueError("Availability may not move backwards")
     template = extend_annual_context(ledger["template"], annual)
+    if run:
+        # Check all stage budgets before any download or inversion work.
+        stages = ["screen", "spatial", "properties", "export"]
+        revision_workers(dict(request=template, stage_order=stages,
+                              tasks={stage: [None] for stage in stages}), config)
     from datetime import date, timedelta
 
     day = date.fromisoformat(ledger["available_through"]) + timedelta(days=1)
@@ -273,10 +351,10 @@ def _cycle(config, through, directory, *, run=False, resolved=None):
     )
     if update.get("status") == "unchanged" or not run:
         return update
-    return _execute_revision(directory / "revision/update.json", root, through)
+    return _execute_revision(directory / "revision/update.json", root, through, config)
 
 
-def _execute_revision(path, root, through):
+def _execute_revision(path, root, through, configuration=None):
     update = json.loads(Path(path).read_text())
     identity = update.pop("identity")
     if digest(update) != identity or update["root"] != str(Path(root).resolve()) or update["through"] != through:
@@ -287,10 +365,40 @@ def _execute_revision(path, root, through):
     if generation["generation"] != update["expected_parent"]:
         raise ValueError("Another NRT revision committed; automatic retry cannot replace it")
     plan = load_plan(update["plan"])
+    workers = revision_workers(plan, configuration or {})
+    # Set these before spawning workers so numerical libraries see the limits
+    # at import time. The spatial kernel still gets its explicit thread count.
+    for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+        os.environ[name] = "1"
+    from .nrt_storage import atomic_json
+    metrics_path = Path(path).parent / "execution-metrics.json"
+    metrics = dict(status="running", python=sys.executable, workers=workers, stages={})
     for stage in plan["stage_order"]:
-        for index in range(len(plan["tasks"][stage])):
-            execute(update["plan"], stage, index)
-    return finish(path)
+        count = len(plan["tasks"][stage])
+        began = time.perf_counter()
+        metrics["stages"][stage] = dict(status="running", tasks=count, workers=workers[stage])
+        atomic_json(metrics_path, metrics)
+        try:
+            if count:
+                _parallel_stage(update["plan"], stage, count, workers[stage])
+        except BaseException:
+            metrics["status"] = metrics["stages"][stage]["status"] = "failed"
+            atomic_json(metrics_path, metrics)
+            raise
+        metrics["stages"][stage].update(status="complete", seconds=time.perf_counter() - began)
+        atomic_json(metrics_path, metrics)
+    began = time.perf_counter()
+    metrics["status"] = "publishing"
+    atomic_json(metrics_path, metrics)
+    try:
+        result = finish(path)
+    except BaseException:
+        metrics.update(status="failed", publication_seconds=time.perf_counter() - began)
+        atomic_json(metrics_path, metrics)
+        raise
+    metrics.update(status="complete", publication_seconds=time.perf_counter() - began)
+    atomic_json(metrics_path, metrics)
+    return result
 
 
 def cycle(config, through, directory, *, run=False):
@@ -326,7 +434,7 @@ def cycle(config, through, directory, *, run=False):
                 atomic_json(resolved_path, configuration)
                 archive_configuration(root, resolved_path)
             revision = Path(directory) / "revision/update.json"
-            result = (_execute_revision(revision, root, through) if run and revision.exists() else
+            result = (_execute_revision(revision, root, through, configuration) if run and revision.exists() else
                       _cycle(config_path, through, directory, run=run, resolved=configuration))
             if run or result.get("status") == "unchanged":
                 archive_workspace_metadata(root, directory)

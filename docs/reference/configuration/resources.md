@@ -12,7 +12,7 @@ Reservations apply to one task, not an entire array. Memory is total per task.
 | `tile_inversion` | blanca-rittger | 1 | 6G | 04:00:00 | 20 | operator_baseline |
 | `daily_single_tile` | blanca-rittger | 1 | 8G | 04:00:00 | 76 | measured |
 | `daily_five_tiles` | blanca-rittger | 5 | 16G | 04:00:00 | 4 | measured |
-| `nrt_five_tiles` | blanca-rittger | 5 | 16G | 12:00:00 | 1 | starting_budget |
+| `nrt_five_tiles` | blanca-rittger | 16 | 96G | 12:00:00 | 1 | starting_budget |
 | `interpolation_screen` | blanca-rittger | 1 | 6G | 08:00:00 | 16 | measured |
 | `interpolation_spatial` | blanca-rittger | 4 | 8G | 12:00:00 | 8 | measured |
 | `interpolation_properties` | blanca-rittger | 1 | 8G | 12:00:00 | 12 | starting_budget |
@@ -64,8 +64,9 @@ One date across up to five tiles, one retrieval worker per tile
 
 One NRT cycle over up to five tiles; serialized updates to one stream
 
-- Preparation uses the five-tile measured budget; complete cycle time/memory still needs validation.
-- The allocation must also cover the interpolation settings registered with the stream. No cron or Slurm job is created by selecting this profile.
+- Starting budget for bounded NRT process pools; full-grid acceptance is required before calling the end-to-end timing validated.
+- Workers fit actual Slurm CPU and memory reservations, including per-task spatial threads and 2 GiB coordinator headroom.
+- The preparation budget remains 16 GiB. Parallel interpolation shares the larger allocation; stream updates remain serialized.
 
 ## `interpolation_screen`
 
