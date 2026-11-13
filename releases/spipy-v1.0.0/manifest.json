@@ -43,7 +43,7 @@
       "repository": "https://github.com/RittgerLabGroup/spires-postprocess.git"
     },
     "spires-interpolation": {
-      "commit": "b7f3ecdf53228c9e3d73665670334ee61d286d43",
+      "commit": "71d1d3648e9cf371e8990ad4ff5b8c6cb8093718",
       "groups": [
         "runtime"
       ],
@@ -54,7 +54,7 @@
       "repository": "https://github.com/RittgerLabGroup/spires-interpolation.git"
     },
     "spires-batch": {
-      "commit": "c26fffeb1cf4cee35f0dbab56dff86eeb47366e8",
+      "commit": "9711e598683715930bdfa694093eafb61c9bb2de",
       "groups": [
         "runtime"
       ],
@@ -116,7 +116,7 @@
       "spires-interpolation": "2cca6e16d0f0c64db884557cc93647063ecaef90",
       "spires-batch": "9bfdf85b3a2a1aa7bcc725bcd262f91e2f912474"
     },
-    "clean_install_note": "The installation report describes the previous source commits above. The optional-climatology candidate has lightweight worktree validation only; its new pins have not been installed into a fresh or operational environment.",
+    "clean_install_note": "The current source pins passed combined small-grid validation in RLG-spipy. Historical installation reports retain their source commits. This update is not a fresh-environment installation or new full-grid campaign.",
     "optional_snow_climatology": {
       "validated": true,
       "environment": "spipy14; isolated worktrees; temporary synthetic HDF5 and NetCDF inputs",
@@ -134,6 +134,53 @@
         "Generated configuration references, workflow example and Git whitespace checks"
       ],
       "scope": "Lightweight synthetic checks only. Planner checks stubbed unchanged native-library initialization and scheduler resolution. No production replay, new native-kernel validation, scientific baseline, or fresh installation was performed."
+    },
+    "combined_climatology_and_output_modes": {
+      "validated": true,
+      "environment": "RLG-spipy spipy14 with installed native libraries and merged source checkouts",
+      "source_commits": {
+        "spires-interpolation": "71d1d3648e9cf371e8990ad4ff5b8c6cb8093718",
+        "spires-batch": "9711e598683715930bdfa694093eafb61c9bb2de"
+      },
+      "grid": [
+        4,
+        5
+      ],
+      "historical_days": 12,
+      "continued_days": 16,
+      "output_modes": [
+        "all_issues",
+        "first_and_final_only",
+        "final_only"
+      ],
+      "climatology_modes": [
+        true,
+        false
+      ],
+      "checks": [
+        "All six combinations: historical export, NRT bootstrap and append, configured artifact verification",
+        "Enabled scientific values and masks match the pre-migration reference",
+        "Disabled first/final and final-only values match disabled all-issues output",
+        "NetCDF mode provenance, unchanged retries and no-op updates",
+        "Default-enabled compatibility and strict Boolean handling",
+        "Generated configuration/workflow references and syntax/whitespace checks"
+      ],
+      "scope": "Existing small-grid fixture replay; full-grid acceptance records describe earlier frozen sources. Scientific map review remains separate.",
+      "report": "docs/maintainers/validation/nrt-efficiency-2026-11-10.md"
+    },
+    "runtime_upgrade": {
+      "validated": true,
+      "source_commits": {
+        "spires-interpolation": "71d1d3648e9cf371e8990ad4ff5b8c6cb8093718",
+        "spires-batch": "9711e598683715930bdfa694093eafb61c9bb2de"
+      },
+      "environment": "Existing RLG-spipy/envs/spipy14; only batch and interpolation upgraded",
+      "checks": [
+        "Installed Git provenance matches all runtime candidate pins",
+        "All 56 installed batch/interpolation Python source files match the validated checkouts",
+        "pip check: no broken requirements"
+      ],
+      "scope": "Upgrade of the existing environment, not a fresh-environment installation. Interpolation was explicitly reinstalled because its package version remains 0.2.0."
     }
   },
   "release_blockers": [

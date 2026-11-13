@@ -5,5 +5,5 @@ spires-io @ git+https://github.com/RittgerLabGroup/spires-io.git@2778eac9171fde9
 spires-r0 @ git+https://github.com/RittgerLabGroup/spires-r0.git@70b96648ebb0127ae9d84a4a0586754d2aa57a19
 spires-inversion @ git+https://github.com/RittgerLabGroup/spires-inversion.git@967f1a17522eac03ca09a66ec93fed85a2a8b18a
 spires-postprocess @ git+https://github.com/RittgerLabGroup/spires-postprocess.git@0acf6854d4672e93116835902495e5673d81857d
-spires-interpolation[io,netcdf] @ git+https://github.com/RittgerLabGroup/spires-interpolation.git@b7f3ecdf53228c9e3d73665670334ee61d286d43
-spires-batch[science,interpolation] @ git+https://github.com/RittgerLabGroup/spires-batch.git@c26fffeb1cf4cee35f0dbab56dff86eeb47366e8
+spires-interpolation[io,netcdf] @ git+https://github.com/RittgerLabGroup/spires-interpolation.git@71d1d3648e9cf371e8990ad4ff5b8c6cb8093718
+spires-batch[science,interpolation] @ git+https://github.com/RittgerLabGroup/spires-batch.git@9711e598683715930bdfa694093eafb61c9bb2de
